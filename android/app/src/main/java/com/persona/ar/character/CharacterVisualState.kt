@@ -2,9 +2,11 @@ package com.persona.ar.character
 
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.PersonaModelManifest
 
 data class CharacterVisualState(
     val name: String = "星野",
+    val model: PersonaModelManifest? = null,
     val emotion: EmotionType = EmotionType.NEUTRAL,
     val action: ActionType = ActionType.IDLE,
     val expression: String = "SMILE",
