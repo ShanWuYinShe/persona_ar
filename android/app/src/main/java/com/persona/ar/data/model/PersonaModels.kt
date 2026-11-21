@@ -30,6 +30,28 @@ enum class TouchPart {
     BODY
 }
 
+/**
+ * 语音对讲交互模式
+ */
+enum class VoiceMode {
+    /** 模式1：自然对话模式（类似真人聊天，随时打断，静音自动断句发送） */
+    CONTINUOUS_NATURAL,
+    /** 模式2：对讲机模式（按住说话，松开发送） */
+    HOLD_TO_TALK
+}
+
+/**
+ * 对话气泡显示策略
+ */
+enum class BubbleDisplayMode {
+    /** 模式1：停留常驻（保留历史记录，可回滚） */
+    PERSISTENT,
+    /** 模式2：延迟 5 秒自动淡出隐藏（保持现实画面整洁） */
+    AUTO_FADE_OUT,
+    /** 模式3：完全不显示（极致现实沉浸，全靠语音与肢体神态交流） */
+    HIDDEN
+}
+
 data class ChatRequest(
     val message: String,
     @SerializedName("user_id") val userId: String = "user_default",

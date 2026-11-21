@@ -86,7 +86,6 @@ class AudioPlayer(private val context: Context) {
             var step = 0f
             while (isActive) {
                 step += 0.25f
-                // 模拟富有节奏感的自然说话口型波动
                 val amp = abs(sin(step)) * 0.8f + (Math.random().toFloat() * 0.2f)
                 onAmplitudeUpdate?.invoke(amp.coerceIn(0f, 1f))
                 delay(60)
@@ -98,6 +97,14 @@ class AudioPlayer(private val context: Context) {
         amplitudeJob?.cancel()
         amplitudeJob = null
         onAmplitudeUpdate?.invoke(0f)
+    }
+
+    /**
+     * 随时打断当前语音播放（用于自然对话中的 Barge-in 用户插话打断）
+     */
+    fun interrupt() {
+        stop()
+        onPlaybackFinished?.invoke()
     }
 
     fun stop() {

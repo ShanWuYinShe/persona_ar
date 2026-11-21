@@ -32,7 +32,6 @@ fun PersonaMainScreen(
         if (hasCameraPermission) {
             CameraXView(modifier = Modifier.fillMaxSize())
         } else {
-            // 权限未获得时的暗色现实空间备用背景
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -40,7 +39,7 @@ fun PersonaMainScreen(
             )
         }
 
-        // 2. 纸片人现实空间投射层 (支持 2.5D 精致立绘与 3D 空间模式切换)
+        // 2. 纸片人现实空间投射层 (2.5D 与 3D 模式)
         when (uiState.arMode) {
             ARMode.BILLBOARD_2_5D -> {
                 CharacterCanvasRenderer(
@@ -73,33 +72,42 @@ fun PersonaMainScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
         ) {
-            // 聊天气泡消息覆盖层
+            // 聊天气泡层（受三种气泡显示策略控制：停留常驻 / 5秒淡出 / 不显示）
             ChatOverlay(
                 messages = uiState.messages,
+                displayMode = uiState.bubbleDisplayMode,
                 isSpeaking = uiState.isSpeaking,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 底部输入与操作栏
+            // 底部输入与操作栏（支持自然随时打断模式与按住说话模式）
             VoiceInputBar(
+                voiceMode = uiState.voiceMode,
                 isRecording = uiState.isRecording,
+                isContinuousActive = uiState.isContinuousActive,
+                isUserSpeaking = uiState.isUserSpeaking,
                 micVolume = uiState.micVolume,
                 isLoading = uiState.isLoading,
                 onSendMessage = { text -> viewModel.sendMessage(text) },
-                onStartVoice = { viewModel.startVoiceRecording() },
-                onStopVoice = { viewModel.stopVoiceRecording() },
+                onToggleContinuous = { viewModel.toggleContinuousListening() },
+                onStartHoldVoice = { viewModel.startHoldRecording() },
+                onStopHoldVoice = { viewModel.stopHoldRecording() },
                 onTouchPart = { part -> viewModel.onTouchPart(part) },
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // 5. 设置弹窗
+        // 5. 设置弹窗（含对讲模式和气泡策略设置）
         if (uiState.isSettingsOpen) {
             SettingsDialog(
                 currentMode = uiState.arMode,
+                currentVoiceMode = uiState.voiceMode,
+                currentBubbleMode = uiState.bubbleDisplayMode,
                 currentServerUrl = uiState.serverBaseUrl,
                 onDismiss = { viewModel.setSettingsOpen(false) },
                 onToggleMode = { viewModel.toggleARMode() },
+                onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
+                onSelectBubbleMode = { mode -> viewModel.setBubbleDisplayMode(mode) },
                 onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) }
             )
         }

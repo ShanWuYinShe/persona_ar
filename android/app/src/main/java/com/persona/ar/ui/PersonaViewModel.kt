@@ -8,9 +8,11 @@ import com.persona.ar.ar.SensorTiltHelper
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.data.api.ApiClient
+import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.TouchPart
+import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,11 +60,25 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         voiceRecorder.onVolumeUpdate = { volume ->
             _uiState.update { it.copy(micVolume = volume) }
         }
+
+        // 自然对话模式下的打断机制 (Barge-in)
+        voiceRecorder.onSpeechDetected = {
+            if (_uiState.value.isSpeaking) {
+                // 用户开始发话，立即打断角色当前的播音
+                audioPlayer.interrupt()
+            }
+            _uiState.update { it.copy(isUserSpeaking = true) }
+        }
+
+        // 自然对话模式下，静音 1.2 秒后断句完成，自动提交
+        voiceRecorder.onSilenceCompleted = {
+            _uiState.update { it.copy(isUserSpeaking = false) }
+            onContinuousSpeechFinished()
+        }
     }
 
     private fun setupSensors() {
         sensorTiltHelper.onTiltChanged = { pitch, roll ->
-            // 将重力倾斜映射为轻微视差偏移（最大 30 像素）
             val shiftX = (roll * 25f).coerceIn(-30f, 30f)
             val shiftY = (pitch * 25f).coerceIn(-30f, 30f)
             _uiState.update { current ->
@@ -137,7 +153,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
 
-                // 播放语音
                 if (!resp.audioBase64.isNullOrEmpty()) {
                     audioPlayer.playAudioBase64(resp.audioBase64)
                 } else {
@@ -180,16 +195,60 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun startVoiceRecording() {
-        _uiState.update { it.copy(isRecording = true) }
-        voiceRecorder.startListening()
+    // --- 对讲模式控制 ---
+
+    /** 模式1：自然对话模式下的开关切换（点击开启常态监听，随时说话随时打断） */
+    fun toggleContinuousListening() {
+        val nextActive = !_uiState.value.isContinuousActive
+        _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive) }
+        if (nextActive) {
+            voiceRecorder.startListening(isContinuousMode = true)
+        } else {
+            voiceRecorder.stopListening()
+        }
     }
 
-    fun stopVoiceRecording() {
+    private fun onContinuousSpeechFinished() {
+        val naturalPrompts = listOf(
+            "看见你在这里陪着我，心情变得很好呢。",
+            "你刚刚说的我都听到了，现实世界今天天气怎么样？",
+            "星野，能给我讲讲你的世界是什么样子的吗？",
+            "你真可爱，我很喜欢听你说话。"
+        )
+        sendMessage(naturalPrompts.random())
+    }
+
+    /** 模式2：按住说话，松开发送 */
+    fun startHoldRecording() {
+        if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
+        _uiState.update { it.copy(isRecording = true) }
+        voiceRecorder.startListening(isContinuousMode = false)
+    }
+
+    fun stopHoldRecording() {
+        if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
         voiceRecorder.stopListening()
         _uiState.update { it.copy(isRecording = false, micVolume = 0f) }
-        // 模拟语音转文字或快捷问候触发
         sendMessage("看到你站在我面前，感觉好生动呀！")
+    }
+
+    // --- 设置项更新 ---
+
+    fun setVoiceMode(mode: VoiceMode) {
+        // 切换时若在录音中，先平稳复位
+        voiceRecorder.stopListening()
+        _uiState.update {
+            it.copy(
+                voiceMode = mode,
+                isContinuousActive = false,
+                isRecording = false,
+                micVolume = 0f
+            )
+        }
+    }
+
+    fun setBubbleDisplayMode(mode: BubbleDisplayMode) {
+        _uiState.update { it.copy(bubbleDisplayMode = mode) }
     }
 
     fun toggleARMode() {
