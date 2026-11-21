@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.data.model.BubbleDisplayMode
@@ -23,6 +25,9 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.MessageSender
 import kotlinx.coroutines.delay
 
+/**
+ * 卡通二游 / Galgame 风格剧情对话框 (Visual Novel Dialogue Box)
+ */
 @Composable
 fun ChatOverlay(
     messages: List<ChatMessage>,
@@ -30,14 +35,11 @@ fun ChatOverlay(
     isSpeaking: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // 模式3：完全不显示
     if (displayMode == BubbleDisplayMode.HIDDEN) {
         return
     }
 
     val listState = rememberLazyListState()
-
-    // 模式2：延迟 5 秒自动淡出控制
     var isAutoFadeVisible by remember { mutableStateOf(false) }
     val latestMessage = messages.lastOrNull()
 
@@ -48,7 +50,6 @@ fun ChatOverlay(
 
         if (displayMode == BubbleDisplayMode.AUTO_FADE_OUT && latestMessage != null) {
             isAutoFadeVisible = true
-            // 停留 5 秒后淡出隐藏
             delay(5000L)
             isAutoFadeVisible = false
         }
@@ -57,25 +58,23 @@ fun ChatOverlay(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 220.dp)
-            .padding(horizontal = 16.dp)
+            .heightIn(max = 240.dp)
+            .padding(horizontal = 14.dp)
     ) {
         when (displayMode) {
             BubbleDisplayMode.PERSISTENT -> {
-                // 模式1：停留常驻历史瀑布流
                 LazyColumn(
                     state = listState,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     items(messages, key = { it.id }) { msg ->
-                        SingleBubbleItem(msg = msg)
+                        AnimeGameDialogueItem(msg = msg)
                     }
                 }
             }
 
             BubbleDisplayMode.AUTO_FADE_OUT -> {
-                // 模式2：最新单条气泡 5 秒渐隐
                 AnimatedVisibility(
                     visible = isAutoFadeVisible && latestMessage != null,
                     enter = fadeIn(animationSpec = tween(300)),
@@ -83,7 +82,7 @@ fun ChatOverlay(
                     modifier = Modifier.align(Alignment.BottomStart)
                 ) {
                     latestMessage?.let {
-                        SingleBubbleItem(msg = it)
+                        AnimeGameDialogueItem(msg = it)
                     }
                 }
             }
@@ -94,37 +93,89 @@ fun ChatOverlay(
 }
 
 @Composable
-private fun SingleBubbleItem(msg: ChatMessage) {
+private fun AnimeGameDialogueItem(msg: ChatMessage) {
     val isUser = msg.sender == MessageSender.USER
+    val strokeColor = Color(0xFF281C38) // 饱满卡通深紫黑描边
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 16.dp,
-                        topEnd = 16.dp,
-                        bottomStart = if (isUser) 16.dp else 2.dp,
-                        bottomEnd = if (isUser) 2.dp else 16.dp
+        if (!isUser) {
+            // 角色发言：Galgame 对话框（左上角悬浮名牌）
+            Column(modifier = Modifier.widthIn(max = 320.dp)) {
+                // 角色萌系名牌 (Nameplate)
+                Box(
+                    modifier = Modifier
+                        .offset(x = 12.dp, y = 8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFFF5277))
+                        .border(2.dp, strokeColor, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "✦ 星野 Hoshino ✦",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
                     )
+                }
+
+                // 主对话文本框（奶油奶酪暖白底 + 立体卡通描边）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFFFFFDF9).copy(alpha = 0.96f))
+                        .border(2.5.dp, strokeColor, RoundedCornerShape(16.dp))
+                        .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 10.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = msg.text,
+                            color = Color(0xFF281C38),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 19.sp
+                        )
+                        // 对话框右下角继续小箭头
+                        Text(
+                            text = "▼",
+                            color = Color(0xFFFF5277),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(top = 2.dp)
+                        )
+                    }
+                }
+            }
+        } else {
+            // 用户发言：马卡龙紫贴纸气泡
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 260.dp)
+                    .clip(
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomStart = 16.dp,
+                            bottomEnd = 4.dp
+                        )
+                    )
+                    .background(Color(0xFF7E57C2))
+                    .border(2.dp, strokeColor, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text(
+                    text = msg.text,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 18.sp
                 )
-                .background(
-                    if (isUser)
-                        Color(0xCC7B61FF)
-                    else
-                        Color(0xCC201C2B)
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Text(
-                text = msg.text,
-                color = Color.White,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
+            }
         }
     }
 }
