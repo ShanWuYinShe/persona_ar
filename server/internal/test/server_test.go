@@ -424,3 +424,61 @@ func TestCircadianAndMultiVoiceIsolation(t *testing.T) {
 		t.Fatalf("expected non-nil audio outputs for multi-voice synthesis")
 	}
 }
+
+func TestLLMProviderAndGracefulFallback(t *testing.T) {
+	router := setupTestRouter()
+
+	// 1. 测试设置大模型 API 配置
+	cfgPayload := map[string]string{
+		"provider": "openai",
+		"base_url": "https://api.deepseek.com",
+		"api_key":  "sk-test-mock-deepseek-key-123456",
+		"model":    "deepseek-chat",
+	}
+	cfgBytes, _ := json.Marshal(cfgPayload)
+	reqCfg, _ := http.NewRequest("POST", "/api/v1/llm/config", bytes.NewBuffer(cfgBytes))
+	reqCfg.Header.Set("Content-Type", "application/json")
+	wCfg := httptest.NewRecorder()
+	router.ServeHTTP(wCfg, reqCfg)
+
+	if wCfg.Code != http.StatusOK {
+		t.Fatalf("set llm config failed: %d", wCfg.Code)
+	}
+
+	// 2. 测试获取脱敏后的大模型配置
+	reqGet, _ := http.NewRequest("GET", "/api/v1/llm/config", nil)
+	wGet := httptest.NewRecorder()
+	router.ServeHTTP(wGet, reqGet)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("get llm config failed: %d", wGet.Code)
+	}
+	var getResp map[string]interface{}
+	_ = json.Unmarshal(wGet.Body.Bytes(), &getResp)
+	if getResp["model"] != "deepseek-chat" {
+		t.Errorf("expected model deepseek-chat, got %v", getResp["model"])
+	}
+	apiKeyStr, _ := getResp["api_key"].(string)
+	if strings.Contains(apiKeyStr, "123456") && !strings.Contains(apiKeyStr, "....") {
+		t.Errorf("expected masked api key, got %v", apiKeyStr)
+	}
+
+	// 3. 测试大模型网络异常时自动无缝降级为启发式治愈回复
+	chatPayload := map[string]string{
+		"user_id": "test_llm_fallback_user",
+		"message": "星野，如果断网了大模型连不上怎么办？",
+	}
+	chatBytes, _ := json.Marshal(chatPayload)
+	reqChat, _ := http.NewRequest("POST", "/api/v1/chat/interact", bytes.NewBuffer(chatBytes))
+	reqChat.Header.Set("Content-Type", "application/json")
+	wChat := httptest.NewRecorder()
+	router.ServeHTTP(wChat, reqChat)
+
+	if wChat.Code != http.StatusOK {
+		t.Fatalf("expected 200 ok with fallback, got %d", wChat.Code)
+	}
+	var chatResp model.ChatResponse
+	_ = json.Unmarshal(wChat.Body.Bytes(), &chatResp)
+	if chatResp.Text == "" {
+		t.Errorf("expected non-empty fallback chat response")
+	}
+}

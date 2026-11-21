@@ -4,6 +4,7 @@ import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
 import com.persona.ar.data.model.CreateMemoryRequest
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.LLMConfigRequest
 import com.persona.ar.data.model.MemoryItem
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
@@ -69,4 +70,9 @@ interface PersonaApiService {
     suspend fun resetPersona(
         @Query("user_id") userId: String = "user_default"
     ): Response<Map<String, String>>
+
+    @POST("api/v1/llm/config")
+    suspend fun updateLLMConfig(
+        @Body request: LLMConfigRequest
+    ): Response<Map<String, Any>>
 }

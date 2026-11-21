@@ -1,16 +1,15 @@
 package persona
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"net/http"
+	"log"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ShanWuYinShe/persona_ar/server/internal/config"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/llm"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/tts"
 )
@@ -186,10 +185,12 @@ func (e *Engine) Chat(userID, message string) (*model.ChatResponse, error) {
 		state.Affinity += 2
 	}
 
-	// 2. 尝试调用真实 LLM
-	if config.Settings.LLMAPIKey != "" && config.Settings.LLMProvider != "mock" {
-		if res, err := e.callLLM(persona, state, message); err == nil && res != "" {
+	// 2. 尝试调用大模型 API（支持 OpenAI/DeepSeek/Ollama/Qwen，若未配置或异常则优雅降级为启发式规则）
+	if client := llm.DefaultManager.GetClient(); client != nil {
+		if res, err := e.callLLM(persona, state, message); err == nil && strings.TrimSpace(res) != "" {
 			return e.parseLLMResponse(persona, state, res)
+		} else if err != nil {
+			log.Printf("[LLM Fallback] API error: %v, falling back to heuristic engine", err)
 		}
 	}
 
@@ -369,66 +370,66 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 }
 
 func (e *Engine) callLLM(persona PersonaDefinition, state *UserState, message string) (string, error) {
+	client := llm.DefaultManager.GetClient()
+	if client == nil {
+		return "", fmt.Errorf("llm client not configured")
+	}
+
+	// 1. 结构化构建 System Prompt（融合角色人设、长期记忆与现实环境感知）
 	systemPrompt := persona.Prompt
 	if memFrag := DefaultMemoryManager.GetContextPromptFragment(state.UserID, persona.ID); memFrag != "" {
-		systemPrompt += "\n\n" + memFrag
+		systemPrompt += "\n\n【专属情感回忆与偏好】\n" + memFrag
 	}
 
-	messages := []map[string]string{
-		{"role": "system", "content": systemPrompt},
+	hour := time.Now().Hour()
+	timeDesc := "白天"
+	switch {
+	case hour >= 0 && hour < 6:
+		timeDesc = "深夜（现实世界万籁俱寂，请用温柔治愈语气轻声细语关心用户注意作息，切勿大声吵闹）"
+	case hour >= 6 && hour < 11:
+		timeDesc = "清晨（新的一天开始，充满元气与清新晨意）"
+	case hour >= 11 && hour < 14:
+		timeDesc = "午间（适合问候午餐与片刻小憩）"
+	case hour >= 17 && hour < 19:
+		timeDesc = "傍晚（夕阳西下，抚平一整天的劳累）"
+	case hour >= 22:
+		timeDesc = "深夜准备就寝（睡前轻声慢语，互道晚安）"
 	}
+	systemPrompt += fmt.Sprintf("\n\n【现实世界环境感知】当前时段：%s，当前羁绊等级：Lv.%d。", timeDesc, (state.Affinity/20)+1)
+
+	// 2. 构造对话轮次历史
+	llmMessages := []llm.Message{
+		{Role: llm.RoleSystem, Content: systemPrompt},
+	}
+
 	historyStart := 0
-	if len(state.History) > 6 {
-		historyStart = len(state.History) - 6
+	if len(state.History) > 8 {
+		historyStart = len(state.History) - 8
 	}
-	messages = append(messages, state.History[historyStart:]...)
-	messages = append(messages, map[string]string{"role": "user", "content": message})
-
-	payload := map[string]interface{}{
-		"model":       config.Settings.LLMModel,
-		"messages":    messages,
-		"temperature": 0.8,
-		"max_tokens":  200,
+	for _, h := range state.History[historyStart:] {
+		role := llm.RoleUser
+		if h["role"] == "assistant" {
+			role = llm.RoleAssistant
+		}
+		llmMessages = append(llmMessages, llm.Message{
+			Role:    role,
+			Content: h["content"],
+		})
 	}
+	llmMessages = append(llmMessages, llm.Message{
+		Role:    llm.RoleUser,
+		Content: message,
+	})
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
 
-	req, err := http.NewRequest("POST", config.Settings.LLMBaseURL+"/v1/chat/completions", bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+config.Settings.LLMAPIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("llm returned status: %d", resp.StatusCode)
+	opts := &llm.ChatOptions{
+		Temperature: 0.8,
+		MaxTokens:   260,
 	}
 
-	var res struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return "", err
-	}
-
-	if len(res.Choices) > 0 {
-		return res.Choices[0].Message.Content, nil
-	}
-	return "", nil
+	return client.Complete(ctx, llmMessages, opts)
 }
 
 func (e *Engine) parseLLMResponse(persona PersonaDefinition, state *UserState, rawText string) (*model.ChatResponse, error) {
