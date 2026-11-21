@@ -39,3 +39,7 @@ wheels/
 .env
 venv/
 ENV/
+
+# Server Runtime Data & Audio Cache
+server/data/
+data/

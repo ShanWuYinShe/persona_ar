@@ -134,3 +134,25 @@ def test_websocket_continuous():
         assert "text" in resp_frame
         assert "emotion" in resp_frame
         assert "action" in resp_frame
+
+def test_memory_auto_extraction():
+    # 测试通过日常交流自动提取喜好
+    res = client.post("/api/v1/chat/interact", json={
+        "user_id": "test_commander_1",
+        "message": "星野，我最喜欢喝冰美式咖啡啦！"
+    })
+    assert res.status_code == 200
+
+    # 验证记忆库中是否已自动沉淀该事实
+    mem_res = client.get("/api/v1/persona/memories?user_id=test_commander_1")
+    assert mem_res.status_code == 200
+    memories = mem_res.json()
+    assert any("冰美式咖啡" in m["content"] for m in memories)
+
+def test_tts_cache_mechanism():
+    from app.tts.synthesizer import tts_synthesizer
+    import os
+    # 验证本地缓存路径存在
+    assert os.path.exists(tts_synthesizer.cache_dir)
+    cache_path = tts_synthesizer._get_cache_path("你好指挥官", "zh-CN-XiaoyiNeural")
+    assert cache_path.endswith(".mp3")

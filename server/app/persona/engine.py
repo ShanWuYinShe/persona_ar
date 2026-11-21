@@ -118,6 +118,11 @@ class PersonaEngine:
         persona = PERSONA_REGISTRY.get(state.persona_id, PERSONA_REGISTRY["hoshino"])
         state.dialogue_count += 1
         
+        # 实时自动分析并沉淀长期情感记忆
+        extracted_mem = memory_manager.extract_preference_from_dialogue(user_id, state.persona_id, message)
+        if extracted_mem:
+            state.affinity += 2
+
         if settings.llm_api_key and settings.llm_provider != "mock":
             response_text = await self._call_llm(persona, state, message)
             if response_text:
