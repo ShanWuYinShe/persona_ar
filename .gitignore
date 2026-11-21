@@ -42,3 +42,4 @@ ENV/
 
 # Server Runtime Data & Audio Cache
 /server/data/
+server/**/data/
