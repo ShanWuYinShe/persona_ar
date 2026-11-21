@@ -1,4 +1,7 @@
 import time
+import os
+import json
+import re
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 
@@ -19,11 +22,39 @@ class MemoryItem(BaseModel):
 class MemoryManager:
     """
     纸片人长期情感记忆沉淀引擎 (Episodic & Semantic Memory Manager)
+    支持 JSON 磁盘持久化存储与智能偏好提取
     """
-    def __init__(self):
+    def __init__(self, storage_path: Optional[str] = None):
+        self.storage_path = storage_path or os.path.join(os.getcwd(), "data", "memories.json")
         # user_id -> List[MemoryItem]
         self._memories: Dict[str, List[MemoryItem]] = {}
+        self._load_or_init()
+
+    def _load_or_init(self):
+        os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+        if os.path.exists(self.storage_path):
+            try:
+                with open(self.storage_path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                    for uid, items in raw.items():
+                        self._memories[uid] = [MemoryItem(**item) for item in items]
+                    return
+            except Exception:
+                pass
+        
         self._init_default_memories()
+        self._save_to_disk()
+
+    def _save_to_disk(self):
+        try:
+            raw = {
+                uid: [item.model_dump() for item in items]
+                for uid, items in self._memories.items()
+            }
+            with open(self.storage_path, "w", encoding="utf-8") as f:
+                json.dump(raw, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def _init_default_memories(self):
         default_user = "user_default"
@@ -68,7 +99,35 @@ class MemoryManager:
             importance=importance
         )
         self._memories[user_id].append(item)
+        self._save_to_disk()
         return item
+
+    def extract_preference_from_dialogue(self, user_id: str, persona_id: str, message: str) -> Optional[MemoryItem]:
+        """从指挥官日常对话中智能识别并沉淀关键偏好或约定"""
+        msg = message.strip()
+        
+        # 1. 识别偏好与喜好
+        match_like = re.search(r"(?:我最?喜欢|我平时爱|我很喜欢)([\w\u4e00-\u9fa5]{2,15})", msg)
+        if match_like:
+            fav = match_like.group(1)
+            content = f"指挥官喜欢：{fav}。"
+            return self.add_memory(user_id, persona_id, content, MemoryCategory.USER_FACT, importance=4)
+
+        # 2. 识别指挥官昵称或身份
+        match_name = re.search(r"(?:叫我|我是|我的名字是)([\w\u4e00-\u9fa5]{2,10})", msg)
+        if match_name:
+            name = match_name.group(1)
+            content = f"指挥官希望被称呼为：{name}。"
+            return self.add_memory(user_id, persona_id, content, MemoryCategory.USER_FACT, importance=5)
+
+        # 3. 识别约定与承诺
+        match_promise = re.search(r"(?:记住|别忘了|我们约定|以后也要)([\w\u4e00-\u9fa5]{4,25})", msg)
+        if match_promise:
+            promise = match_promise.group(1)
+            content = f"与指挥官的特别约定：{promise}。"
+            return self.add_memory(user_id, persona_id, content, MemoryCategory.EMOTIONAL_PROMISE, importance=5)
+
+        return None
 
     def get_memories(self, user_id: str, persona_id: Optional[str] = None, limit: int = 10) -> List[MemoryItem]:
         user_list = self._memories.get(user_id, [])

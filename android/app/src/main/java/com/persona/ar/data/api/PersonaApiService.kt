@@ -43,6 +43,11 @@ interface PersonaApiService {
         @Query("user_id") userId: String = "user_default"
     ): Response<List<Map<String, Any>>>
 
+    @POST("api/v1/persona/switch")
+    suspend fun switchPersona(
+        @Body request: Map<String, String>
+    ): Response<Map<String, Any>>
+
     @POST("api/v1/persona/reset")
     suspend fun resetPersona(
         @Query("user_id") userId: String = "user_default"

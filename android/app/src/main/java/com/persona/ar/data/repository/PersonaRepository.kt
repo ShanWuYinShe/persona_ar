@@ -28,6 +28,15 @@ class PersonaRepository {
         }
     }
 
+    suspend fun switchPersona(personaId: String, userId: String = "user_default"): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.switchPersona(mapOf("user_id" to userId, "persona_id" to personaId))
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.success(false)
+        }
+    }
+
     suspend fun sendChat(message: String, userId: String = "user_default"): Result<ChatResponse> =
         withContext(Dispatchers.IO) {
             try {

@@ -286,6 +286,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
+            viewModelScope.launch {
+                repository.switchPersona(modelId)
+            }
         }
     }
 
