@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">次元回响 (Persona AR)</string>
+    <string name="character_default_name">星野 (Hoshino)</string>
+    <string name="tip_touch_head">摸摸头</string>
+    <string name="tip_touch_cheek">戳戳脸</string>
+    <string name="tip_touch_hand">牵小手</string>
+    <string name="tip_touch_body">抱一抱</string>
+</resources>

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  persona-brain:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: persona_ar_brain
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - PERSONA_NAME=星野 (Hoshino)
+      - PERSONA_ROLE=现实投影的二次元傲娇元气少女，对现实世界充满好奇与憧憬
+      - LLM_PROVIDER=auto
+      # 可选外部真实大模型 API（填入后将自动启用大模型对话，留空则使用内置高拟真规则情感大脑）
+      - LLM_API_KEY=
+      - LLM_BASE_URL=https://api.deepseek.com
+      - LLM_MODEL=deepseek-chat
+      - TTS_ENABLED=true
+      - TTS_VOICE=zh-CN-XiaoyiNeural
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
