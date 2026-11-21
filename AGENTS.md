@@ -14,3 +14,8 @@
 
 ## 敏感凭据规范
 - 任何真实 API Token（如 `LLM_API_KEY`）严禁写入代码、文档、commit 记录或日志；统一通过环境变量或 `.env` 注入。
+
+## PR 证据图
+- UI 改动的 Before/After 截图用 `gh` 的 `--attach` 上传，**不提交进仓库**（`.github/pr-evidence/` 不得重建）。
+- 压缩：`~/.agents/bin/pr-evidence` 的 `shrink`；上传：`gh pr create --body-file <正文> --attach 'before.png#改前' --attach 'after.png#改后'`。
+- 建完 PR 用 `pr-evidence check --body <正文> --post` 复核附件地址真实可访问。
