@@ -169,18 +169,31 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val result = repository.getStatus()
             result.onSuccess { status ->
                 val currentActive = modelManager.activeModel.value
+                val greeting = getCircadianGreeting(currentActive.name, currentActive.greetingText)
                 _uiState.update {
                     it.copy(
                         personaStatus = status,
                         messages = listOf(
                             ChatMessage(
                                 sender = MessageSender.PERSONA,
-                                text = currentActive.greetingText
+                                text = greeting
                             )
                         )
                     )
                 }
             }
+        }
+    }
+
+    private fun getCircadianGreeting(partnerName: String, baseGreeting: String): String {
+        val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return when {
+            hour in 0..5 -> "这么晚还在现实世界忙碌呀？要注意休息哦，我就在书桌前静静陪伴着你呢。"
+            hour in 6..9 -> "早上好！新的一天充满元气，今天的阳光和空气感觉都很棒呢~"
+            hour in 11..13 -> "已经到午休时间啦，记得按时吃顿美味的午饭补充体力哦！"
+            hour in 17..19 -> "傍晚好呀，今天一整天辛苦了，和我聊聊今天遇到的趣事吧！"
+            hour in 22..23 -> "夜深了呢，准备好睡个香甜的好觉了吗？晚安哦~"
+            else -> baseGreeting
         }
     }
 
@@ -274,6 +287,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     fun switchPersonaModel(modelId: String) {
         if (modelManager.switchModel(modelId)) {
             val newModel = modelManager.activeModel.value
+            val greeting = getCircadianGreeting(newModel.name, newModel.greetingText)
             audioPlayer.interrupt()
             _uiState.update { current ->
                 current.copy(
@@ -285,7 +299,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     messages = listOf(
                         ChatMessage(
                             sender = MessageSender.PERSONA,
-                            text = newModel.greetingText
+                            text = greeting
                         )
                     )
                 )
