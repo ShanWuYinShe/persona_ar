@@ -16,9 +16,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -29,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -39,9 +45,7 @@ import com.persona.ar.data.model.VoiceMode
 
 /**
  * 重点突出的二游卡通对讲控制台 (Focused Voice Action Dock)
- * 核心原则：
- * 1. 唯一焦点：中央超大、清晰明确的主对讲胶囊按钮（按住说话 / 连麦状态，一眼即达）
- * 2. 辅助收拢：触碰道具与文字输入收拢为左右两侧极简小圆钮，按需浮层展开，绝不抢占视觉中心
+ * 严格执行规范：全矢量图标，绝不使用任何系统 Emoji 字符代替图标。
  */
 @Composable
 fun VoiceInputBar(
@@ -85,7 +89,7 @@ fun VoiceInputBar(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. 次要按需展开层：触碰互动选择浮层（仅点击✨时轻量呼出，绝不常驻乱屏）
+        // 1. 次要按需展开层：触碰互动选择浮层（纯矢量图标）
         AnimatedVisibility(
             visible = showInteractSheet,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
@@ -101,14 +105,26 @@ fun VoiceInputBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                QuickActionChip("🍬 摸摸头") { onTouchPart(TouchPart.HEAD); showInteractSheet = false }
-                QuickActionChip("🍓 戳戳脸") { onTouchPart(TouchPart.CHEEK); showInteractSheet = false }
-                QuickActionChip("🌟 牵小手") { onTouchPart(TouchPart.HAND); showInteractSheet = false }
-                QuickActionChip("💖 抱一抱") { onTouchPart(TouchPart.BODY); showInteractSheet = false }
+                VectorActionChip(icon = Icons.Filled.TouchApp, text = "摸摸头") {
+                    onTouchPart(TouchPart.HEAD)
+                    showInteractSheet = false
+                }
+                VectorActionChip(icon = Icons.Filled.Face, text = "戳戳脸") {
+                    onTouchPart(TouchPart.CHEEK)
+                    showInteractSheet = false
+                }
+                VectorActionChip(icon = Icons.Filled.PanTool, text = "牵小手") {
+                    onTouchPart(TouchPart.HAND)
+                    showInteractSheet = false
+                }
+                VectorActionChip(icon = Icons.Filled.Favorite, text = "抱一抱") {
+                    onTouchPart(TouchPart.BODY)
+                    showInteractSheet = false
+                }
             }
         }
 
-        // 2. 次要按需展开层：打字键盘输入栏（仅点击⌨️时呼出）
+        // 2. 次要按需展开层：打字键盘输入栏
         AnimatedVisibility(
             visible = showTextInput,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
@@ -128,7 +144,7 @@ fun VoiceInputBar(
                     value = inputText,
                     onValueChange = { inputText = it },
                     textStyle = TextStyle(
-                        color = Color(0xFF281C38),
+                        color = borderColor,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     ),
@@ -157,7 +173,7 @@ fun VoiceInputBar(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
-                            contentDescription = "发送",
+                            contentDescription = "发送消息",
                             tint = brandPink,
                             modifier = Modifier.size(18.dp)
                         )
@@ -170,7 +186,7 @@ fun VoiceInputBar(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "关闭输入",
+                        contentDescription = "关闭输入栏",
                         tint = Color(0xFF887799),
                         modifier = Modifier.size(16.dp)
                     )
@@ -184,7 +200,7 @@ fun VoiceInputBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左翼辅助按键：触碰互动折叠胶囊
+            // 左翼辅助按键：触碰互动折叠胶囊（矢量手势图标）
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -197,7 +213,12 @@ fun VoiceInputBar(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "✨", fontSize = 18.sp)
+                Icon(
+                    imageVector = Icons.Filled.TouchApp,
+                    contentDescription = "触碰互动菜单",
+                    tint = borderColor,
+                    modifier = Modifier.size(20.dp)
+                )
             }
 
             // 中间焦点：【绝对核心重点】大招果冻主语音对讲胶囊
@@ -242,7 +263,10 @@ fun VoiceInputBar(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Mic,
+                        imageVector = if (voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive)
+                            Icons.Default.GraphicEq
+                        else
+                            Icons.Default.Mic,
                         contentDescription = "对讲麦克风",
                         tint = if (voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive) borderColor else Color.White,
                         modifier = Modifier.size(22.dp)
@@ -253,11 +277,11 @@ fun VoiceInputBar(
                     Text(
                         text = when {
                             voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive ->
-                                if (isUserSpeaking) "你正在说话(已打断)" else "正在连麦 · 随时开口"
+                                if (isUserSpeaking) "你正在发声(已打断)" else "正在连麦 · 随时开口"
                             voiceMode == VoiceMode.CONTINUOUS_NATURAL ->
                                 "开启连麦 · 随时打断"
                             voiceMode == VoiceMode.HOLD_TO_TALK && isRecording ->
-                                "松开发送给纸片人..."
+                                "倾听中... 松开发送"
                             else ->
                                 "按住说话 · 松开发送"
                         },
@@ -286,7 +310,7 @@ fun VoiceInputBar(
                 }
             }
 
-            // 右翼辅助按键：文字输入切换
+            // 右翼辅助按键：文字输入切换（矢量键盘图标）
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -301,7 +325,7 @@ fun VoiceInputBar(
             ) {
                 Icon(
                     imageVector = Icons.Default.Keyboard,
-                    contentDescription = "文字输入",
+                    contentDescription = "切换键盘输入",
                     tint = borderColor,
                     modifier = Modifier.size(20.dp)
                 )
@@ -311,23 +335,32 @@ fun VoiceInputBar(
 }
 
 @Composable
-private fun QuickActionChip(
+private fun VectorActionChip(
+    icon: ImageVector,
     text: String,
     onClick: () -> Unit
 ) {
     val borderColor = Color(0xFF281C38)
-    Box(
+    Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
             .border(1.2.dp, borderColor, RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 5.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = text,
+            tint = Color(0xFFFF5277),
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = text,
             color = borderColor,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold
         )
     }
