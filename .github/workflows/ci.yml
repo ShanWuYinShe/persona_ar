@@ -8,26 +8,22 @@ on:
 
 jobs:
   test-server:
-    name: Backend Unit Tests (pytest)
+    name: Go Backend Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Set up Go 1.24
+        uses: actions/setup-go@v5
         with:
-          version: "latest"
+          go-version: "1.24"
+          cache-dependency-path: server/go.sum
 
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Run pytest
+      - name: Run Go tests
         working-directory: ./server
-        env:
-          PYTHONPATH: .
         run: |
-          uv run --with-requirements requirements.txt pytest tests/
+          go test -v ./...
 
   build-docker:
     name: Docker Build Validation

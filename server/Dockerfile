@@ -1,16 +1,34 @@
-FROM python:3.11-slim
+# 阶段 1: 编译构建
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /build
+
+# 安装基础证书和 Git
+RUN apk add --no-cache ca-certificates git
+
+# 下载依赖
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 拷贝源码并编译静态可执行二进制
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/persona-server ./cmd/server
+
+# 阶段 2: 极简生产运行镜像
+FROM alpine:3.20
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates tzdata
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+COPY --from=builder /build/persona-server /app/persona-server
 
-COPY . .
+# 创建数据与持久化目录
+RUN mkdir -p /app/data/tts_cache
 
 EXPOSE 8000
 
-CMD ["python", "run.py"]
+ENV PORT=8000
+ENV HOST=0.0.0.0
+
+CMD ["/app/persona-server"]
