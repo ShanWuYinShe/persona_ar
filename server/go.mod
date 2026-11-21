@@ -1,6 +1,6 @@
 module github.com/ShanWuYinShe/persona_ar/server
 
-go 1.27.4
+go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0
