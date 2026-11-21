@@ -11,6 +11,7 @@ import com.persona.ar.ar.CameraXView
 import com.persona.ar.character.Character3DRenderer
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.ui.components.ChatOverlay
+import com.persona.ar.ui.components.PersonaStoreDialog
 import com.persona.ar.ui.components.SettingsDialog
 import com.persona.ar.ui.components.StatusBadge
 import com.persona.ar.ui.components.VoiceInputBar
@@ -39,7 +40,7 @@ fun PersonaMainScreen(
             )
         }
 
-        // 2. 纸片人现实空间投射层 (2.5D 与 3D 模式)
+        // 2. 纸片人现实空间投射层 (支持动态模型资产包)
         when (uiState.arMode) {
             ARMode.BILLBOARD_2_5D -> {
                 CharacterCanvasRenderer(
@@ -57,11 +58,13 @@ fun PersonaMainScreen(
             }
         }
 
-        // 3. 顶部好感度与操作状态栏
+        // 3. 顶部好感度与操作状态栏 (支持点击换角色与打开商城)
         StatusBadge(
             status = uiState.personaStatus,
+            activeModel = uiState.activeModel,
             arMode = uiState.arMode,
             onToggleARMode = { viewModel.toggleARMode() },
+            onOpenStore = { viewModel.setStoreOpen(true) },
             onOpenSettings = { viewModel.setSettingsOpen(true) },
             modifier = Modifier.align(Alignment.TopCenter)
         )
@@ -72,7 +75,6 @@ fun PersonaMainScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
         ) {
-            // 聊天气泡层（受三种气泡显示策略控制：停留常驻 / 5秒淡出 / 不显示）
             ChatOverlay(
                 messages = uiState.messages,
                 displayMode = uiState.bubbleDisplayMode,
@@ -80,7 +82,6 @@ fun PersonaMainScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 底部输入与操作栏（支持自然随时打断模式与按住说话模式）
             VoiceInputBar(
                 voiceMode = uiState.voiceMode,
                 isRecording = uiState.isRecording,
@@ -97,7 +98,24 @@ fun PersonaMainScreen(
             )
         }
 
-        // 5. 设置弹窗（含对讲模式和气泡策略设置）
+        // 5. 纸片人模型商城与工坊弹窗
+        if (uiState.isStoreOpen) {
+            PersonaStoreDialog(
+                activeModel = uiState.activeModel,
+                installedModels = uiState.installedModels,
+                storeModels = uiState.storeModels,
+                onDismiss = { viewModel.setStoreOpen(false) },
+                onSwitchModel = { id ->
+                    viewModel.switchPersonaModel(id)
+                    viewModel.setStoreOpen(false)
+                },
+                onInstallModel = { id ->
+                    viewModel.installModelFromStore(id)
+                }
+            )
+        }
+
+        // 6. 系统与交互设置弹窗
         if (uiState.isSettingsOpen) {
             SettingsDialog(
                 currentMode = uiState.arMode,

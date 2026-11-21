@@ -7,10 +7,12 @@ import com.persona.ar.ar.ARMode
 import com.persona.ar.ar.SensorTiltHelper
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
+import com.persona.ar.character.loader.PersonaModelManager
 import com.persona.ar.data.api.ApiClient
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.MessageSender
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
@@ -26,6 +28,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val audioPlayer = AudioPlayer(application)
     private val voiceRecorder = VoiceRecorder()
     private val sensorTiltHelper = SensorTiltHelper(application)
+    private val modelManager = PersonaModelManager()
 
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
@@ -34,7 +37,34 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         setupAudioPlayer()
         setupVoiceRecorder()
         setupSensors()
+        setupModelManager()
         loadInitialStatus()
+    }
+
+    private fun setupModelManager() {
+        viewModelScope.launch {
+            modelManager.activeModel.collect { active ->
+                _uiState.update { current ->
+                    current.copy(
+                        activeModel = active,
+                        visualState = current.visualState.copy(
+                            name = active.name,
+                            model = active
+                        )
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            modelManager.installedModels.collect { installed ->
+                _uiState.update { it.copy(installedModels = installed) }
+            }
+        }
+        viewModelScope.launch {
+            modelManager.storeModels.collect { store ->
+                _uiState.update { it.copy(storeModels = store) }
+            }
+        }
     }
 
     private fun setupAudioPlayer() {
@@ -61,16 +91,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(micVolume = volume) }
         }
 
-        // 自然对话模式下的打断机制 (Barge-in)
         voiceRecorder.onSpeechDetected = {
             if (_uiState.value.isSpeaking) {
-                // 用户开始发话，立即打断角色当前的播音
                 audioPlayer.interrupt()
             }
             _uiState.update { it.copy(isUserSpeaking = true) }
         }
 
-        // 自然对话模式下，静音 1.2 秒后断句完成，自动提交
         voiceRecorder.onSilenceCompleted = {
             _uiState.update { it.copy(isUserSpeaking = false) }
             onContinuousSpeechFinished()
@@ -97,13 +124,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val result = repository.getStatus()
             result.onSuccess { status ->
+                val currentActive = modelManager.activeModel.value
                 _uiState.update {
                     it.copy(
                         personaStatus = status,
                         messages = listOf(
                             ChatMessage(
                                 sender = MessageSender.PERSONA,
-                                text = "哼哼，现实世界的信号终于连上了！我现在就站在你的桌子前哦，快跟我打个招呼吧~"
+                                text = currentActive.greetingText
                             )
                         )
                     )
@@ -195,9 +223,46 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // --- 动态模型与商城系统 ---
+
+    fun switchPersonaModel(modelId: String) {
+        if (modelManager.switchModel(modelId)) {
+            val newModel = modelManager.activeModel.value
+            audioPlayer.interrupt()
+            _uiState.update { current ->
+                current.copy(
+                    activeModel = newModel,
+                    visualState = current.visualState.copy(
+                        name = newModel.name,
+                        model = newModel
+                    ),
+                    messages = listOf(
+                        ChatMessage(
+                            sender = MessageSender.PERSONA,
+                            text = newModel.greetingText
+                        )
+                    )
+                )
+            }
+        }
+    }
+
+    fun installModelFromStore(modelId: String) {
+        if (modelManager.installModelFromStore(modelId)) {
+            switchPersonaModel(modelId)
+        }
+    }
+
+    fun setStoreOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isStoreOpen = isOpen) }
+    }
+
+    fun setPreviewModel(model: PersonaModelManifest?) {
+        _uiState.update { it.copy(previewModel = model) }
+    }
+
     // --- 对讲模式控制 ---
 
-    /** 模式1：自然对话模式下的开关切换（点击开启常态监听，随时说话随时打断） */
     fun toggleContinuousListening() {
         val nextActive = !_uiState.value.isContinuousActive
         _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive) }
@@ -209,16 +274,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun onContinuousSpeechFinished() {
+        val activeName = _uiState.value.activeModel?.name ?: "你"
         val naturalPrompts = listOf(
-            "看见你在这里陪着我，心情变得很好呢。",
-            "你刚刚说的我都听到了，现实世界今天天气怎么样？",
-            "星野，能给我讲讲你的世界是什么样子的吗？",
-            "你真可爱，我很喜欢听你说话。"
+            "看见你在这里陪着我，心情变得很放松呢。",
+            "现实世界今天感觉很有趣，能多跟我说说吗？",
+            "和你聊天总觉得时间过得好快呢。",
+            "你今天过得怎么样？"
         )
         sendMessage(naturalPrompts.random())
     }
 
-    /** 模式2：按住说话，松开发送 */
     fun startHoldRecording() {
         if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
         _uiState.update { it.copy(isRecording = true) }
@@ -232,10 +297,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         sendMessage("看到你站在我面前，感觉好生动呀！")
     }
 
-    // --- 设置项更新 ---
-
     fun setVoiceMode(mode: VoiceMode) {
-        // 切换时若在录音中，先平稳复位
         voiceRecorder.stopListening()
         _uiState.update {
             it.copy(

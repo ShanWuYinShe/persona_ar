@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewInAr
@@ -16,22 +17,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.ar.ARMode
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 
 @Composable
 fun StatusBadge(
     status: PersonaStatus?,
+    activeModel: PersonaModelManifest?,
     arMode: ARMode,
     onToggleARMode: () -> Unit,
+    onOpenStore: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val charName = activeModel?.name ?: status?.name ?: "星野"
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -40,11 +45,12 @@ fun StatusBadge(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧角色好感度与心情胶囊
+        // 左侧角色好感度与心情胶囊 (点击也可直接打开角色库)
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
                 .background(Color(0x99201C2B))
+                .clickable { onOpenStore() }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -57,7 +63,7 @@ fun StatusBadge(
             Spacer(modifier = Modifier.width(6.dp))
             Column {
                 Text(
-                    text = "${status?.name ?: "星野"} · Lv.${((status?.affinity ?: 15) / 20) + 1} (${status?.affinityLevel ?: "初识"})",
+                    text = "$charName · Lv.${((status?.affinity ?: 15) / 20) + 1}",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -70,11 +76,27 @@ fun StatusBadge(
             }
         }
 
-        // 右侧操作按钮组（AR 模式切换、设置）
+        // 右侧操作按钮组（角色库入口、AR 模式切换、系统设置）
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // 角色库与模型商城入口
+            IconButton(
+                onClick = onOpenStore,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x99201C2B))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Face,
+                    contentDescription = "模型商城与换角色",
+                    tint = Color(0xFFFFD1DC),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
             // 模式切换胶囊
             Box(
                 modifier = Modifier
