@@ -24,6 +24,8 @@ jobs:
 
       - name: Run pytest
         working-directory: ./server
+        env:
+          PYTHONPATH: .
         run: |
           uv run --with-requirements requirements.txt pytest tests/
 
