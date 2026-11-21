@@ -1,5 +1,7 @@
 package com.persona.ar.data.api
 
+import com.persona.ar.data.model.ChatRequest
+import com.persona.ar.data.model.ChatResponse
 import com.persona.ar.data.model.CreateMemoryRequest
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MemoryItem
