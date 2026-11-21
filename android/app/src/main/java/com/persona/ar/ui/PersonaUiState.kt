@@ -42,5 +42,10 @@ data class PersonaUiState(
     val isLoading: Boolean = false,
     val isSettingsOpen: Boolean = false,
     val serverBaseUrl: String = "http://10.0.2.2:8000/",
+    // 大语言模型接入配置 (OpenAI / DeepSeek / 本地 Ollama)
+    val llmProvider: String = "mock",
+    val llmBaseUrl: String = "https://api.deepseek.com",
+    val llmApiKey: String = "",
+    val llmModel: String = "deepseek-chat",
     val errorMessage: String? = null
 )

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
@@ -40,15 +41,24 @@ fun SettingsDialog(
     currentVoiceMode: VoiceMode,
     currentBubbleMode: BubbleDisplayMode,
     currentServerUrl: String,
+    currentLlmProvider: String = "mock",
+    currentLlmBaseUrl: String = "https://api.deepseek.com",
+    currentLlmApiKey: String = "",
+    currentLlmModel: String = "deepseek-chat",
     onDismiss: () -> Unit,
     onToggleMode: () -> Unit,
     onSelectVoiceMode: (VoiceMode) -> Unit,
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
-    onUpdateServerUrl: (String) -> Unit
+    onUpdateServerUrl: (String) -> Unit,
+    onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> }
 ) {
     var serverInput by remember { mutableStateOf(currentServerUrl) }
     var selectedVoiceMode by remember { mutableStateOf(currentVoiceMode) }
     var selectedBubbleMode by remember { mutableStateOf(currentBubbleMode) }
+    var llmProvider by remember { mutableStateOf(currentLlmProvider) }
+    var llmBaseUrl by remember { mutableStateOf(currentLlmBaseUrl) }
+    var llmApiKey by remember { mutableStateOf(currentLlmApiKey) }
+    var llmModel by remember { mutableStateOf(currentLlmModel) }
 
     val borderColor = Color(0xFF281C38)
     val surfaceCream = Color(0xFFFFFDF9)
@@ -257,6 +267,110 @@ fun SettingsDialog(
                     )
                 }
 
+                // 5. 大语言模型对话引擎配置 (LLM API)
+                SectionContainer(
+                    icon = Icons.Filled.Psychology,
+                    title = "大模型大脑引擎配置 (LLM API)",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
+                ) {
+                    Text(
+                        text = "支持接入 DeepSeek、OpenAI、Ollama 本地私有模型等处理情感对话。",
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        lineHeight = 14.sp
+                    )
+
+                    // 厂商预置选择
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("DeepSeek", "OpenAI", "Ollama", "系统内置").forEach { pName ->
+                            val isSel = when (pName) {
+                                "DeepSeek" -> llmBaseUrl.contains("deepseek")
+                                "OpenAI" -> llmBaseUrl.contains("openai")
+                                "Ollama" -> llmBaseUrl.contains("11434")
+                                else -> llmProvider == "mock"
+                            }
+                            GameMiniChip(
+                                title = pName,
+                                isSelected = isSel,
+                                activeColor = Color(0xFF673AB7),
+                                onClick = {
+                                    when (pName) {
+                                        "DeepSeek" -> {
+                                            llmProvider = "openai"
+                                            llmBaseUrl = "https://api.deepseek.com"
+                                            llmModel = "deepseek-chat"
+                                        }
+                                        "OpenAI" -> {
+                                            llmProvider = "openai"
+                                            llmBaseUrl = "https://api.openai.com"
+                                            llmModel = "gpt-4o-mini"
+                                        }
+                                        "Ollama" -> {
+                                            llmProvider = "ollama"
+                                            llmBaseUrl = "http://10.0.2.2:11434"
+                                            llmModel = "qwen2.5:7b"
+                                        }
+                                        else -> {
+                                            llmProvider = "mock"
+                                            llmBaseUrl = ""
+                                            llmModel = "builtin-heuristic"
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (llmProvider != "mock") {
+                        // API 密钥输入
+                        OutlinedTextField(
+                            value = llmApiKey,
+                            onValueChange = { llmApiKey = it },
+                            label = { Text("API Key 密钥", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Base URL
+                        OutlinedTextField(
+                            value = llmBaseUrl,
+                            onValueChange = { llmBaseUrl = it },
+                            label = { Text("API 端点地址 (Base URL)", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // 模型名称
+                        OutlinedTextField(
+                            value = llmModel,
+                            onValueChange = { llmModel = it },
+                            label = { Text("模型标识 (Model Name)", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
                 // 底部按钮栏
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -274,6 +388,7 @@ fun SettingsDialog(
                             onSelectVoiceMode(selectedVoiceMode)
                             onSelectBubbleMode(selectedBubbleMode)
                             onUpdateServerUrl(serverInput.trim())
+                            onUpdateLlmConfig(llmProvider, llmBaseUrl.trim(), llmApiKey.trim(), llmModel.trim())
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(

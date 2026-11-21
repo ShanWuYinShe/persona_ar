@@ -132,3 +132,10 @@ data class CreateMemoryRequest(
     val content: String,
     val importance: Int = 3
 )
+
+data class LLMConfigRequest(
+    val provider: String = "openai",
+    @SerializedName("base_url") val baseUrl: String = "https://api.deepseek.com",
+    @SerializedName("api_key") val apiKey: String = "",
+    val model: String = "deepseek-chat"
+)

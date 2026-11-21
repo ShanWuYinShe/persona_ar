@@ -331,11 +331,18 @@ fun PersonaMainScreen(
                 currentVoiceMode = uiState.voiceMode,
                 currentBubbleMode = uiState.bubbleDisplayMode,
                 currentServerUrl = uiState.serverBaseUrl,
+                currentLlmProvider = uiState.llmProvider,
+                currentLlmBaseUrl = uiState.llmBaseUrl,
+                currentLlmApiKey = uiState.llmApiKey,
+                currentLlmModel = uiState.llmModel,
                 onDismiss = { viewModel.setSettingsOpen(false) },
                 onToggleMode = { viewModel.toggleARMode() },
                 onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
                 onSelectBubbleMode = { mode -> viewModel.setBubbleDisplayMode(mode) },
-                onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) }
+                onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) },
+                onUpdateLlmConfig = { provider, baseUrl, apiKey, model ->
+                    viewModel.updateLlmConfig(provider, baseUrl, apiKey, model)
+                }
             )
         }
     }

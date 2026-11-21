@@ -6,6 +6,7 @@ import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
 import com.persona.ar.data.model.CreateMemoryRequest
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.LLMConfigRequest
 import com.persona.ar.data.model.MemoryItem
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
@@ -240,6 +241,27 @@ class PersonaRepository {
             currentAffinity = 22,
             audioBase64 = null
         )
+    }
+
+    suspend fun updateLLMConfig(
+        provider: String,
+        baseUrl: String,
+        apiKey: String,
+        model: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.updateLLMConfig(
+                LLMConfigRequest(
+                    provider = provider,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = model
+                )
+            )
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.success(false)
+        }
     }
 
     private fun createFallbackStatus(): PersonaStatus {

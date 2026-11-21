@@ -400,6 +400,20 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(serverBaseUrl = newUrl) }
     }
 
+    fun updateLlmConfig(provider: String, baseUrl: String, apiKey: String, model: String) {
+        _uiState.update {
+            it.copy(
+                llmProvider = provider,
+                llmBaseUrl = baseUrl,
+                llmApiKey = apiKey,
+                llmModel = model
+            )
+        }
+        viewModelScope.launch {
+            repository.updateLLMConfig(provider, baseUrl, apiKey, model)
+        }
+    }
+
     // --- 专属情感回忆手账管理 ---
 
     fun setMemoryNotebookOpen(isOpen: Boolean) {
