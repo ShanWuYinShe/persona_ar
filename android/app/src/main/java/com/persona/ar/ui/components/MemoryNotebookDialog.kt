@@ -481,9 +481,11 @@ private fun MemoryCardItem(
             )
 
             // 记录时间戳
-            if (memory.timestamp.isNotBlank()) {
+            if (memory.timestamp > 0.0) {
+                val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    .format(java.util.Date((memory.timestamp * 1000).toLong()))
                 Text(
-                    text = memory.timestamp.take(19).replace("T", " "),
+                    text = timeStr,
                     fontSize = 10.sp,
                     color = Color.Gray
                 )
