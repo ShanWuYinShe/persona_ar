@@ -84,17 +84,33 @@ type PersonaStatus struct {
 }
 
 type PersonaModelManifest struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Author       string   `json:"author"`
-	Description  string   `json:"description"`
-	Tags         []string `json:"tags"`
-	PreviewImage string   `json:"preview_image"`
-	VoiceName    string   `json:"voice_name"`
-	GreetingText string   `json:"greeting_text"`
-	DownloadURL  string   `json:"download_url"`
-	FileSize     string   `json:"file_size"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Version         string   `json:"version"`
+	Author          string   `json:"author"`
+	Description     string   `json:"description"`
+	Tags            []string `json:"tags"`
+	PreviewImage    string   `json:"preview_image,omitempty"`
+	PreviewColorHex string   `json:"preview_color,omitempty"`
+	HairColorHex    string   `json:"hair_color,omitempty"`
+	EyeColorHex     string   `json:"eye_color,omitempty"`
+	SkirtColorHex   string   `json:"skirt_color,omitempty"`
+	VoiceName       string   `json:"voice_name"`
+	DefaultVoice    string   `json:"default_voice,omitempty"`
+	GreetingText    string   `json:"greeting_text"`
+	DownloadURL     string   `json:"download_url,omitempty"`
+	FileSize        string   `json:"file_size,omitempty"`
+	DownloadsCount  int      `json:"downloads_count,omitempty"`
+	Rating          float32  `json:"rating,omitempty"`
+	IsInstalled     bool     `json:"is_installed"`
+}
+
+type CreateMemoryRequest struct {
+	UserID     string `json:"user_id"`
+	PersonaID  string `json:"persona_id"`
+	Category   string `json:"category"`
+	Content    string `json:"content" binding:"required"`
+	Importance int    `json:"importance"`
 }
 
 type MemoryItem struct {

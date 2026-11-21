@@ -4,6 +4,7 @@ import com.persona.ar.ar.ARMode
 import com.persona.ar.character.CharacterVisualState
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
+import com.persona.ar.data.model.MemoryItem
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.VoiceMode
@@ -13,6 +14,16 @@ data class PersonaUiState(
     val visualState: CharacterVisualState = CharacterVisualState(),
     val personaStatus: PersonaStatus? = null,
     val messages: List<ChatMessage> = emptyList(),
+    // 专属情感回忆手账系统
+    val isMemoryNotebookOpen: Boolean = false,
+    val memories: List<MemoryItem> = emptyList(),
+    val isMemoryLoading: Boolean = false,
+    // 羁绊与进阶成长经验体系 (Bond EXP & Level)
+    val bondLevel: Int = 1,
+    val bondExp: Int = 45,
+    val bondExpNext: Int = 100,
+    val bondLevelTitle: String = "初遇契约",
+    val bondLevelUpNotice: String? = null,
     // 动态纸片人模型系统 (商城与工坊资产包)
     val activeModel: PersonaModelManifest? = null,
     val installedModels: List<PersonaModelManifest> = emptyList(),
@@ -22,7 +33,7 @@ data class PersonaUiState(
     // 对讲模式与气泡策略（设置中可调）
     val voiceMode: VoiceMode = VoiceMode.CONTINUOUS_NATURAL,
     val bubbleDisplayMode: BubbleDisplayMode = BubbleDisplayMode.PERSISTENT,
-    // 实时录音/对讲状态
+    // 实时录音/对讲状态与音浪跳动柱
     val isRecording: Boolean = false,
     val isContinuousActive: Boolean = false,
     val micVolume: Float = 0f,

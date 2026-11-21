@@ -114,3 +114,21 @@ enum class MessageSender {
     USER,
     PERSONA
 }
+
+data class MemoryItem(
+    val id: String,
+    @SerializedName("user_id") val userId: String,
+    @SerializedName("persona_id") val personaId: String,
+    val category: String,
+    val content: String,
+    val importance: Int = 3,
+    val timestamp: Double = 0.0
+)
+
+data class CreateMemoryRequest(
+    @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("persona_id") val personaId: String = "hoshino",
+    val category: String = "SHARED_MOMENT",
+    val content: String,
+    val importance: Int = 3
+)

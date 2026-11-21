@@ -42,6 +42,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         setupSensors()
         setupModelManager()
         loadInitialStatus()
+        loadMemories()
     }
 
     private fun setupModelManager() {
@@ -143,6 +144,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 audioPlayer.speakTextFallback(respText)
             }
+            addBondExp(3)
         }
     }
 
@@ -228,6 +230,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     audioPlayer.speakTextFallback(resp.text)
                 }
+                addBondExp(3)
             }
         }
     }
@@ -261,6 +264,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     audioPlayer.speakTextFallback(resp.text)
                 }
+                addBondExp(3)
             }
         }
     }
@@ -380,6 +384,95 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     fun updateServerUrl(newUrl: String) {
         ApiClient.baseUrl = newUrl
         _uiState.update { it.copy(serverBaseUrl = newUrl) }
+    }
+
+    // --- 专属情感回忆手账管理 ---
+
+    fun setMemoryNotebookOpen(isOpen: Boolean) {
+        _uiState.update { it.copy(isMemoryNotebookOpen = isOpen) }
+        if (isOpen) {
+            loadMemories()
+        }
+    }
+
+    fun loadMemories() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isMemoryLoading = true) }
+            val result = repository.getMemories()
+            result.onSuccess { memoryList ->
+                _uiState.update { it.copy(memories = memoryList, isMemoryLoading = false) }
+            }.onFailure {
+                _uiState.update { it.copy(isMemoryLoading = false) }
+            }
+        }
+    }
+
+    fun createMemory(content: String, category: String = "general", importance: Int = 3) {
+        if (content.isBlank()) return
+        viewModelScope.launch {
+            val result = repository.createMemory(content, category, importance)
+            result.onSuccess { newMemory ->
+                _uiState.update { it.copy(memories = listOf(newMemory) + it.memories) }
+                addBondExp(15) // 手动书写回忆大幅提升羁绊经验
+            }
+        }
+    }
+
+    fun deleteMemory(memoryId: String) {
+        viewModelScope.launch {
+            val result = repository.deleteMemory(memoryId)
+            result.onSuccess {
+                _uiState.update { current ->
+                    current.copy(memories = current.memories.filterNot { it.id == memoryId })
+                }
+            }
+        }
+    }
+
+    // --- 羁绊成长与升级体系 ---
+
+    fun addBondExp(points: Int) {
+        _uiState.update { current ->
+            var newExp = current.bondExp + points
+            var newLevel = current.bondLevel
+            var nextThreshold = current.bondExpNext
+            var levelUpNotice: String? = null
+
+            while (newExp >= nextThreshold && newLevel < 10) {
+                newExp -= nextThreshold
+                newLevel += 1
+                nextThreshold = (nextThreshold * 1.5).toInt()
+                val title = getBondTitleForLevel(newLevel)
+                levelUpNotice = "🎉 羁绊升级！达到 Lv.$newLevel【$title】"
+            }
+
+            current.copy(
+                bondLevel = newLevel,
+                bondExp = newExp,
+                bondExpNext = nextThreshold,
+                bondLevelTitle = getBondTitleForLevel(newLevel),
+                bondLevelUpNotice = levelUpNotice ?: current.bondLevelUpNotice
+            )
+        }
+    }
+
+    fun dismissBondNotice() {
+        _uiState.update { it.copy(bondLevelUpNotice = null) }
+    }
+
+    private fun getBondTitleForLevel(level: Int): String {
+        return when (level) {
+            1 -> "初遇契约"
+            2 -> "朝夕相伴"
+            3 -> "心有灵犀"
+            4 -> "并肩同行"
+            5 -> "灵魂共鸣"
+            6 -> "情深意重"
+            7 -> "命运相连"
+            8 -> "无言默契"
+            9 -> "深邃羁绊"
+            else -> "至臻誓约"
+        }
     }
 
     override fun onCleared() {

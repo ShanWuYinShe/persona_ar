@@ -121,6 +121,31 @@ func (m *MemoryManager) AddMemory(userID, personaID, content, category string, i
 	return item
 }
 
+func (m *MemoryManager) DeleteMemory(userID, memoryID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	list, ok := m.memories[userID]
+	if !ok {
+		return false
+	}
+
+	targetIdx := -1
+	for i, item := range list {
+		if item.ID == memoryID {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx == -1 {
+		return false
+	}
+
+	m.memories[userID] = append(list[:targetIdx], list[targetIdx+1:]...)
+	m.saveToDiskUnsafe()
+	return true
+}
+
 func (m *MemoryManager) ExtractPreferenceFromDialogue(userID, personaID, message string) *model.MemoryItem {
 	msg := strings.TrimSpace(message)
 
