@@ -9,13 +9,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,8 +31,8 @@ import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.VoiceMode
 
 /**
- * 卡通游戏/二游风格的系统与交互设置公告板
- * 采用 Claymorphism 暖白底、2.5dp 饱满深紫黑描边与果冻立体按键
+ * 卡通二游风格的系统与交互设置公告板
+ * 严守专业规范：全矢量图标，绝不使用系统 Emoji 字符代替图标。
  */
 @Composable
 fun SettingsDialog(
@@ -44,9 +50,9 @@ fun SettingsDialog(
     var selectedVoiceMode by remember { mutableStateOf(currentVoiceMode) }
     var selectedBubbleMode by remember { mutableStateOf(currentBubbleMode) }
 
-    val borderColor = Color(0xFF281C38) // 饱满深紫黑边框
-    val surfaceCream = Color(0xFFFFFDF9) // 奶油暖白底
-    val sectionBg = Color(0xFFFFF5EB) // 淡暖橙黄分区背景
+    val borderColor = Color(0xFF281C38)
+    val surfaceCream = Color(0xFFFFFDF9)
+    val sectionBg = Color(0xFFFFF5EB)
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
@@ -54,7 +60,7 @@ fun SettingsDialog(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(surfaceCream)
-                .border(2.5.dp, borderColor, RoundedCornerShape(24.dp))
+                .border(2.dp, borderColor, RoundedCornerShape(24.dp))
                 .padding(20.dp)
         ) {
             Column(
@@ -63,7 +69,7 @@ fun SettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 顶部标题栏 + 糖果关闭按钮
+                // 顶部标题栏 + 矢量关闭按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -75,16 +81,21 @@ fun SettingsDialog(
                                 .size(32.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFFFFD54F))
-                                .border(2.dp, borderColor, CircleShape),
+                                .border(1.5.dp, borderColor, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "⚙️", fontSize = 16.sp)
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = null,
+                                tint = borderColor,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "系统与互动设置",
-                            color = Color(0xFF281C38),
-                            fontSize = 18.sp,
+                            color = borderColor,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Black
                         )
                     }
@@ -105,29 +116,20 @@ fun SettingsDialog(
                     }
                 }
 
-                // 1. 语音对讲方式设置（二游可调选项）
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(sectionBg)
-                        .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // 1. 语音对讲方式设置
+                SectionContainer(
+                    icon = Icons.Filled.Mic,
+                    title = "语音交流互动机制",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
                 ) {
-                    Text(
-                        text = "🎙️ 语音交流互动机制",
-                        color = Color(0xFF281C38),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         GameOptionChip(
                             title = "随时打断·连麦",
-                            subtitle = "如同真人同处一室",
+                            subtitle = "如同真人同室交流",
                             isSelected = selectedVoiceMode == VoiceMode.CONTINUOUS_NATURAL,
                             activeColor = Color(0xFF00E676),
                             onClick = { selectedVoiceMode = VoiceMode.CONTINUOUS_NATURAL },
@@ -144,31 +146,22 @@ fun SettingsDialog(
                     }
                     Text(
                         text = if (selectedVoiceMode == VoiceMode.CONTINUOUS_NATURAL)
-                            "• 连麦模式: 点击大招按钮启动监听，无论星野正在说话还是沉默，你随时开口都能瞬间打断TA，静音自动断句发送"
+                            "• 连麦模式: 开启监听后，星野说话期间你随时开口即可瞬间掐断播音，静音自动断句发送"
                         else
-                            "• 对讲模式: 按住金色麦克风蓄力说话，松开发送，适合嘈杂户外防误触",
+                            "• 对讲模式: 按住底部的麦克风按钮蓄力说话，松开后即刻发送",
                         color = Color(0xFF6B587B),
                         fontSize = 10.sp,
                         lineHeight = 14.sp
                     )
                 }
 
-                // 2. 对话气泡显示策略（二游可调选项）
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(sectionBg)
-                        .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // 2. 对话气泡显示策略
+                SectionContainer(
+                    icon = Icons.Filled.ChatBubble,
+                    title = "对白气泡显示策略",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
                 ) {
-                    Text(
-                        text = "💬 Galgame 对白框显示策略",
-                        color = Color(0xFF281C38),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -197,9 +190,9 @@ fun SettingsDialog(
                     }
                     Text(
                         text = when (selectedBubbleMode) {
-                            BubbleDisplayMode.PERSISTENT -> "• 常驻模式: Galgame经典对白框始终保留，方便向上回滚查看完整心路历程"
-                            BubbleDisplayMode.AUTO_FADE_OUT -> "• 5秒淡出: 星野说完后5秒自动透明收起，视野开阔不挡现实风景"
-                            BubbleDisplayMode.HIDDEN -> "• 沉浸模式: 零文字遮挡，完全凭借星野的水汪汪神态与萌音交流"
+                            BubbleDisplayMode.PERSISTENT -> "• 常驻模式: 完整保留对白记录，方便回滚查阅"
+                            BubbleDisplayMode.AUTO_FADE_OUT -> "• 5秒淡出: 播放结束5秒后自动隐去，视野干净不挡风景"
+                            BubbleDisplayMode.HIDDEN -> "• 纯净模式: 零文字遮挡，完全凭借星野的神态动作与萌音交流"
                         },
                         color = Color(0xFF6B587B),
                         fontSize = 10.sp,
@@ -208,21 +201,12 @@ fun SettingsDialog(
                 }
 
                 // 3. 现实投射视觉模式
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(sectionBg)
-                        .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                SectionContainer(
+                    icon = Icons.Filled.ViewInAr,
+                    title = "现实投射视觉维度",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
                 ) {
-                    Text(
-                        text = "✨ 现实投射视觉维度",
-                        color = Color(0xFF281C38),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -247,26 +231,17 @@ fun SettingsDialog(
                 }
 
                 // 4. 后端 API 地址
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(sectionBg)
-                        .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                SectionContainer(
+                    icon = Icons.Filled.Dns,
+                    title = "情感中枢服务器地址",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
                 ) {
-                    Text(
-                        text = "🌐 情感中枢服务器地址",
-                        color = Color(0xFF281C38),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                     OutlinedTextField(
                         value = serverInput,
                         onValueChange = { serverInput = it },
                         textStyle = LocalTextStyle.current.copy(
-                            color = Color(0xFF281C38),
+                            color = borderColor,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         ),
@@ -306,10 +281,10 @@ fun SettingsDialog(
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
-                            .border(2.dp, borderColor, RoundedCornerShape(14.dp))
+                            .border(1.8.dp, borderColor, RoundedCornerShape(14.dp))
                     ) {
                         Text(
-                            text = "✨ 保存并应用",
+                            text = "保存并应用",
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Black
@@ -318,6 +293,42 @@ fun SettingsDialog(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SectionContainer(
+    icon: ImageVector,
+    title: String,
+    sectionBg: Color,
+    borderColor: Color,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(sectionBg)
+            .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = borderColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = title,
+                color = borderColor,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        content()
     }
 }
 
@@ -336,7 +347,7 @@ private fun GameOptionChip(
             .clip(RoundedCornerShape(12.dp))
             .background(if (isSelected) activeColor else Color.White)
             .border(
-                width = if (isSelected) 2.dp else 1.5.dp,
+                width = if (isSelected) 2.dp else 1.2.dp,
                 color = if (isSelected) borderColor else borderColor.copy(alpha = 0.25f),
                 shape = RoundedCornerShape(12.dp)
             )
@@ -349,7 +360,7 @@ private fun GameOptionChip(
                 text = title,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
-                color = if (isSelected) Color.White else Color(0xFF281C38)
+                color = if (isSelected) Color.White else borderColor
             )
             Text(
                 text = subtitle,
@@ -375,7 +386,7 @@ private fun GameMiniChip(
             .clip(RoundedCornerShape(10.dp))
             .background(if (isSelected) activeColor else Color.White)
             .border(
-                width = if (isSelected) 2.dp else 1.2.dp,
+                width = if (isSelected) 1.8.dp else 1.2.dp,
                 color = if (isSelected) borderColor else borderColor.copy(alpha = 0.25f),
                 shape = RoundedCornerShape(10.dp)
             )

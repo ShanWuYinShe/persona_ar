@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import androidx.compose.material.icons.filled.SentimentVerySatisfied
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -25,8 +29,7 @@ import com.persona.ar.data.model.PersonaStatus
 
 /**
  * 极简通透的二游顶部 HUD 状态栏
- * 遵循“克制留白、突出重点”原则，收拢冗余指标，仅保留核心身份标识与系统入口，
- * 绝不侵占 AR 现实空间与纸片人主体。
+ * 严守专业规范：全矢量图标，绝不使用系统 Emoji 字符代替图标，保持跨端渲染精致统一。
  */
 @Composable
 fun StatusBadge(
@@ -41,13 +44,7 @@ fun StatusBadge(
     val charName = activeModel?.name ?: status?.name ?: "星野"
     val affinity = status?.affinity ?: 15
     val level = (affinity / 20) + 1
-    val moodIcon = when (status?.mood) {
-        "开心", "欢欣" -> "🥰"
-        "害羞" -> "😳"
-        "傲娇", "撒娇" -> "😤"
-        "好奇" -> "✨"
-        else -> "🌸"
-    }
+    val borderColor = Color(0xFF281C38)
 
     Row(
         modifier = modifier
@@ -62,20 +59,25 @@ fun StatusBadge(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color(0xE6FFFDF9)) // 90% 不透明奶油暖白
-                .border(1.5.dp, Color(0xFF281C38), RoundedCornerShape(20.dp))
+                .border(1.5.dp, borderColor, RoundedCornerShape(20.dp))
                 .clickable { onOpenStore() }
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 心情表情小圆标
+            // 心情表情矢量小图标
             Box(
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(26.dp)
                     .clip(CircleShape)
                     .background(Color(0xFFFFE0E8)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = moodIcon, fontSize = 13.sp)
+                Icon(
+                    imageVector = Icons.Filled.SentimentVerySatisfied,
+                    contentDescription = "角色心情",
+                    tint = Color(0xFFFF5277),
+                    modifier = Modifier.size(16.dp)
+                )
             }
 
             Spacer(modifier = Modifier.width(6.dp))
@@ -83,36 +85,42 @@ fun StatusBadge(
             // 角色名与等级
             Text(
                 text = "$charName · Lv.$level",
-                color = Color(0xFF281C38),
+                color = borderColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Black
             )
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // 好感爱心微标
-            Text(
-                text = "❤️",
-                fontSize = 10.sp
+            // 好感爱心矢量图标
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "好感度",
+                tint = Color(0xFFFF5277),
+                modifier = Modifier.size(14.dp)
             )
         }
 
-        // 右侧：仅保留设置入口与工坊快捷按钮，圆润小巧
+        // 右侧：仅保留设置入口与工坊快捷按钮（纯矢量图标）
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 工坊图鉴快捷键
-            Box(
+            // 角色图鉴/契约工坊快捷键
+            IconButton(
+                onClick = onOpenStore,
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(Color(0xE6FFFDF9))
-                    .border(1.5.dp, Color(0xFF281C38), CircleShape)
-                    .clickable { onOpenStore() },
-                contentAlignment = Alignment.Center
+                    .border(1.5.dp, borderColor, CircleShape)
             ) {
-                Text(text = "👑", fontSize = 15.sp)
+                Icon(
+                    imageVector = Icons.Filled.AutoAwesome,
+                    contentDescription = "契约工坊与伙伴图鉴",
+                    tint = Color(0xFFFFB300),
+                    modifier = Modifier.size(18.dp)
+                )
             }
 
             // 系统设置快捷键
@@ -122,12 +130,12 @@ fun StatusBadge(
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(Color(0xE6FFFDF9))
-                    .border(1.5.dp, Color(0xFF281C38), CircleShape)
+                    .border(1.5.dp, borderColor, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "系统设置",
-                    tint = Color(0xFF281C38),
+                    contentDescription = "系统与互动设置",
+                    tint = borderColor,
                     modifier = Modifier.size(18.dp)
                 )
             }
