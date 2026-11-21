@@ -70,3 +70,36 @@ class PersonaStatus(BaseModel):
     mood: str = Field(..., description="当前心情")
     dialogue_count: int = Field(..., description="累计互动次数")
     recent_memories: List[str] = Field(default_factory=list, description="短期情感记忆")
+
+class MemoryItemResponse(BaseModel):
+    id: str
+    user_id: str
+    persona_id: str
+    category: str
+    content: str
+    importance: int
+    timestamp: float
+
+class CreateMemoryRequest(BaseModel):
+    user_id: str = "user_default"
+    persona_id: str = "hoshino"
+    category: str = "SHARED_MOMENT"
+    content: str
+    importance: int = 3
+
+class StoreModelManifest(BaseModel):
+    id: str
+    name: str
+    author: str
+    version: str
+    model_type: str = "SPRITE_2_5D"
+    description: str
+    preview_color_hex: str
+    hair_color_hex: str
+    eye_color_hex: str
+    skirt_color_hex: str
+    default_voice: str
+    greeting_text: str
+    tags: List[str]
+    downloads_count: int
+    rating: float
