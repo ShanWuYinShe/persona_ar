@@ -17,5 +17,6 @@
 
 ## PR 证据图
 - UI 改动的 Before/After 截图用 `gh` 的 `--attach` 上传，**不提交进仓库**（`.github/pr-evidence/` 不得重建）。
-- 压缩：`~/.agents/bin/pr-evidence` 的 `shrink`；上传：`gh pr create --body-file <正文> --attach 'before.png#改前' --attach 'after.png#改后'`。
+- 大小上限以 GitHub 附件为准：图片 10MB / 视频 100MB / 单次 50 个。
+- 压缩（可选，只为加载速度）：`~/.agents/bin/pr-evidence` 的 `shrink`；上传：`gh pr create --body-file <正文> --attach 'before.png#改前' --attach 'after.png#改后'`。
 - 建完 PR 用 `pr-evidence check --body <正文> --post` 复核附件地址真实可访问。
