@@ -6,6 +6,7 @@ import httpx
 
 from app.core.config import settings
 from app.models.schemas import EmotionType, ActionType, TouchPart
+from app.persona.memory import memory_manager, MemoryCategory
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,13 @@ class PersonaEngine:
             "Authorization": f"Bearer {settings.llm_api_key}",
             "Content-Type": "application/json"
         }
-        messages = [{"role": "system", "content": persona.prompt}]
+        
+        system_content = persona.prompt
+        memory_fragment = memory_manager.get_context_prompt_fragment("user_default", persona.persona_id)
+        if memory_fragment:
+            system_content += f"\n\n{memory_fragment}"
+
+        messages = [{"role": "system", "content": system_content}]
         for item in state.history[-6:]:
             messages.append(item)
         messages.append({"role": "user", "content": message})

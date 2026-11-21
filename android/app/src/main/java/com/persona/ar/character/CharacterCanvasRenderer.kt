@@ -605,6 +605,17 @@ private fun DrawScope.drawGameEmoteParticles(
             drawStar(cx + 80f * s, cy - 60f * s, 16f * s, Color(0xFFFFD54F))
             drawStar(cx - 75f * s, cy - 50f * s, 12f * s, Color(0xFFFF4081))
         }
+        EmotionType.SHY -> {
+            drawHeart(cx + 78f * s, cy - 55f * s, 14f * s, Color(0xFFFF4081))
+            drawHeart(cx - 72f * s, cy - 65f * s, 10f * s, Color(0xFFFF80AB))
+        }
+        EmotionType.SURPRISED -> {
+            drawStar(cx, cy - 130f * s, 14f * s, Color(0xFFFFEA00))
+        }
+        EmotionType.SAD -> {
+            drawTearDrop(cx + 42f * s, cy + 15f * s, 8f * s, Color(0xFF00B0FF))
+            drawTearDrop(cx - 42f * s, cy + 15f * s, 8f * s, Color(0xFF00B0FF))
+        }
         EmotionType.ANGRY -> {
             val sx = cx + 70f * s
             val sy = cy - 70f * s
@@ -620,6 +631,38 @@ private fun DrawScope.drawGameEmoteParticles(
         }
         else -> Unit
     }
+}
+
+// 辅助爱心绘制
+private fun DrawScope.drawHeart(
+    x: Float,
+    y: Float,
+    size: Float,
+    color: Color
+) {
+    val path = Path().apply {
+        moveTo(x, y + size * 0.3f)
+        cubicTo(x - size, y - size * 0.5f, x - size * 1.3f, y + size * 0.6f, x, y + size * 1.3f)
+        cubicTo(x + size * 1.3f, y + size * 0.6f, x + size, y - size * 0.5f, x, y + size * 0.3f)
+    }
+    drawPath(path, color)
+    drawPath(path, Color(0xFF281C38), style = Stroke(2f))
+}
+
+// 辅助泪滴绘制
+private fun DrawScope.drawTearDrop(
+    x: Float,
+    y: Float,
+    radius: Float,
+    color: Color
+) {
+    val path = Path().apply {
+        moveTo(x, y - radius)
+        cubicTo(x - radius, y, x - radius, y + radius, x, y + radius)
+        cubicTo(x + radius, y + radius, x + radius, y, x, y - radius)
+    }
+    drawPath(path, color)
+    drawPath(path, Color(0xFF281C38), style = Stroke(1.5f))
 }
 
 // 辅助五角星绘制

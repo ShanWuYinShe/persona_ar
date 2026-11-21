@@ -9,6 +9,7 @@ import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.character.loader.PersonaModelManager
 import com.persona.ar.data.api.ApiClient
+import com.persona.ar.data.api.PersonaWebSocketClient
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.MessageSender
@@ -29,6 +30,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val voiceRecorder = VoiceRecorder()
     private val sensorTiltHelper = SensorTiltHelper(application)
     private val modelManager = PersonaModelManager(application)
+    private val wsClient = PersonaWebSocketClient()
 
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
@@ -36,6 +38,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     init {
         setupAudioPlayer()
         setupVoiceRecorder()
+        setupWebSocket()
         setupSensors()
         setupModelManager()
         loadInitialStatus()
@@ -95,12 +98,51 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             if (_uiState.value.isSpeaking) {
                 audioPlayer.interrupt()
             }
+            if (_uiState.value.isContinuousActive) {
+                wsClient.sendSpeechStart()
+            }
             _uiState.update { it.copy(isUserSpeaking = true) }
         }
 
         voiceRecorder.onSilenceCompleted = {
             _uiState.update { it.copy(isUserSpeaking = false) }
             onContinuousSpeechFinished()
+        }
+    }
+
+    private fun setupWebSocket() {
+        wsClient.onInterruptAck = {
+            audioPlayer.interrupt()
+        }
+        wsClient.onThinkingStart = {
+            _uiState.update { it.copy(isLoading = true) }
+        }
+        wsClient.onResponseComplete = { respText, emotion, action, expr, audioBase64, affinity, mood ->
+            _uiState.update { current ->
+                val personaMsg = ChatMessage(
+                    sender = MessageSender.PERSONA,
+                    text = respText,
+                    emotion = emotion
+                )
+                current.copy(
+                    isLoading = false,
+                    messages = current.messages + personaMsg,
+                    visualState = current.visualState.copy(
+                        emotion = emotion,
+                        action = action,
+                        expression = expr
+                    ),
+                    personaStatus = current.personaStatus?.copy(
+                        affinity = affinity,
+                        mood = mood
+                    )
+                )
+            }
+            if (!audioBase64.isNullOrEmpty()) {
+                audioPlayer.playAudioBase64(audioBase64)
+            } else {
+                audioPlayer.speakTextFallback(respText)
+            }
         }
     }
 
@@ -267,8 +309,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val nextActive = !_uiState.value.isContinuousActive
         _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive) }
         if (nextActive) {
+            wsClient.connect(_uiState.value.serverBaseUrl)
             voiceRecorder.startListening(isContinuousMode = true)
         } else {
+            wsClient.disconnect()
             voiceRecorder.stopListening()
         }
     }
@@ -281,7 +325,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             "和你聊天总觉得时间过得好快呢。",
             "你今天过得怎么样？"
         )
-        sendMessage(naturalPrompts.random())
+        val selectedPrompt = naturalPrompts.random()
+        if (_uiState.value.isContinuousActive) {
+            // 通过全双工低延迟 WebSocket 通道发送
+            wsClient.sendTextMessage(selectedPrompt)
+        } else {
+            sendMessage(selectedPrompt)
+        }
     }
 
     fun startHoldRecording() {
@@ -331,6 +381,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     override fun onCleared() {
         super.onCleared()
+        wsClient.disconnect()
         audioPlayer.release()
         voiceRecorder.release()
         sensorTiltHelper.stop()

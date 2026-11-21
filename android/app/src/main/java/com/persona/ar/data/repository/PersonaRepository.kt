@@ -5,6 +5,7 @@ import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.TouchResponse
@@ -13,6 +14,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class PersonaRepository {
+
+    suspend fun getStoreModels(): Result<List<PersonaModelManifest>> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.getStoreModels()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.success(emptyList())
+            }
+        } catch (e: Exception) {
+            Result.success(emptyList())
+        }
+    }
 
     suspend fun sendChat(message: String, userId: String = "user_default"): Result<ChatResponse> =
         withContext(Dispatchers.IO) {

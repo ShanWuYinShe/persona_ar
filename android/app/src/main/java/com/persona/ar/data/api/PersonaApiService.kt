@@ -2,6 +2,7 @@ package com.persona.ar.data.api
 
 import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
@@ -33,6 +34,14 @@ interface PersonaApiService {
     suspend fun getPersonaStatus(
         @Query("user_id") userId: String = "user_default"
     ): Response<PersonaStatus>
+
+    @GET("api/v1/store/models")
+    suspend fun getStoreModels(): Response<List<PersonaModelManifest>>
+
+    @GET("api/v1/persona/memories")
+    suspend fun getMemories(
+        @Query("user_id") userId: String = "user_default"
+    ): Response<List<Map<String, Any>>>
 
     @POST("api/v1/persona/reset")
     suspend fun resetPersona(
