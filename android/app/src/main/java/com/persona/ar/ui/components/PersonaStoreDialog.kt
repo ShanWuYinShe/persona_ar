@@ -12,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +26,10 @@ import androidx.compose.ui.window.Dialog
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaModelType
 
+/**
+ * 二游/卡通游戏风格的“纸片人图鉴与契约工坊”弹窗
+ * 采用 Claymorphism 暖白底、2.5dp 饱满描边与卡牌式角色图鉴
+ */
 @Composable
 fun PersonaStoreDialog(
     activeModel: PersonaModelManifest?,
@@ -36,86 +39,105 @@ fun PersonaStoreDialog(
     onSwitchModel: (String) -> Unit,
     onInstallModel: (String) -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: 我的角色, 1: 模型商城
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: 我的伙伴, 1: 契约工坊
+    val borderColor = Color(0xFF281C38)
+    val surfaceCream = Color(0xFFFFFDF9)
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF221E2E))
-                .padding(20.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(surfaceCream)
+                .border(2.5.dp, borderColor, RoundedCornerShape(26.dp))
+                .padding(18.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // 顶部标题与关闭按钮
+                // 顶部标题与萌系关闭按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingBag,
-                            contentDescription = "模型商城",
-                            tint = Color(0xFFFF5277),
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "纸片人模型库与工坊",
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFB300))
+                                .border(2.dp, borderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "👑", fontSize = 16.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "纸片人图鉴 · 契约工坊",
+                                color = Color(0xFF281C38),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "自由唤醒与邂逅你的专属 AR 纸片人",
+                                color = Color(0xFF8B7B99),
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFE0E8))
+                            .border(1.5.dp, borderColor, CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = Color.Gray,
-                            modifier = Modifier.size(20.dp)
+                            tint = Color(0xFFFF5277),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
-                // 切换 Tab (我的角色 vs 模型工坊)
+                // 切换 Tab (二游糖果双联按键)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF191624))
-                        .padding(4.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFF0E8F8))
+                        .border(1.5.dp, borderColor.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                        .padding(3.dp)
                 ) {
-                    TabButton(
-                        text = "我的角色 (${installedModels.size})",
+                    GameStoreTab(
+                        text = "✦ 驻留伙伴 (${installedModels.size})",
                         isSelected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
                         modifier = Modifier.weight(1f)
                     )
-                    TabButton(
-                        text = "模型工坊商城",
+                    GameStoreTab(
+                        text = "✨ 契约工坊商城",
                         isSelected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                // 模型列表流
+                // 模型列表流 (二游卡牌流)
                 val displayList = if (selectedTab == 0) installedModels else storeModels
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(displayList, key = { it.id }) { item ->
                         val isCurrentActive = activeModel?.id == item.id
-                        PersonaModelCard(
+                        GamePersonaCard(
                             model = item,
                             isActive = isCurrentActive,
                             onUseClick = { onSwitchModel(item.id) },
@@ -129,124 +151,136 @@ fun PersonaStoreDialog(
 }
 
 @Composable
-private fun TabButton(
+private fun GameStoreTab(
     text: String,
     isSelected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val borderColor = Color(0xFF281C38)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (isSelected) Color(0xFF7B61FF) else Color.Transparent)
+            .clip(RoundedCornerShape(11.dp))
+            .background(if (isSelected) Color(0xFFFF5277) else Color.Transparent)
+            .border(
+                width = if (isSelected) 1.5.dp else 0.dp,
+                color = if (isSelected) borderColor else Color.Transparent,
+                shape = RoundedCornerShape(11.dp)
+            )
             .clickable { onClick() }
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = if (isSelected) Color.White else Color.Gray,
+            color = if (isSelected) Color.White else Color(0xFF5A4D6B),
             fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold
         )
     }
 }
 
 @Composable
-private fun PersonaModelCard(
+private fun GamePersonaCard(
     model: PersonaModelManifest,
     isActive: Boolean,
     onUseClick: () -> Unit,
     onInstallClick: () -> Unit
 ) {
+    val borderColor = Color(0xFF281C38)
     val modelColor = try {
         Color(android.graphics.Color.parseColor(model.previewColorHex))
     } catch (e: Exception) {
-        Color(0xFF7B61FF)
+        Color(0xFFFF7597)
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF2B263B))
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (isActive) Color(0xFFFFF0F5) else Color.White)
             .border(
-                width = if (isActive) 1.5.dp else 1.dp,
-                color = if (isActive) Color(0xFFFF5277) else Color(0x22FFFFFF),
-                shape = RoundedCornerShape(16.dp)
+                width = if (isActive) 2.5.dp else 1.5.dp,
+                color = if (isActive) Color(0xFFFF5277) else borderColor.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(18.dp)
             )
-            .padding(14.dp)
+            .padding(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 角色头像圆徽章
+            // 二游角色头像圆框
             Box(
                 modifier = Modifier
                     .size(54.dp)
                     .clip(CircleShape)
-                    .background(modelColor.copy(alpha = 0.25f))
+                    .background(modelColor.copy(alpha = 0.2f))
                     .border(2.dp, modelColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = model.name.take(1),
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
+                    color = modelColor,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black
                 )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // 角色信息
+            // 角色基本信息与属性标签
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = model.name,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+                        color = Color(0xFF281C38),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    // 类型胶囊
+                    // 二游标签徽章
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(
                                 if (model.modelType == PersonaModelType.GLTF_3D)
-                                    Color(0xFF00B0FF).copy(alpha = 0.2f)
+                                    Color(0xFFE1F5FE)
                                 else
-                                    Color(0xFF7B61FF).copy(alpha = 0.2f)
+                                    Color(0xFFF3E5F5)
                             )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .border(
+                                1.dp,
+                                if (model.modelType == PersonaModelType.GLTF_3D) Color(0xFF00B0FF) else Color(0xFFAB47BC),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
                     ) {
                         Text(
-                            text = if (model.modelType == PersonaModelType.GLTF_3D) "3D空间" else "2.5D立绘",
-                            color = if (model.modelType == PersonaModelType.GLTF_3D) Color(0xFF00B0FF) else Color(0xFFAAAAFF),
+                            text = if (model.modelType == PersonaModelType.GLTF_3D) "3D空间" else "2.5D萌绘",
+                            color = if (model.modelType == PersonaModelType.GLTF_3D) Color(0xFF0288D1) else Color(0xFF7B1FA2),
                             fontSize = 9.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
                 Text(
-                    text = "${model.author} · v${model.version}",
-                    color = Color(0xFFA09CAD),
-                    fontSize = 11.sp
+                    text = "画师/创作者: ${model.author} · v${model.version}",
+                    color = Color(0xFF9080A0),
+                    fontSize = 10.sp
                 )
 
                 Text(
                     text = model.description,
-                    color = Color(0xFFDDDDDD),
+                    color = Color(0xFF554466),
                     fontSize = 11.sp,
                     maxLines = 2,
                     lineHeight = 15.sp,
                     modifier = Modifier.padding(top = 2.dp)
                 )
 
-                // 标签栏与评分
+                // 评分与标签栏
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -254,18 +288,19 @@ private fun PersonaModelCard(
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = "评分",
-                        tint = Color(0xFFFFD54F),
+                        tint = Color(0xFFFFB300),
                         modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = "${model.rating} (${model.downloadsCount})",
-                        color = Color(0xFFFFD54F),
+                        color = Color(0xFFFF8F00),
                         fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(start = 2.dp, end = 6.dp)
                     )
                     Text(
                         text = model.tags.take(2).joinToString(" · "),
-                        color = Color(0xFF888899),
+                        color = Color(0xFF887799),
                         fontSize = 10.sp
                     )
                 }
@@ -273,23 +308,29 @@ private fun PersonaModelCard(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // 操作按钮（当前使用中 / 切换应用 / 免费下载安装）
+            // 状态/操作按钮（二游果冻按钮）
             if (isActive) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF3B334D))
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                        .background(Color(0xFFE8F5E9))
+                        .border(1.5.dp, Color(0xFF00C853), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            tint = Color(0xFF00E676),
+                            tint = Color(0xFF00C853),
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
-                        Text(text = "使用中", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "陪伴中",
+                            color = Color(0xFF00C853),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
             } else if (model.isInstalled) {
@@ -297,15 +338,17 @@ private fun PersonaModelCard(
                     onClick = onUseClick,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7B61FF)),
                     shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Text(text = "应用", fontSize = 11.sp)
+                    Text(text = "✨ 唤醒", fontSize = 11.sp, fontWeight = FontWeight.Black)
                 }
             } else {
                 Button(
                     onClick = onInstallClick,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5277)),
                     shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Icon(
@@ -315,7 +358,7 @@ private fun PersonaModelCard(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(3.dp))
-                    Text(text = "获取", fontSize = 11.sp)
+                    Text(text = "契约", fontSize = 11.sp, fontWeight = FontWeight.Black)
                 }
             }
         }
