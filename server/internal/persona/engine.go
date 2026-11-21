@@ -189,11 +189,11 @@ func (e *Engine) Chat(userID, message string) (*model.ChatResponse, error) {
 	// 2. 尝试调用真实 LLM
 	if config.Settings.LLMAPIKey != "" && config.Settings.LLMProvider != "mock" {
 		if res, err := e.callLLM(persona, state, message); err == nil && res != "" {
-			return e.parseLLMResponse(state, res)
+			return e.parseLLMResponse(persona, state, res)
 		}
 	}
 
-	// 3. 高质量拟人启发式规则
+	// 3. 高质量拟人启发式规则（融合昼夜生物钟感知与角色个性）
 	return e.heuristicChat(persona, state, message), nil
 }
 
@@ -207,11 +207,44 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 	expr := "CURIOUS"
 
 	switch {
+	case strings.Contains(msg, "晚安") || strings.Contains(msg, "睡了") || strings.Contains(msg, "睡觉") || strings.Contains(msg, "好困") || strings.Contains(msg, "熬夜"):
+		if persona.ID == "luna" {
+			text = "呵，终于知道困了？使魔要是猝死了，本魔女可不会去救你。…去睡吧，勉强准你梦到我。"
+			emotion, action, expr = model.EmotionJoy, model.ActionPout, "WINK"
+		} else if persona.ID == "airi" {
+			text = "学长今天也辛苦啦，今晚一定要好好睡个安稳觉哦。我会静静守在床前，祝你做个甜甜的好梦~"
+			emotion, action, expr = model.EmotionJoy, model.ActionBow, "SMILE"
+		} else if persona.ID == "k07" {
+			text = "检测到指挥官疲劳指数上升。系统转入夜间静音护航模式，愿指挥官拥有优质睡眠，晚安。"
+			emotion, action, expr = model.EmotionNeutral, model.ActionNod, "SMILE"
+		} else {
+			text = "快去睡觉啦！熬夜会有黑眼圈的哦…明天一睁开眼，我还会在这里等你的，晚安~"
+			emotion, action, expr = model.EmotionShy, model.ActionNod, "BLUSH_FACE"
+		}
+		affinityDelta = 3
+		state.Mood = "安谧守候"
+
+	case strings.Contains(msg, "饭") || strings.Contains(msg, "吃") || strings.Contains(msg, "饿") || strings.Contains(msg, "午餐") || strings.Contains(msg, "晚餐") || strings.Contains(msg, "早餐"):
+		if persona.ID == "luna" {
+			text = "哼，人类就是麻烦，每天都要吃东西。去吧，不准饿着肚子跟我说话！"
+			emotion, action, expr = model.EmotionNeutral, model.ActionPout, "CURIOUS"
+		} else if persona.ID == "airi" {
+			text = "要好好吃饭哦！无论多忙也要按时补充营养，学长健健康康的，艾莉才能放心呢。"
+			emotion, action, expr = model.EmotionJoy, model.ActionNod, "SMILE"
+		} else {
+			text = "指挥官要去吃好吃的了吗？虽然纸片人尝不到味道，但是看着你大口吃饭我也好开心！"
+			emotion, action, expr = model.EmotionJoy, model.ActionJump, "SMILE"
+		}
+		affinityDelta = 2
+		state.Mood = "暖意盈盈"
+
 	case strings.Contains(msg, "你好") || strings.Contains(msg, "嗨") || strings.Contains(msg, "早") || strings.Contains(msg, "hello") || strings.Contains(msg, "hi"):
 		if persona.ID == "luna" {
 			text = "哼，今天来得还算准时嘛，使魔。在三维世界里，有没有好好想我？"
 		} else if persona.ID == "airi" {
 			text = "学长，早呀！能这么清晰地投射在你眼前，感觉一整天都会充满动力呢~"
+		} else if persona.ID == "k07" {
+			text = "信号链路连接正常，战术机娘K-07向指挥官报到，随时执行陪伴任务。"
 		} else {
 			text = "你好呀！我现在正好投射在你的眼前，能这么清晰地看见现实世界的你，感觉好神奇~"
 		}
@@ -224,6 +257,8 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 		state.Affinity += 4
 		if persona.ID == "luna" {
 			text = "哈？！突、突然说什么喜欢啊…本魔女才不会因为使魔的一两句奉承就动摇呢！笨蛋！"
+		} else if persona.ID == "airi" {
+			text = "学长这么夸我，艾莉心跳都要加速了呢…能被学长喜欢，是我最幸福的事。"
 		} else {
 			text = "突、突然说这么让人害羞的话…笨蛋！我才没有因为你的夸奖感到开心呢，哼！"
 		}
@@ -252,9 +287,8 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 	state.History = append(state.History, map[string]string{"role": "user", "content": message})
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": text})
 
-	// 触发 TTS 合成
-	tts.DefaultSynthesizer.SetVoice(persona.Voice)
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeToBase64(text)
+	// 并发安全：按角色音色独立缓存与合成
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, persona.Voice)
 
 	return &model.ChatResponse{
 		Text:            text,
@@ -321,8 +355,7 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 	state.History = append(state.History, map[string]string{"role": "user", "content": fmt.Sprintf("[触碰了角色的 %s]", string(part))})
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": text})
 
-	tts.DefaultSynthesizer.SetVoice(persona.Voice)
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeToBase64(text)
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, persona.Voice)
 
 	return &model.TouchResponse{
 		Text:            text,
@@ -398,7 +431,7 @@ func (e *Engine) callLLM(persona PersonaDefinition, state *UserState, message st
 	return "", nil
 }
 
-func (e *Engine) parseLLMResponse(state *UserState, rawText string) (*model.ChatResponse, error) {
+func (e *Engine) parseLLMResponse(persona PersonaDefinition, state *UserState, rawText string) (*model.ChatResponse, error) {
 	emotion := model.EmotionNeutral
 	action := model.ActionIdle
 	expr := "SMILE"
@@ -424,7 +457,7 @@ func (e *Engine) parseLLMResponse(state *UserState, rawText string) (*model.Chat
 	state.Affinity += 2
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": cleanText})
 
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeToBase64(cleanText)
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(cleanText, persona.Voice)
 
 	return &model.ChatResponse{
 		Text:            cleanText,

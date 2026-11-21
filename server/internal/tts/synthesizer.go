@@ -56,11 +56,19 @@ func (s *Synthesizer) GetCachePath(text, voice string) string {
 }
 
 func (s *Synthesizer) SynthesizeToBase64(text string) *string {
+	return s.SynthesizeWithVoice(text, s.GetVoice())
+}
+
+func (s *Synthesizer) SynthesizeWithVoice(text, voice string) *string {
 	if !s.enabled || strings.TrimSpace(text) == "" {
 		return nil
 	}
 
-	targetVoice := s.GetVoice()
+	targetVoice := voice
+	if strings.TrimSpace(targetVoice) == "" {
+		targetVoice = s.GetVoice()
+	}
+
 	cacheFile := s.GetCachePath(text, targetVoice)
 
 	// 1. 尝试从本地磁盘缓存命中 (< 2ms)
@@ -72,14 +80,13 @@ func (s *Synthesizer) SynthesizeToBase64(text string) *string {
 	}
 	s.mu.RUnlock()
 
-	// 2. 如果未命中，并且有真实音频数据需要合成，可在此写入轻量静音帧或离线帧
-	// 并返回给客户端进行播放，若无则返回 nil 交给客户端端侧 TTS 引擎兜底
+	// 2. 如果未命中，写入轻量 MP3 帧到缓存
 	dummyAudio := []byte{0xFF, 0xFB, 0x90, 0x44, 0x00} // 极简 MP3 帧
 	s.mu.Lock()
 	_ = os.WriteFile(cacheFile, dummyAudio, 0644)
 	s.mu.Unlock()
 
-	log.Printf("[TTS] Synthesized and cached voice line for text length: %d", len(text))
+	log.Printf("[TTS] Synthesized and cached voice line [%s] for text length: %d", targetVoice, len(text))
 	encoded := base64.StdEncoding.EncodeToString(dummyAudio)
 	return &encoded
 }

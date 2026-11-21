@@ -385,3 +385,42 @@ func TestWebSocketContinuous(t *testing.T) {
 		t.Errorf("expected text in response_complete")
 	}
 }
+
+func TestCircadianAndMultiVoiceIsolation(t *testing.T) {
+	router := setupTestRouter()
+
+	// 1. 验证作息关怀（晚安）回复
+	nightPayload := map[string]interface{}{
+		"user_id": "user_circadian_test",
+		"message": "星野，我准备睡觉了，晚安",
+	}
+	nightBytes, _ := json.Marshal(nightPayload)
+	reqNight, _ := http.NewRequest("POST", "/api/v1/chat/interact", bytes.NewBuffer(nightBytes))
+	reqNight.Header.Set("Content-Type", "application/json")
+	wNight := httptest.NewRecorder()
+	router.ServeHTTP(wNight, reqNight)
+
+	if wNight.Code != http.StatusOK {
+		t.Fatalf("night chat failed: %d", wNight.Code)
+	}
+	var nightResp model.ChatResponse
+	_ = json.Unmarshal(wNight.Body.Bytes(), &nightResp)
+	if !strings.Contains(nightResp.Text, "晚安") && !strings.Contains(nightResp.Text, "睡觉") {
+		t.Errorf("expected bedtime care in response, got %s", nightResp.Text)
+	}
+
+	// 2. 验证多角色音色缓存隔离
+	text := "指挥官，今天也要开开心心哦！"
+	pathHoshino := tts.DefaultSynthesizer.GetCachePath(text, "zh-CN-XiaoyiNeural")
+	pathLuna := tts.DefaultSynthesizer.GetCachePath(text, "zh-CN-XiaoxiaoNeural")
+
+	if pathHoshino == pathLuna {
+		t.Fatalf("expected distinct cache paths for distinct voices, got same: %s", pathHoshino)
+	}
+
+	audio1 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, "zh-CN-XiaoyiNeural")
+	audio2 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, "zh-CN-XiaoxiaoNeural")
+	if audio1 == nil || audio2 == nil {
+		t.Fatalf("expected non-nil audio outputs for multi-voice synthesis")
+	}
+}
