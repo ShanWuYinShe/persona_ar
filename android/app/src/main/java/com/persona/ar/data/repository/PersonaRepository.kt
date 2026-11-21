@@ -8,6 +8,7 @@ import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchPart
+import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
 import com.persona.ar.data.model.VoiceInteractRequest
 import kotlinx.coroutines.Dispatchers
