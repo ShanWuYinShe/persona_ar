@@ -31,6 +31,7 @@ import com.persona.ar.ar.CameraXView
 import com.persona.ar.character.Character3DRenderer
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.ui.components.ChatOverlay
+import com.persona.ar.ui.components.MemoryNotebookDialog
 import com.persona.ar.ui.components.PersonaStoreDialog
 import com.persona.ar.ui.components.SettingsDialog
 import com.persona.ar.ui.components.StatusBadge
@@ -146,8 +147,13 @@ fun PersonaMainScreen(
                 status = uiState.personaStatus,
                 activeModel = uiState.activeModel,
                 arMode = uiState.arMode,
+                bondLevel = uiState.bondLevel,
+                bondExp = uiState.bondExp,
+                bondExpNext = uiState.bondExpNext,
+                bondTitle = uiState.bondLevelTitle,
                 onToggleARMode = { viewModel.toggleARMode() },
                 onOpenStore = { viewModel.setStoreOpen(true) },
+                onOpenMemoryNotebook = { viewModel.setMemoryNotebookOpen(true) },
                 onOpenSettings = { viewModel.setSettingsOpen(true) }
             )
         }
@@ -260,7 +266,49 @@ fun PersonaMainScreen(
             }
         }
 
-        // 8. 弹窗层
+        // 8. 羁绊进阶升级祝贺横幅
+        uiState.bondLevelUpNotice?.let { notice ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 70.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFFFFF0F5))
+                    .border(2.dp, Color(0xFFFF4E8E), RoundedCornerShape(16.dp))
+                    .clickable { viewModel.dismissBondNotice() }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = notice,
+                    color = Color(0xFF281C38),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+            LaunchedEffect(notice) {
+                delay(3500)
+                viewModel.dismissBondNotice()
+            }
+        }
+
+        // 9. 弹窗层
+        if (uiState.isMemoryNotebookOpen) {
+            MemoryNotebookDialog(
+                partnerName = uiState.activeModel?.name ?: uiState.personaStatus?.name ?: "星野",
+                bondLevel = uiState.bondLevel,
+                bondTitle = uiState.bondLevelTitle,
+                memories = uiState.memories,
+                isLoading = uiState.isMemoryLoading,
+                onDismiss = { viewModel.setMemoryNotebookOpen(false) },
+                onCreateMemory = { content, category, importance ->
+                    viewModel.createMemory(content, category, importance)
+                },
+                onDeleteMemory = { id ->
+                    viewModel.deleteMemory(id)
+                }
+            )
+        }
+
         if (uiState.isStoreOpen) {
             PersonaStoreDialog(
                 activeModel = uiState.activeModel,

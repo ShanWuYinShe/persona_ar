@@ -267,7 +267,38 @@ func TestMemoryAutoExtractionAndPersistence(t *testing.T) {
 		t.Errorf("expected auto extracted memory about 冰美式咖啡")
 	}
 
-	// 3. 验证本地文件持久化
+	// 3. 手动创建新回忆
+	manualMem := model.CreateMemoryRequest{
+		UserID:     "test_memory_commander",
+		PersonaID:  "hoshino",
+		Category:   "SHARED_MOMENT",
+		Content:    "今天和星野一起在虚拟雨夜里写完了全部后端 Go 语言重构代码！",
+		Importance: 5,
+	}
+	memBytes, _ := json.Marshal(manualMem)
+	wCreate := httptest.NewRecorder()
+	reqCreate, _ := http.NewRequest("POST", "/api/v1/persona/memories", bytes.NewBuffer(memBytes))
+	reqCreate.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(wCreate, reqCreate)
+	if wCreate.Code != http.StatusOK {
+		t.Fatalf("create memory failed: %d", wCreate.Code)
+	}
+
+	var createdItem model.MemoryItem
+	_ = json.Unmarshal(wCreate.Body.Bytes(), &createdItem)
+	if createdItem.ID == "" {
+		t.Fatalf("expected created memory to have ID")
+	}
+
+	// 4. 删除该回忆
+	wDel := httptest.NewRecorder()
+	reqDel, _ := http.NewRequest("DELETE", "/api/v1/persona/memories/"+createdItem.ID+"?user_id=test_memory_commander", nil)
+	r.ServeHTTP(wDel, reqDel)
+	if wDel.Code != http.StatusOK {
+		t.Fatalf("delete memory failed: %d", wDel.Code)
+	}
+
+	// 5. 验证本地文件持久化
 	if _, err := os.Stat(persona.DefaultMemoryManager.GetStoragePath()); err == nil {
 		// 存储文件存在
 	}

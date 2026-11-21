@@ -290,19 +290,23 @@ fun VoiceInputBar(
                         fontWeight = FontWeight.Black
                     )
 
-                    // 连麦中动态微跳声波
+                    // 连麦中动态 5 根律动音频音浪跳动柱 (Audio Waveform Visualizer)
                     if (voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            for (i in 0..2) {
-                                val barH = (6f + micVolume * 14f * (1f - (i % 2) * 0.4f)).dp
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            val factors = listOf(0.6f, 1.0f, 1.4f, 0.9f, 0.5f)
+                            factors.forEachIndexed { idx, factor ->
+                                val baseHeight = if (isUserSpeaking) 12f else 6f
+                                val dynamicHeight = (baseHeight + micVolume * 22f * factor).coerceIn(4f, 26f)
                                 Box(
                                     modifier = Modifier
-                                        .padding(horizontal = 1.5.dp)
                                         .width(3.dp)
-                                        .height(barH)
+                                        .height(dynamicHeight.dp)
                                         .clip(RoundedCornerShape(1.5.dp))
-                                        .background(borderColor)
+                                        .background(if (isUserSpeaking) brandPink else borderColor)
                                 )
                             }
                         }

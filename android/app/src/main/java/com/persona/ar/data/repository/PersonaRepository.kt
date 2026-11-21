@@ -4,7 +4,9 @@ import com.persona.ar.data.api.ApiClient
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
+import com.persona.ar.data.model.CreateMemoryRequest
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.MemoryItem
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchPart
@@ -26,6 +28,55 @@ class PersonaRepository {
             }
         } catch (e: Exception) {
             Result.success(emptyList())
+        }
+    }
+
+    suspend fun getMemories(personaId: String? = null, userId: String = "user_default"): Result<List<MemoryItem>> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.getMemories(userId, personaId)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.success(emptyList())
+            }
+        } catch (e: Exception) {
+            Result.success(emptyList())
+        }
+    }
+
+    suspend fun createMemory(
+        content: String,
+        category: String = "SHARED_MOMENT",
+        importance: Int = 3,
+        personaId: String = "hoshino",
+        userId: String = "user_default"
+    ): Result<MemoryItem?> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.createMemory(
+                CreateMemoryRequest(
+                    userId = userId,
+                    personaId = personaId,
+                    category = category,
+                    content = content,
+                    importance = importance
+                )
+            )
+            if (response.isSuccessful) {
+                Result.success(response.body())
+            } else {
+                Result.failure(Exception("Create memory failed"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteMemory(memoryId: String, userId: String = "user_default"): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.deleteMemory(memoryId, userId)
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.success(false)
         }
     }
 
