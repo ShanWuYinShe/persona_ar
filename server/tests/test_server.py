@@ -65,3 +65,17 @@ def test_touch_interaction():
     data = res.json()
     assert "text" in data
     assert data["emotion"] in ["SHY", "JOY"]
+
+def test_voice_interaction():
+    res = client.post("/api/v1/voice/interact", json={
+        "user_id": "test_user_3",
+        "audio_base64": "UklGRi4AAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+        "audio_format": "wav",
+        "text_prompt": "星野，能听到我的对讲吗？"
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert "text" in data
+    assert "emotion" in data
+    assert "action" in data
+    assert data["current_affinity"] > 0

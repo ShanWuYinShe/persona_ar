@@ -1,0 +1,18 @@
+{
+  "id": "cyber_k",
+  "name": "K-07 (Cyber K)",
+  "author": "Neon Future 3D",
+  "version": "2.0.0",
+  "modelType": "GLTF_3D",
+  "description": "从未来赛博空间穿越而来的全息机甲少女，具备 3D 空间立体投射网格。",
+  "previewColorHex": "#00E5FF",
+  "hairColorHex": "#00E5FF",
+  "eyeColorHex": "#76FF03",
+  "skirtColorHex": "#212121",
+  "defaultVoice": "zh-CN-YunyangNeural",
+  "greetingText": "全息网络同步完毕。指挥官，现实环境侦测中，已准备就绪。",
+  "tags": ["3D模型", "赛博朋克", "机甲", "ARCore原生"],
+  "isInstalled": false,
+  "downloadsCount": 8400,
+  "rating": 4.7
+}

@@ -58,6 +58,13 @@ data class ChatRequest(
     @SerializedName("session_id") val sessionId: String? = null
 )
 
+data class VoiceInteractRequest(
+    @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("audio_base64") val audioBase64: String? = null,
+    @SerializedName("audio_format") val audioFormat: String = "wav",
+    @SerializedName("text_prompt") val textPrompt: String? = null
+)
+
 data class ChatResponse(
     val text: String,
     val emotion: EmotionType,

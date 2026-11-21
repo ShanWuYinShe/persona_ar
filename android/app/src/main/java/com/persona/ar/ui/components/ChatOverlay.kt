@@ -106,16 +106,16 @@ private fun AnimeGameDialogueItem(msg: ChatMessage) {
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (!isUser) {
-            // 角色发言：Galgame 对话框（名牌与文本采用绝对安全层级堆叠）
-            Column(modifier = Modifier.widthIn(max = 320.dp)) {
-                // 1. 角色萌系名牌 (置于上方，不侵占正文区域)
+            // 角色发言：Galgame 对话框（名牌与文本采用绝对垂直隔离，零裁切、零重叠）
+            Column(modifier = Modifier.widthIn(max = 330.dp)) {
+                // 1. 角色萌系名牌 (置于上方，y=0 独立层级，绝对不侵占正文区域)
                 Box(
                     modifier = Modifier
                         .padding(start = 12.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(Color(0xFFFF5277))
-                        .border(1.5.dp, strokeColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                        .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "✦ 星野 Hoshino ✦",
@@ -125,16 +125,16 @@ private fun AnimeGameDialogueItem(msg: ChatMessage) {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // 2. 主对话文本框（充裕内边距，文字绝对不被遮挡）
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFFFFFDF9).copy(alpha = 0.96f))
-                        .border(1.8.dp, strokeColor, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xFFFFFDF9).copy(alpha = 0.98f))
+                        .border(2.dp, strokeColor, RoundedCornerShape(18.dp))
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
                     Column {
                         Text(
@@ -142,8 +142,10 @@ private fun AnimeGameDialogueItem(msg: ChatMessage) {
                             color = Color(0xFF281C38),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            lineHeight = 19.sp
+                            lineHeight = 20.sp
                         )
+
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         // 矢量翻页小箭头（右下角指示，避免 Emoji）
                         Icon(
@@ -160,48 +162,48 @@ private fun AnimeGameDialogueItem(msg: ChatMessage) {
         } else {
             // 用户发言：天蓝/马卡龙紫贴纸气泡
             Column(
-                modifier = Modifier.widthIn(max = 280.dp),
+                modifier = Modifier.widthIn(max = 290.dp),
                 horizontalAlignment = Alignment.End
             ) {
                 // 用户名牌
                 Box(
                     modifier = Modifier
                         .padding(end = 12.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(Color(0xFF00B0FF))
-                        .border(1.5.dp, strokeColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        text = "指挥官",
+                        text = "✦ 指挥官 Commander ✦",
                         color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Black
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Box(
                     modifier = Modifier
                         .clip(
                             RoundedCornerShape(
-                                topStart = 16.dp,
+                                topStart = 18.dp,
                                 topEnd = 4.dp,
-                                bottomStart = 16.dp,
-                                bottomEnd = 16.dp
+                                bottomStart = 18.dp,
+                                bottomEnd = 18.dp
                             )
                         )
                         .background(Color(0xFF7B61FF))
-                        .border(1.8.dp, strokeColor, RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .border(2.dp, strokeColor, RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Text(
                         text = msg.text,
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        lineHeight = 18.sp
+                        lineHeight = 19.sp
                     )
                 }
             }

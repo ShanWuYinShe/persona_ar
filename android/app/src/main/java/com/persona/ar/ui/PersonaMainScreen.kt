@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,7 +35,9 @@ import com.persona.ar.ui.components.PersonaStoreDialog
 import com.persona.ar.ui.components.SettingsDialog
 import com.persona.ar.ui.components.StatusBadge
 import com.persona.ar.ui.components.VoiceInputBar
+import com.persona.ar.util.SnapshotHelper
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Persona AR 核心主界面（深度融入用户日常使用场景）
@@ -51,6 +54,8 @@ fun PersonaMainScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var isUiVisible by remember { mutableStateOf(true) } // 沉浸陪伴模式开关
     var isShutterFlashing by remember { mutableStateOf(false) } // 快门白闪效果
     var showSnapshotToast by remember { mutableStateOf(false) }
@@ -163,9 +168,18 @@ fun PersonaMainScreen(
                     .background(Color(0xE6FFFDF9))
                     .border(1.8.dp, Color(0xFF281C38), CircleShape)
                     .clickable {
-                        // 触发快门闪光动画
+                        // 触发快门闪光动画并执行真实拍立得合成保存
                         isShutterFlashing = true
                         showSnapshotToast = true
+                        coroutineScope.launch {
+                            val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
+                                ?: "我就站在你的现实世界中哦~"
+                            SnapshotHelper.captureAndSavePolaroid(
+                                context = context,
+                                visualState = uiState.visualState,
+                                quote = quote.take(30)
+                            )
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -234,7 +248,7 @@ fun PersonaMainScreen(
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             ) {
                 Text(
-                    text = "✨ 已捕获纯净 AR 合影，已存入相册",
+                    text = "📸 拍立得合影已保存至系统相册 (Pictures/PersonaAR)",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold

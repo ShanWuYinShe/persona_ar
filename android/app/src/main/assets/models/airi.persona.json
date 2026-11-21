@@ -1,0 +1,18 @@
+{
+  "id": "airi",
+  "name": "艾莉 (Airi)",
+  "author": "WarmHeart Lab",
+  "version": "1.1.0",
+  "modelType": "SPRITE_2_5D",
+  "description": "温柔体贴的邻家治愈学妹。在你累的时候会微笑着静静陪伴你。",
+  "previewColorHex": "#00E676",
+  "hairColorHex": "#8D6E63",
+  "eyeColorHex": "#43A047",
+  "skirtColorHex": "#FFF3E0",
+  "defaultVoice": "zh-CN-YunjianNeural",
+  "greetingText": "学长，今天也辛苦啦~ 我已经投射在你的身边了，随时跟我聊聊天吧！",
+  "tags": ["治愈", "学妹", "温柔", "陪伴"],
+  "isInstalled": false,
+  "downloadsCount": 15300,
+  "rating": 5.0
+}

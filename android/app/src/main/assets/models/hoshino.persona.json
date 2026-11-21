@@ -1,0 +1,18 @@
+{
+  "id": "hoshino",
+  "name": "星野 (Hoshino)",
+  "author": "Persona Studio Official",
+  "version": "1.2.0",
+  "modelType": "SPRITE_2_5D",
+  "description": "投射在现实中的二次元傲娇元气少女，心软口硬，对现实世界充满好奇与依恋。",
+  "previewColorHex": "#FF7B61FF",
+  "hairColorHex": "#6B4E71",
+  "eyeColorHex": "#5D54A8",
+  "skirtColorHex": "#3B4A6B",
+  "defaultVoice": "zh-CN-XiaoyiNeural",
+  "greetingText": "哼哼，现实世界的信号终于连上啦！我就站在你的书桌前哦~",
+  "tags": ["元气", "傲娇", "双马尾", "官方看板娘"],
+  "isInstalled": true,
+  "downloadsCount": 12890,
+  "rating": 4.9
+}
