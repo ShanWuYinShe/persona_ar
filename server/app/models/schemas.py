@@ -32,6 +32,12 @@ class ChatRequest(BaseModel):
     user_id: str = Field(default="user_default", description="用户唯一标识")
     session_id: Optional[str] = Field(default=None, description="会话ID")
 
+class VoiceInteractRequest(BaseModel):
+    user_id: str = Field(default="user_default", description="用户唯一标识")
+    audio_base64: Optional[str] = Field(default=None, description="录制音频 Base64 数据")
+    audio_format: str = Field(default="wav", description="音频格式，如 wav, pcm, mp3")
+    text_prompt: Optional[str] = Field(default=None, description="客户端伴随的语音识别文本或意图提示")
+
 class ChatResponse(BaseModel):
     text: str = Field(..., description="角色回复的文本")
     emotion: EmotionType = Field(..., description="情绪标签，用于驱动表情")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from app.models.schemas import (
-    ChatRequest, ChatResponse, TouchRequest, TouchResponse, PersonaStatus
+    ChatRequest, ChatResponse, TouchRequest, TouchResponse, PersonaStatus, VoiceInteractRequest
 )
 from app.persona.engine import persona_engine, PERSONA_REGISTRY
 from app.tts.synthesizer import tts_synthesizer
@@ -23,6 +23,37 @@ async def chat_interact(req: ChatRequest):
     # 获取当前角色的专属音色进行 TTS
     active_pid = persona_engine.get_active_persona_id(req.user_id)
     active_persona = PERSONA_REGISTRY.get(active_pid, PERSONA_REGISTRY["hoshino"])
+    audio_base64 = await tts_synthesizer.synthesize_to_base64(text)
+
+    return ChatResponse(
+        text=text,
+        emotion=emotion,
+        action=action,
+        expression=expr,
+        audio_base64=audio_base64,
+        audio_format="mp3",
+        affinity_change=delta,
+        current_affinity=state.affinity,
+        mood=state.mood
+    )
+
+@router.post("/voice/interact", response_model=ChatResponse)
+async def voice_interact(req: VoiceInteractRequest):
+    """接收端上对讲音频/语音识别输入，返回二次元角色情感回复与合成语音"""
+    user_msg = req.text_prompt.strip() if req.text_prompt else ""
+    if not user_msg and req.audio_base64:
+        user_msg = "（对讲机传来指挥官温和的呼吸与声音）"
+
+    if not user_msg:
+        user_msg = "指挥官在吗？"
+
+    text, emotion, action, expr, delta = await persona_engine.chat(req.user_id, user_msg)
+    state = persona_engine.get_user_state(req.user_id)
+
+    # 获取当前角色的专属音色进行 TTS
+    active_pid = persona_engine.get_active_persona_id(req.user_id)
+    active_persona = PERSONA_REGISTRY.get(active_pid, PERSONA_REGISTRY["hoshino"])
+    tts_synthesizer.voice = active_persona.voice
     audio_base64 = await tts_synthesizer.synthesize_to_base64(text)
 
     return ChatResponse(

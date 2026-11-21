@@ -1,15 +1,17 @@
 package com.persona.ar.character.loader
 
+import android.content.Context
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaModelType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONObject
 
-class PersonaModelManager {
+class PersonaModelManager(private val context: Context? = null) {
 
-    // 官方与工坊模型库
-    private val defaultModels = listOf(
+    // 官方与工坊内置模型清单
+    private val builtinModels = listOf(
         PersonaModelManifest(
             id = "hoshino",
             name = "星野 (Hoshino)",
@@ -84,16 +86,64 @@ class PersonaModelManager {
         )
     )
 
+    private val allModels: List<PersonaModelManifest> = loadModelsFromAssetsOrBuiltin()
+
     private val _installedModels = MutableStateFlow<List<PersonaModelManifest>>(
-        defaultModels.filter { it.isInstalled }
+        allModels.filter { it.isInstalled }
     )
     val installedModels: StateFlow<List<PersonaModelManifest>> = _installedModels.asStateFlow()
 
-    private val _storeModels = MutableStateFlow<List<PersonaModelManifest>>(defaultModels)
+    private val _storeModels = MutableStateFlow<List<PersonaModelManifest>>(allModels)
     val storeModels: StateFlow<List<PersonaModelManifest>> = _storeModels.asStateFlow()
 
-    private val _activeModel = MutableStateFlow<PersonaModelManifest>(defaultModels.first())
+    private val _activeModel = MutableStateFlow<PersonaModelManifest>(allModels.first())
     val activeModel: StateFlow<PersonaModelManifest> = _activeModel.asStateFlow()
+
+    private fun loadModelsFromAssetsOrBuiltin(): List<PersonaModelManifest> {
+        val loaded = mutableListOf<PersonaModelManifest>()
+        if (context != null) {
+            try {
+                val assetManager = context.assets
+                val files = assetManager.list("models") ?: emptyArray()
+                for (file in files) {
+                    if (file.endsWith(".persona.json")) {
+                        val jsonStr = assetManager.open("models/$file").bufferedReader().use { it.readText() }
+                        val obj = JSONObject(jsonStr)
+                        val tagsArray = obj.optJSONArray("tags")
+                        val tags = mutableListOf<String>()
+                        if (tagsArray != null) {
+                            for (i in 0 until tagsArray.length()) {
+                                tags.add(tagsArray.getString(i))
+                            }
+                        }
+                        loaded.add(
+                            PersonaModelManifest(
+                                id = obj.getString("id"),
+                                name = obj.getString("name"),
+                                author = obj.optString("author", "Persona Studio"),
+                                version = obj.optString("version", "1.0.0"),
+                                modelType = if (obj.optString("modelType") == "GLTF_3D") PersonaModelType.GLTF_3D else PersonaModelType.SPRITE_2_5D,
+                                description = obj.optString("description", ""),
+                                previewColorHex = obj.optString("previewColorHex", "#FF7B61FF"),
+                                hairColorHex = obj.optString("hairColorHex", "#6B4E71"),
+                                eyeColorHex = obj.optString("eyeColorHex", "#5D54A8"),
+                                skirtColorHex = obj.optString("skirtColorHex", "#3B4A6B"),
+                                defaultVoice = obj.optString("defaultVoice", "zh-CN-XiaoyiNeural"),
+                                greetingText = obj.optString("greetingText", "你好呀！我就在你的现实世界中。"),
+                                tags = tags,
+                                isInstalled = obj.optBoolean("isInstalled", false),
+                                downloadsCount = obj.optInt("downloadsCount", 1000),
+                                rating = obj.optDouble("rating", 4.8).toFloat()
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return if (loaded.isNotEmpty()) loaded else builtinModels
+    }
 
     /**
      * 切换当前激活的纸片人模型

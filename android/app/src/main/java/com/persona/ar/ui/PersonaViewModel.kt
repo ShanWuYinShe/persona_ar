@@ -28,7 +28,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val audioPlayer = AudioPlayer(application)
     private val voiceRecorder = VoiceRecorder()
     private val sensorTiltHelper = SensorTiltHelper(application)
-    private val modelManager = PersonaModelManager()
+    private val modelManager = PersonaModelManager(application)
 
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()

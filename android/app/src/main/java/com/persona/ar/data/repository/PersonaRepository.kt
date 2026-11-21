@@ -8,6 +8,7 @@ import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.TouchResponse
+import com.persona.ar.data.model.VoiceInteractRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -27,6 +28,31 @@ class PersonaRepository {
                 Result.success(createFallbackChat(message))
             }
         }
+
+    suspend fun sendVoiceInteract(
+        audioBase64: String? = null,
+        audioFormat: String = "wav",
+        textPrompt: String? = null,
+        userId: String = "user_default"
+    ): Result<ChatResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.voiceInteract(
+                VoiceInteractRequest(
+                    userId = userId,
+                    audioBase64 = audioBase64,
+                    audioFormat = audioFormat,
+                    textPrompt = textPrompt
+                )
+            )
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.success(createFallbackChat(textPrompt ?: "（对讲语音交流）"))
+            }
+        } catch (e: Exception) {
+            Result.success(createFallbackChat(textPrompt ?: "（对讲语音交流）"))
+        }
+    }
 
     suspend fun sendTouch(part: TouchPart, userId: String = "user_default"): Result<TouchResponse> =
         withContext(Dispatchers.IO) {
