@@ -165,7 +165,7 @@ fun ARCoreOverlay(
                     center = Offset(rx, ry)
                 )
             } else {
-                // B. 已放置角色时：在真实桌面绘制自适应倾角透视接触阴影 (Perspective Contact Shadow) 与全息网格
+                // B. 已放置角色时：三层真实物理光学接触模型 (Contact AO + Diffuse Penumbra + Ground Radiosity)
                 val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX
                 val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
                 val envLight = spatialAnchor.lightIntensity.coerceIn(0.25f, 1.25f)
@@ -181,12 +181,26 @@ fun ARCoreOverlay(
                 val shadowWidth = 168f * spatialAnchor.scaleFactor
                 val shadowHeight = 46f * spatialAnchor.scaleFactor * aspectFactor
 
-                // 柔和椭圆环境光衰减阴影 (自然融合摄像头采集的现实桌面背景纹理)
+                // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed)
+                val bounceAlpha = (0.07f * envLight).coerceIn(0.02f, 0.12f)
+                val bounceColor = Color(
+                    red = (spatialAnchor.ambientTintRed * 0.25f).coerceIn(0f, 1f),
+                    green = (spatialAnchor.ambientTintGreen * 0.25f).coerceIn(0f, 1f),
+                    blue = (spatialAnchor.ambientTintBlue * 0.35f).coerceIn(0f, 1f),
+                    alpha = bounceAlpha
+                )
+                drawOval(
+                    color = bounceColor,
+                    topLeft = Offset(shadowCenterX - shadowWidth * 0.55f, shadowCenterY - shadowHeight * 0.55f),
+                    size = Size(shadowWidth * 1.1f, shadowHeight * 1.1f)
+                )
+
+                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
                             shadowCenterColor,
-                            shadowCenterColor.copy(alpha = alpha * 0.42f),
+                            shadowCenterColor.copy(alpha = alpha * 0.38f),
                             Color.Transparent
                         ),
                         center = Offset(shadowCenterX, shadowCenterY),
@@ -194,6 +208,24 @@ fun ARCoreOverlay(
                     ),
                     topLeft = Offset(shadowCenterX - shadowWidth * 0.5f, shadowCenterY - shadowHeight * 0.5f),
                     size = Size(shadowWidth, shadowHeight)
+                )
+
+                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底的深色物理贴合缝隙
+                val aoWidth = shadowWidth * 0.54f
+                val aoHeight = shadowHeight * 0.30f
+                val aoAlpha = (0.78f * envLight).coerceIn(0.42f, 0.90f)
+                drawOval(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = aoAlpha),
+                            Color.Black.copy(alpha = aoAlpha * 0.45f),
+                            Color.Transparent
+                        ),
+                        center = Offset(shadowCenterX, shadowCenterY + 1.5f),
+                        radius = aoWidth * 0.65f
+                    ),
+                    topLeft = Offset(shadowCenterX - aoWidth * 0.5f, shadowCenterY + 1.5f - aoHeight * 0.5f),
+                    size = Size(aoWidth, aoHeight)
                 )
 
                 // 伴侣脚下若隐若现的二游契约微光光环 (现实弱光下呈现明亮辉光，强光下呈现通透水晶光)
@@ -236,7 +268,7 @@ fun ARCoreOverlay(
             }
         }
 
-        // 2. 纸片人实体立绘投射 (融合视差微位移与手势位姿)
+        // 2. 纸片人实体立绘投射 (融合视差微位移与全光谱光学特征)
         if (spatialAnchor.isAnchored) {
             val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX).dp
             val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY).dp
@@ -251,6 +283,11 @@ fun ARCoreOverlay(
                         scale = spatialAnchor.scaleFactor,
                         environmentalLighting = spatialAnchor.lightIntensity,
                         isLowLight = spatialAnchor.isLowLight,
+                        ambientColorTemp = spatialAnchor.ambientColorTemp,
+                        ambientTintRed = spatialAnchor.ambientTintRed,
+                        ambientTintGreen = spatialAnchor.ambientTintGreen,
+                        ambientTintBlue = spatialAnchor.ambientTintBlue,
+                        sensorGrainIntensity = spatialAnchor.sensorGrainIntensity,
                         gazeShiftX = spatialAnchor.cameraGazeOffsetX,
                         gazeShiftY = spatialAnchor.cameraGazeOffsetY
                     ),

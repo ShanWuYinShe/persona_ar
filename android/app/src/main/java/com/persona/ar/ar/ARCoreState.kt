@@ -54,6 +54,14 @@ data class ARSpatialAnchor(
     val isLowLight: Boolean = false,
     /** 现实环境色调倾向 (ARGB) */
     val ambientColorTint: Long = 0xFFFFFFFF,
+    /** 现实环境色温偏向 (-1.0f 冷蓝 ~ +1.0f 暖黄) */
+    val ambientColorTemp: Float = 0f,
+    /** 环境光红绿蓝三原色增益 */
+    val ambientTintRed: Float = 1.0f,
+    val ambientTintGreen: Float = 1.0f,
+    val ambientTintBlue: Float = 1.0f,
+    /** 现实相机暗光 ISO 微噪点强度 (0.0f ~ 1.0f) */
+    val sensorGrainIntensity: Float = 0f,
     /** 镜头注视微动偏移 X (-1f..1f) */
     val cameraGazeOffsetX: Float = 0f,
     /** 镜头注视微动偏移 Y (-1f..1f) */

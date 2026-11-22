@@ -23,6 +23,14 @@ data class CharacterVisualState(
     val environmentalLighting: Float = 1.0f,
     /** 是否处于低光照暗室环境 */
     val isLowLight: Boolean = false,
+    /** 环境光色温偏向 (-1.0f 冷蓝 ~ +1.0f 暖黄) */
+    val ambientColorTemp: Float = 0f,
+    /** 环境光红绿蓝三原色反射调和增益 */
+    val ambientTintRed: Float = 1.0f,
+    val ambientTintGreen: Float = 1.0f,
+    val ambientTintBlue: Float = 1.0f,
+    /** 真实相机暗光 ISO 微噪点强度 (0.0f ~ 1.0f) */
+    val sensorGrainIntensity: Float = 0f,
     /** 镜头注视视线偏移 X */
     val gazeShiftX: Float = 0f,
     /** 镜头注视视线偏移 Y */
