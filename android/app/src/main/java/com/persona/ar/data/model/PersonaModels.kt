@@ -139,3 +139,17 @@ data class LLMConfigRequest(
     @SerializedName("api_key") val apiKey: String = "",
     val model: String = "deepseek-chat"
 )
+
+data class AsrResponse(
+    val text: String,
+    val provider: String? = null,
+    @SerializedName("duration_seconds") val durationSeconds: Double? = null
+)
+
+data class AsrConfigRequest(
+    val provider: String = "whisper",
+    @SerializedName("base_url") val baseUrl: String = "https://api.openai.com/v1",
+    @SerializedName("api_key") val apiKey: String = "",
+    val model: String = "whisper-1",
+    val language: String = "zh"
+)

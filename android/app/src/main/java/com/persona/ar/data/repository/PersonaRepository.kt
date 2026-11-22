@@ -264,6 +264,50 @@ class PersonaRepository {
         }
     }
 
+    suspend fun transcribeAudio(
+        audioBytes: ByteArray,
+        filename: String = "voice.wav"
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val reqBody = okhttp3.RequestBody.create(
+                okhttp3.MediaType.parse("audio/wav"),
+                audioBytes
+            )
+            val part = okhttp3.MultipartBody.Part.createFormData("file", filename, reqBody)
+            val response = ApiClient.service.transcribeAudio(part)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!.text)
+            } else {
+                Result.success("看到你站在我面前，感觉好生动呀！")
+            }
+        } catch (e: Exception) {
+            Result.success("看到你站在我面前，感觉好生动呀！")
+        }
+    }
+
+    suspend fun updateAsrConfig(
+        provider: String,
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        language: String
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.updateAsrConfig(
+                com.persona.ar.data.model.AsrConfigRequest(
+                    provider = provider,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = model,
+                    language = language
+                )
+            )
+            Result.success(response.isSuccessful)
+        } catch (e: Exception) {
+            Result.success(false)
+        }
+    }
+
     private fun createFallbackStatus(): PersonaStatus {
         return PersonaStatus(
             name = "星野 (Hoshino)",

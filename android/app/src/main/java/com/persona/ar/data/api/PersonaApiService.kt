@@ -1,5 +1,7 @@
 package com.persona.ar.data.api
 
+import com.persona.ar.data.model.AsrConfigRequest
+import com.persona.ar.data.model.AsrResponse
 import com.persona.ar.data.model.ChatRequest
 import com.persona.ar.data.model.ChatResponse
 import com.persona.ar.data.model.CreateMemoryRequest
@@ -11,11 +13,14 @@ import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
 import com.persona.ar.data.model.VoiceInteractRequest
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -74,5 +79,16 @@ interface PersonaApiService {
     @POST("api/v1/llm/config")
     suspend fun updateLLMConfig(
         @Body request: LLMConfigRequest
+    ): Response<Map<String, Any>>
+
+    @Multipart
+    @POST("api/v1/asr/transcribe")
+    suspend fun transcribeAudio(
+        @Part file: MultipartBody.Part
+    ): Response<AsrResponse>
+
+    @POST("api/v1/asr/config")
+    suspend fun updateAsrConfig(
+        @Body request: AsrConfigRequest
     ): Response<Map<String, Any>>
 }

@@ -432,9 +432,9 @@ func (e *Engine) ChatStream(userID, message string, onChunk func(string)) (*mode
 }
 
 func (e *Engine) buildLLMContext(persona PersonaDefinition, state *UserState, message string) ([]llm.Message, *llm.ChatOptions) {
-	// 1. 结构化构建 System Prompt（融合角色人设、长期记忆与现实环境感知）
+	// 1. 结构化构建 System Prompt（融合角色人设、动态联想长期记忆与现实环境感知）
 	systemPrompt := persona.Prompt
-	if memFrag := DefaultMemoryManager.GetContextPromptFragment(state.UserID, persona.ID); memFrag != "" {
+	if memFrag := DefaultMemoryManager.GetContextPromptFragmentWithRecall(state.UserID, persona.ID, message); memFrag != "" {
 		systemPrompt += "\n\n【专属情感回忆与偏好】\n" + memFrag
 	}
 
