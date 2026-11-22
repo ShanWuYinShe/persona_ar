@@ -175,20 +175,29 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         sensorTiltHelper.onTiltChanged = { pitch, roll ->
             val shiftX = (roll * 25f).coerceIn(-30f, 30f)
             val shiftY = (pitch * 25f).coerceIn(-30f, 30f)
+            val gazeX = (roll * 1.2f).coerceIn(-1f, 1f)
+            val gazeY = (pitch * 1.2f).coerceIn(-1f, 1f)
             _uiState.update { current ->
                 val updatedSpatialAnchor = if (current.spatialAnchor.isAnchored) {
                     current.spatialAnchor.copy(
                         parallaxShiftX = shiftX * 0.75f,
-                        parallaxShiftY = shiftY * 0.75f
+                        parallaxShiftY = shiftY * 0.75f,
+                        cameraGazeOffsetX = gazeX,
+                        cameraGazeOffsetY = gazeY
                     )
                 } else {
-                    current.spatialAnchor
+                    current.spatialAnchor.copy(
+                        cameraGazeOffsetX = gazeX,
+                        cameraGazeOffsetY = gazeY
+                    )
                 }
                 current.copy(
                     spatialAnchor = updatedSpatialAnchor,
                     visualState = current.visualState.copy(
                         tiltOffsetX = shiftX,
-                        tiltOffsetY = shiftY
+                        tiltOffsetY = shiftY,
+                        gazeShiftX = gazeX,
+                        gazeShiftY = gazeY
                     )
                 )
             }
@@ -521,6 +530,50 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
                 )
             )
+        }
+    }
+
+    private var lastLightNotifyTimestamp = 0L
+
+    /**
+     * 现实环境光照与色度动态反馈
+     * 将摄像头采集到的环境明暗与暗光状态实时注入虚拟伴侣与空间锚点，
+     * 并在现实光照突变时触发二次元伴侣的主动拟人关怀。
+     */
+    fun onEnvironmentalLightChanged(luminance: Float, isLowLight: Boolean) {
+        val prevLowLight = _uiState.value.spatialAnchor.isLowLight
+        _uiState.update { current ->
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(
+                    lightIntensity = luminance,
+                    isLowLight = isLowLight
+                ),
+                visualState = current.visualState.copy(
+                    environmentalLighting = luminance,
+                    isLowLight = isLowLight
+                )
+            )
+        }
+
+        // 现实光照突变时触发伴侣拟人感知关怀 (防抖 30 秒)
+        val now = System.currentTimeMillis()
+        if (!prevLowLight && isLowLight && now - lastLightNotifyTimestamp > 30_000L) {
+            lastLightNotifyTimestamp = now
+            val careMessage = ChatMessage(
+                sender = MessageSender.PERSONA,
+                text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
+                emotion = EmotionType.CARING,
+                timestamp = now
+            )
+            _uiState.update { state ->
+                state.copy(
+                    messages = state.messages + careMessage,
+                    visualState = state.visualState.copy(
+                        emotion = EmotionType.CARING,
+                        expression = "CARING"
+                    )
+                )
+            }
         }
     }
 

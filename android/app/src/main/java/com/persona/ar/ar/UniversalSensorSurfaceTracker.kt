@@ -85,11 +85,19 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             val parallaxOffsetX = sin(rollRad) * 40f
             val parallaxOffsetY = cos(pitchRad) * 35f
 
+            // 伴侣眼神朝向现实镜头微调
+            val gazeX = sin(rollRad).coerceIn(-1f, 1f)
+            val gazeY = (sin(pitchRad) - 0.65f).coerceIn(-1f, 1f)
+
             // 估算物理距离 (基于相机俯仰三角测距模型，假设手持高度约 35~45cm)
             val estimatedDistance = (0.35f / (sin(pitchRad.coerceIn(0.2f, 1.4f)))).coerceIn(0.4f, 1.8f)
 
             _spatialAnchor.value = currentAnchor.copy(
-                distanceMeters = (estimatedDistance * 10f).toInt() / 10f
+                distanceMeters = (estimatedDistance * 10f).toInt() / 10f,
+                parallaxShiftX = parallaxOffsetX,
+                parallaxShiftY = parallaxOffsetY,
+                cameraGazeOffsetX = gazeX,
+                cameraGazeOffsetY = gazeY
             )
         }
     }

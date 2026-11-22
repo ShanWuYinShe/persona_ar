@@ -44,12 +44,20 @@ data class ARSpatialAnchor(
     val scaleFactor: Float = 1.0f,
     /** 面对指挥官的偏航朝向角 (度数, 0..360) */
     val rotationYaw: Float = 0.0f,
-    /** 现实环境光照强度估计 (0f..1f) */
+    /** 现实环境光照强度估计 (0f..1.2f) */
     val lightIntensity: Float = 0.8f,
     /** 实时视差动态偏移量 X (像素 DP) */
     val parallaxShiftX: Float = 0f,
     /** 实时视差动态偏移量 Y (像素 DP) */
     val parallaxShiftY: Float = 0f,
+    /** 是否处于昏暗环境 (触发伴侣温馨关怀与暗调环境光) */
+    val isLowLight: Boolean = false,
+    /** 现实环境色调倾向 (ARGB) */
+    val ambientColorTint: Long = 0xFFFFFFFF,
+    /** 镜头注视微动偏移 X (-1f..1f) */
+    val cameraGazeOffsetX: Float = 0f,
+    /** 镜头注视微动偏移 Y (-1f..1f) */
+    val cameraGazeOffsetY: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */
@@ -59,10 +67,9 @@ data class ARSpatialAnchor(
 /**
  * 空间准心引导点 (AR Reticle)
  */
-data class ARReticleState(
-    val visible: Boolean = true,
-    val screenX: Float = 0.5f,
-    val screenY: Float = 0.65f,
-    val surfaceNormalY: Float = 1.0f,
-    val pulseProgress: Float = 0.0f
+data class ARReticle(
+    val normalizedX: Float = 0.5f,
+    val normalizedY: Float = 0.65f,
+    val isTrackingPlane: Boolean = false,
+    val planeType: String = "平面"
 )
