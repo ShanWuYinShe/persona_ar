@@ -46,5 +46,13 @@ data class CharacterVisualState(
     /** 镜头微距超近特写状态 (Macro Proximity 亲密交互) */
     val isMacroProximity: Boolean = false,
     /** 桌面边缘深度遮挡与水平面切片比例 (Surface Horizon Edge Occlusion, 0.0f ~ 1.0f) */
-    val surfaceOcclusionBottomCutoff: Float = 0f
+    val surfaceOcclusionBottomCutoff: Float = 0f,
+    /** 主光源二维方向向量 (X: -1.0 左侧 ~ +1.0 右侧, Y: -1.0 上方 ~ +1.0 下方) */
+    val lightDirectionX: Float = 0.0f,
+    val lightDirectionY: Float = -0.5f,
+    /** 主光源定向直射强度 (用于立体边缘轮廓光与高光渲染) */
+    val lightDirectionalStrength: Float = 0.2f,
+    /** 相机 3D 俯仰角与横滚角 (用于多层 3D 视差分层空间错位) */
+    val cameraPitchDegrees: Float = 45f,
+    val cameraRollDegrees: Float = 0f
 )

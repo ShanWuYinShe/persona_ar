@@ -188,13 +188,30 @@ fun ARCoreOverlay(
                 // 随设备俯仰与偏转动态自适应透视阴影偏心距与物理贴地扁平比 (Flat Ground Surface Aspect)
                 val tiltSkewX = (spatialAnchor.parallaxShiftX * 0.22f)
                 val tiltOffsetY = (spatialAnchor.parallaxShiftY * 0.18f)
-                val shadowCenterX = ax + tiltSkewX
-                val shadowCenterY = ay + tiltOffsetY
+
+                // 真实物理主光源反向投射偏移 (Directional Projected Shadow Displacement)
+                // 当台灯/窗户强光源在一侧时，影子反向延展并依入射角拉长，彻底告别单调正圆阴影
+                val lightStrength = spatialAnchor.lightDirectionalStrength.coerceIn(0.1f, 1.0f)
+                val dirShadowShiftX = -spatialAnchor.lightDirectionX * 42f * lightStrength * spatialAnchor.scaleFactor
+                val dirShadowShiftY = -spatialAnchor.lightDirectionY * 22f * lightStrength * groundAspect * spatialAnchor.scaleFactor
+
+                val stretchFactorX = 1.0f + kotlin.math.abs(spatialAnchor.lightDirectionX) * 0.38f * lightStrength
+                val stretchFactorY = 1.0f + kotlin.math.abs(spatialAnchor.lightDirectionY) * 0.28f * lightStrength
+
+                // 足底接触点 (严格贴合双脚，杜绝浮空脱节)
+                val footContactX = ax + tiltSkewX
+                val footContactY = ay + tiltOffsetY
+
+                // 定向投射阴影中心 (随真实环境光源方向反向拉长)
+                val shadowCenterX = footContactX + dirShadowShiftX
+                val shadowCenterY = footContactY + dirShadowShiftY
                 // 基于真实水平桌面光学投影模型：俯视角 pitch 越大 (更俯视)，地面投影越圆；平视时压扁成细线
                 val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
                 val groundAspect = sin(groundPitchRad).toFloat()
-                val shadowWidth = 175f * spatialAnchor.scaleFactor
-                val shadowHeight = (shadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
+                val baseShadowWidth = 175f * spatialAnchor.scaleFactor
+                val baseShadowHeight = (baseShadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
+                val shadowWidth = baseShadowWidth * stretchFactorX
+                val shadowHeight = baseShadowHeight * stretchFactorY
 
                 // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed，融入伴侣所处局部的真实材质底色)
                 val bounceAlpha = (0.09f * envLight).coerceIn(0.03f, 0.16f)
@@ -226,10 +243,12 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * penumbraSpread, shadowHeight * penumbraSpread)
                 )
 
-                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底的深色物理贴合缝隙
-                val aoWidth = shadowWidth * 0.54f
-                val aoHeight = shadowHeight * 0.30f
+                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底切面的深色物理贴合缝隙 (杜绝脚底脱节)
+                val aoWidth = baseShadowWidth * 0.54f
+                val aoHeight = baseShadowHeight * 0.30f
                 val aoAlpha = (0.78f * envLight).coerceIn(0.42f, 0.90f)
+                val aoCenterX = footContactX + dirShadowShiftX * 0.2f
+                val aoCenterY = footContactY + 1.5f + dirShadowShiftY * 0.2f
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -237,10 +256,10 @@ fun ARCoreOverlay(
                             Color.Black.copy(alpha = aoAlpha * 0.45f),
                             Color.Transparent
                         ),
-                        center = Offset(shadowCenterX, shadowCenterY + 1.5f),
+                        center = Offset(aoCenterX, aoCenterY),
                         radius = aoWidth * 0.65f
                     ),
-                    topLeft = Offset(shadowCenterX - aoWidth * 0.5f, shadowCenterY + 1.5f - aoHeight * 0.5f),
+                    topLeft = Offset(aoCenterX - aoWidth * 0.5f, aoCenterY - aoHeight * 0.5f),
                     size = Size(aoWidth, aoHeight)
                 )
 
@@ -387,6 +406,8 @@ fun ARCoreOverlay(
                                 "📍 正在自由移动 (X: ${(spatialAnchor.screenX * 100).toInt()}%, Y: ${(spatialAnchor.screenY * 100).toInt()}%) · 局部光照自适应 ✨"
                             spatialAnchor.isMacroProximity ->
                                 "微距特写已就绪 (${(spatialAnchor.scaleFactor * 100).toInt()}%) · 瞳孔镜头反光与心跳红晕 ✨"
+                            spatialAnchor.lightDirectionalStrength > 0.40f ->
+                                "主光源定向拉伸阴影已就绪 (${if (spatialAnchor.lightDirectionX < 0) "左侧" else "右侧"}光源) · 3D 立体轮廓光 ☀️"
                             spatialAnchor.bloomIntensity > 0.35f ->
                                 "环境强光漫射 · 边缘光晕溢出与光影融合 (Bloom Bleed) ☀️"
                             spatialAnchor.chromaticAberrationIntensity > 0.40f ->

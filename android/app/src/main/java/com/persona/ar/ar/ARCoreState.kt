@@ -92,6 +92,13 @@ data class ARSpatialAnchor(
     val localSurfaceTintBlue: Float = 1.0f,
     /** 当前落脚点局部照度 */
     val localSurfaceLuminance: Float = 1.0f,
+    /** 主光源二维方向向量 (X: -1.0 左侧光源 ~ +1.0 右侧光源, Y: -1.0 上方光源 ~ +1.0 下方光源) */
+    val lightDirectionX: Float = 0.0f,
+    val lightDirectionY: Float = -0.5f,
+    /** 主光源定向直射强度 (用于地面斜向定向阴影与发丝立体轮廓光) */
+    val lightDirectionalStrength: Float = 0.2f,
+    /** 桌面特征纹理置信度 (0.0f ~ 1.0f) */
+    val deskTextureConfidence: Float = 0.5f,
     /** 用户是否正在地面自由拖拽伴侣滑行中 */
     val isDragging: Boolean = false,
     /** 是否已将角色锚定在现实平面 */
