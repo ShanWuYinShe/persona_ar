@@ -58,6 +58,12 @@ data class ChatRequest(
     @SerializedName("session_id") val sessionId: String? = null
 )
 
+data class VisionInteractRequest(
+    @SerializedName("user_id") val userId: String = "user_default",
+    val message: String = "",
+    @SerializedName("image_base64") val imageBase64: String
+)
+
 data class VoiceInteractRequest(
     @SerializedName("user_id") val userId: String = "user_default",
     @SerializedName("audio_base64") val audioBase64: String? = null,

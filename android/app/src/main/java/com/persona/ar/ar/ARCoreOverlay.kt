@@ -197,6 +197,21 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
                     style = Stroke(width = 1.5f)
                 )
+
+                // 现实桌面透视空间微光切面网格 (强化物理桌面深度贴合)
+                val gridColor = Color(0x00E5FF).copy(alpha = 0.12f)
+                val gridW = shadowWidth * 1.6f
+                val gridH = shadowHeight * 2.2f
+                for (step in -3..3) {
+                    val lineY = ay + (step * (gridH / 7f))
+                    val shrink = 1.0f - (step * 0.06f)
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(ax - (gridW * 0.5f * shrink), lineY),
+                        end = Offset(ax + (gridW * 0.5f * shrink), lineY),
+                        strokeWidth = 1.2f
+                    )
+                }
             }
         }
 

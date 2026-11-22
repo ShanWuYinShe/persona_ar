@@ -39,6 +39,12 @@ type ChatRequest struct {
 	UserID  string `json:"user_id,omitempty"`
 }
 
+type VisionInteractRequest struct {
+	UserID      string `json:"user_id,omitempty"`
+	Message     string `json:"message,omitempty"`
+	ImageBase64 string `json:"image_base64" binding:"required"`
+}
+
 type ChatResponse struct {
 	Text            string      `json:"text"`
 	Emotion         EmotionType `json:"emotion"`

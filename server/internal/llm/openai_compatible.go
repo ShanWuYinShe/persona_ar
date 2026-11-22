@@ -35,6 +35,27 @@ func NewOpenAICompatibleClient(baseURL, apiKey, model string) *OpenAICompatibleC
 	}
 }
 
+func formatMessagesForOpenAI(messages []Message) []map[string]interface{} {
+	formatted := make([]map[string]interface{}, 0, len(messages))
+	for _, m := range messages {
+		if m.ImageURL != "" {
+			formatted = append(formatted, map[string]interface{}{
+				"role": string(m.Role),
+				"content": []map[string]interface{}{
+					{"type": "text", "text": m.Content},
+					{"type": "image_url", "image_url": map[string]string{"url": m.ImageURL}},
+				},
+			})
+		} else {
+			formatted = append(formatted, map[string]interface{}{
+				"role":    string(m.Role),
+				"content": m.Content,
+			})
+		}
+	}
+	return formatted
+}
+
 func (c *OpenAICompatibleClient) Complete(ctx context.Context, messages []Message, opts *ChatOptions) (string, error) {
 	temp := float32(0.7)
 	maxTokens := 300
@@ -49,7 +70,7 @@ func (c *OpenAICompatibleClient) Complete(ctx context.Context, messages []Messag
 
 	payload := map[string]interface{}{
 		"model":       c.model,
-		"messages":    messages,
+		"messages":    formatMessagesForOpenAI(messages),
 		"temperature": temp,
 		"max_tokens":  maxTokens,
 	}
@@ -114,7 +135,7 @@ func (c *OpenAICompatibleClient) Stream(ctx context.Context, messages []Message,
 
 	payload := map[string]interface{}{
 		"model":       c.model,
-		"messages":    messages,
+		"messages":    formatMessagesForOpenAI(messages),
 		"temperature": temp,
 		"max_tokens":  maxTokens,
 		"stream":      true,
