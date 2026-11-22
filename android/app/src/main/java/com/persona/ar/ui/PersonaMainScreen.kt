@@ -87,6 +87,9 @@ fun PersonaMainScreen(
                 onEnvironmentLightChanged = { lum, isLow ->
                     viewModel.onEnvironmentalLightChanged(lum, isLow)
                 },
+                onOpticalProfileChanged = { profile ->
+                    viewModel.onOpticalProfileChanged(profile)
+                },
                 onFrameCaptureReady = { provider ->
                     cameraFrameProvider = provider
                 }

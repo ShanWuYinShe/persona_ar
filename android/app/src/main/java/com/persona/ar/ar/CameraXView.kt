@@ -25,6 +25,7 @@ import java.util.concurrent.Executors
 fun CameraXView(
     modifier: Modifier = Modifier,
     onEnvironmentLightChanged: (luminance: Float, isLowLight: Boolean) -> Unit = { _, _ -> },
+    onOpticalProfileChanged: ((EnvironmentalOpticalProfile) -> Unit)? = null,
     onFrameCaptureReady: (((() -> Bitmap?)) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -61,9 +62,14 @@ fun CameraXView(
                 .also { analysis ->
                     analysis.setAnalyzer(
                         analysisExecutor,
-                        CameraEnvironmentalAnalyzer { lum, isLow ->
-                            onEnvironmentLightChanged(lum, isLow)
-                        }
+                        CameraEnvironmentalAnalyzer(
+                            onLightEstimated = { lum, isLow ->
+                                onEnvironmentLightChanged(lum, isLow)
+                            },
+                            onOpticalProfileEstimated = { profile ->
+                                onOpticalProfileChanged?.invoke(profile)
+                            }
+                        )
                     )
                 }
 

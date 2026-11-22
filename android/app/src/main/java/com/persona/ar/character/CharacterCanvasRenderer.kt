@@ -195,6 +195,11 @@ fun CharacterCanvasRenderer(
             drawChibiMouth(cx, cy, s, visualState.lipSyncAmplitude, visualState)
             drawChibiHairFront(cx, cy, s * headSquishScaleY, ahogeWiggle, visualState)
             drawGameEmoteParticles(cx, cy, s, visualState)
+
+            // 4. 现实物理相机高 ISO 传感器微噪点粒子模拟 (消除纯数码矢量的过度纯净感，完美融合摄像头 CMOS 真实质感)
+            if (visualState.isLowLight || visualState.sensorGrainIntensity > 0.04f) {
+                drawCameraSensorGrain(cx, cy, s, visualState.sensorGrainIntensity.coerceIn(0.04f, 0.16f))
+            }
         }
     }
 }
@@ -270,18 +275,67 @@ private fun parseColorHex(hex: String?, fallback: Color): Color {
 }
 
 /**
- * 将二次元角色基色与摄像头现实物理环境光实时调和
- * 在暗光下呈现电影级冷调遮蔽，在亮光下呈现通透高光与真实漫反射
+ * 现实物理相机高 ISO 传感器微噪点模拟 (消除纸片人过度纯净的数码感，融于摄像头真实 CMOS 画面)
  */
+private fun DrawScope.drawCameraSensorGrain(cx: Float, cy: Float, s: Float, intensity: Float) {
+    val grainColorLight = Color.White.copy(alpha = intensity * 0.40f)
+    val grainColorDark = Color.Black.copy(alpha = intensity * 0.50f)
+    val boundW = 160f * s
+    val boundH = 240f * s
+    val step = 16f * s
+    var y = cy - 80f * s
+    var rowIndex = 0
+    while (y < cy + boundH - 80f * s) {
+        val xOffset = if (rowIndex % 2 == 0) 0f else step * 0.5f
+        var x = cx - boundW * 0.5f + xOffset
+        var colIndex = 0
+        while (x < cx + boundW * 0.5f) {
+            val isDarkGrain = (rowIndex + colIndex) % 3 == 0
+            drawCircle(
+                color = if (isDarkGrain) grainColorDark else grainColorLight,
+                radius = 1.1f,
+                center = Offset(x, y)
+            )
+            x += step
+            colIndex++
+        }
+        y += step
+        rowIndex++
+    }
+}
+
+/**
+ * 将二次元角色基色与摄像头现实物理环境全光谱 (明暗度、色温、红绿蓝反射增益) 实时调和
+ * 在暖灯下染上温暖通透金黄，在冷灯下呈现科技冷冽，在暗光下展现真实微噪点与电影级冷调遮蔽
+ */
+private fun modulateColorWithEnvLight(
+    color: Color,
+    state: CharacterVisualState
+): Color {
+    val factor = state.environmentalLighting.coerceIn(0.28f, 1.30f)
+    var r = (color.red * factor * state.ambientTintRed).coerceIn(0f, 1f)
+    var g = (color.green * factor * state.ambientTintGreen).coerceIn(0f, 1f)
+    var b = (color.blue * factor * state.ambientTintBlue).coerceIn(0f, 1f)
+
+    if (state.isLowLight) {
+        // 暗光下人眼视杆细胞主导 (Purkinje 效应)：饱和度降低、带轻微蓝紫夜视色阶
+        val gray = 0.299f * r + 0.587f * g + 0.114f * b
+        r = r * 0.65f + gray * 0.35f
+        g = g * 0.65f + gray * 0.35f
+        b = (b * 0.70f + gray * 0.30f + 0.03f).coerceIn(0f, 1f)
+    }
+    return Color(red = r, green = g, blue = b, alpha = color.alpha)
+}
+
 private fun modulateColorWithEnvLight(
     color: Color,
     lightIntensity: Float,
     isLowLight: Boolean
 ): Color {
-    val factor = lightIntensity.coerceIn(0.32f, 1.25f)
-    val r = (color.red * factor).coerceIn(0f, 1f)
-    val g = (color.green * factor).coerceIn(0f, 1f)
-    val b = if (isLowLight) {
+    val factor = lightIntensity.coerceIn(0.28f, 1.30f)
+    var r = (color.red * factor).coerceIn(0f, 1f)
+    var g = (color.green * factor).coerceIn(0f, 1f)
+    var b = if (isLowLight) {
         (color.blue * factor * 1.08f).coerceIn(0f, 1f)
     } else {
         (color.blue * factor).coerceIn(0f, 1f)
@@ -298,9 +352,9 @@ private fun DrawScope.drawChibiBody(
 ) {
     val model = state.model
     val rawSkirt = parseColorHex(model?.skirtColorHex, Color(0xFF384B70))
-    val skirtColor = modulateColorWithEnvLight(rawSkirt, state.environmentalLighting, state.isLowLight)
+    val skirtColor = modulateColorWithEnvLight(rawSkirt, state)
     val rawRibbon = parseColorHex(model?.previewColorHex, Color(0xFFFF5277))
-    val ribbonColor = modulateColorWithEnvLight(rawRibbon, state.environmentalLighting, state.isLowLight)
+    val ribbonColor = modulateColorWithEnvLight(rawRibbon, state)
     val strokeColor = Color(0xFF281C38) // 饱满卡通深紫黑描边
     val strokeW = 3.5f * s
 
@@ -437,7 +491,7 @@ private fun DrawScope.drawChibiHairBack(
 ) {
     val model = state.model
     val rawHair = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
-    val hairColor = modulateColorWithEnvLight(rawHair, state.environmentalLighting, state.isLowLight)
+    val hairColor = modulateColorWithEnvLight(rawHair, state)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 
@@ -477,7 +531,7 @@ private fun DrawScope.drawChibiFace(
     state: CharacterVisualState
 ) {
     val rawSkin = Color(0xFFFFF1E8)
-    val skinColor = modulateColorWithEnvLight(rawSkin, state.environmentalLighting, state.isLowLight)
+    val skinColor = modulateColorWithEnvLight(rawSkin, state)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 
@@ -501,7 +555,7 @@ private fun DrawScope.drawChibiEyes(
 ) {
     val model = state.model
     val rawEyeColor = parseColorHex(model?.eyeColorHex, Color(0xFF673AB7))
-    val eyeColor = modulateColorWithEnvLight(rawEyeColor, state.environmentalLighting, state.isLowLight)
+    val eyeColor = modulateColorWithEnvLight(rawEyeColor, state)
     val strokeColor = Color(0xFF281C38)
     val eyeY = cy + 24f * s
     val leftEyeX = cx - 35f * s
@@ -685,7 +739,7 @@ private fun DrawScope.drawChibiHairFront(
 ) {
     val model = state.model
     val rawHair = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
-    val hairColor = modulateColorWithEnvLight(rawHair, state.environmentalLighting, state.isLowLight)
+    val hairColor = modulateColorWithEnvLight(rawHair, state)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 

@@ -609,6 +609,56 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private var lastLightNotifyTimestamp = 0L
 
     /**
+     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益与相机高 ISO 噪点)
+     */
+    fun onOpticalProfileChanged(profile: com.persona.ar.ar.EnvironmentalOpticalProfile) {
+        val prevLowLight = _uiState.value.spatialAnchor.isLowLight
+        _uiState.update { current ->
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(
+                    lightIntensity = profile.luminance,
+                    isLowLight = profile.isLowLight,
+                    ambientColorTemp = profile.colorTemp,
+                    ambientTintRed = profile.tintR,
+                    ambientTintGreen = profile.tintG,
+                    ambientTintBlue = profile.tintB,
+                    sensorGrainIntensity = profile.sensorGrainIntensity
+                ),
+                visualState = current.visualState.copy(
+                    environmentalLighting = profile.luminance,
+                    isLowLight = profile.isLowLight,
+                    ambientColorTemp = profile.colorTemp,
+                    ambientTintRed = profile.tintR,
+                    ambientTintGreen = profile.tintG,
+                    ambientTintBlue = profile.tintB,
+                    sensorGrainIntensity = profile.sensorGrainIntensity
+                )
+            )
+        }
+
+        // 现实光照突变时触发伴侣拟人感知关怀 (防抖 30 秒)
+        val now = System.currentTimeMillis()
+        if (!prevLowLight && profile.isLowLight && now - lastLightNotifyTimestamp > 30_000L) {
+            lastLightNotifyTimestamp = now
+            val careMessage = ChatMessage(
+                sender = MessageSender.PERSONA,
+                text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
+                emotion = EmotionType.SURPRISED,
+                timestamp = now
+            )
+            _uiState.update { state ->
+                state.copy(
+                    messages = state.messages + careMessage,
+                    visualState = state.visualState.copy(
+                        emotion = EmotionType.SURPRISED,
+                        expression = "SURPRISED"
+                    )
+                )
+            }
+        }
+    }
+
+    /**
      * 现实环境光照与色度动态反馈
      * 将摄像头采集到的环境明暗与暗光状态实时注入虚拟伴侣与空间锚点，
      * 并在现实光照突变时触发二次元伴侣的主动拟人关怀。
