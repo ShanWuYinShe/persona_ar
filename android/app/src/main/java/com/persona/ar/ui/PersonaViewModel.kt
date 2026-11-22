@@ -185,6 +185,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private fun setupSensors() {
         sensorTiltHelper.onTiltChanged = { pitch, roll ->
+            val pitchDeg = Math.toDegrees(pitch.toDouble()).toFloat()
+            val rollDeg = Math.toDegrees(roll.toDouble()).toFloat()
             val shiftX = (roll * 25f).coerceIn(-30f, 30f)
             val shiftY = (pitch * 25f).coerceIn(-30f, 30f)
             val gazeX = (roll * 1.2f).coerceIn(-1f, 1f)
@@ -195,12 +197,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         parallaxShiftX = shiftX * 0.75f,
                         parallaxShiftY = shiftY * 0.75f,
                         cameraGazeOffsetX = gazeX,
-                        cameraGazeOffsetY = gazeY
+                        cameraGazeOffsetY = gazeY,
+                        cameraPitchDegrees = pitchDeg,
+                        cameraRollDegrees = rollDeg
                     )
                 } else {
                     current.spatialAnchor.copy(
                         cameraGazeOffsetX = gazeX,
-                        cameraGazeOffsetY = gazeY
+                        cameraGazeOffsetY = gazeY,
+                        cameraPitchDegrees = pitchDeg,
+                        cameraRollDegrees = rollDeg
                     )
                 }
                 current.copy(
