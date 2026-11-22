@@ -26,8 +26,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -172,14 +174,16 @@ fun ARCoreOverlay(
                 val alpha = (0.50f * envLight).coerceIn(0.16f, 0.58f)
                 val shadowCenterColor = if (spatialAnchor.isLowLight) Color(0x990A0414) else Color.Black.copy(alpha = alpha)
 
-                // 随设备俯仰与偏转动态自适应透视阴影偏心距与扁平比
+                // 随设备俯仰与偏转动态自适应透视阴影偏心距与物理贴地扁平比 (Flat Ground Surface Aspect)
                 val tiltSkewX = (spatialAnchor.parallaxShiftX * 0.22f)
                 val tiltOffsetY = (spatialAnchor.parallaxShiftY * 0.18f)
                 val shadowCenterX = ax + tiltSkewX
                 val shadowCenterY = ay + tiltOffsetY
-                val aspectFactor = (1.0f + (spatialAnchor.parallaxShiftY * 0.012f)).coerceIn(0.72f, 1.35f)
-                val shadowWidth = 168f * spatialAnchor.scaleFactor
-                val shadowHeight = 46f * spatialAnchor.scaleFactor * aspectFactor
+                // 基于真实水平桌面光学投影模型：俯视角 pitch 越大 (更俯视)，地面投影越圆；平视时压扁成细线
+                val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
+                val groundAspect = sin(groundPitchRad).toFloat()
+                val shadowWidth = 175f * spatialAnchor.scaleFactor
+                val shadowHeight = (shadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
 
                 // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed)
                 val bounceAlpha = (0.07f * envLight).coerceIn(0.02f, 0.12f)
@@ -269,15 +273,34 @@ fun ARCoreOverlay(
             }
         }
 
-        // 2. 纸片人实体立绘投射 (融合视差微位移与全光谱光学特征)
+        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视)
         if (spatialAnchor.isAnchored) {
             val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX).dp
             val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY).dp
+
+            // 1) 3D 俯仰透视收缩 (相机俯仰看桌面时，角色头部前倾近大远小，下肢透视缩短)
+            val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
+            // 2) 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直于物理地面站立)
+            val gravityRoll = -spatialAnchor.cameraRollDegrees.coerceIn(-45f, 45f)
+            // 3) 用户在平面上手势旋转的偏航角 (Yaw)
+            val yawRotation = spatialAnchor.rotationYaw
 
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .offset(x = offsetX, y = offsetY)
+                    .graphicsLayer {
+                        // 关键：将 3D 透视变换原点严格锚定在伴侣与物理桌面的接触点 (双足地面切点)
+                        transformOrigin = TransformOrigin(0.5f, 0.94f)
+                        // 3D 俯仰透视收缩 (根据单反广角真实物理焦距)
+                        rotationX = -pitchTilt
+                        // 3D 偏航旋转 (伴侣在桌面上可以 360 度转身面朝不同方向)
+                        rotationY = yawRotation
+                        // 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直站立)
+                        rotationZ = gravityRoll
+                        // 物理相机光学透视视距
+                        cameraDistance = 8f * density
+                    }
             ) {
                 CharacterCanvasRenderer(
                     visualState = visualState.copy(

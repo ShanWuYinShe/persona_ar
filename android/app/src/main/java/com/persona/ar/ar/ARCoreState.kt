@@ -78,6 +78,14 @@ data class ARSpatialAnchor(
     val isMacroProximity: Boolean = false,
     /** 桌面边缘深度遮挡切片比例 (0.0f ~ 1.0f) */
     val surfaceOcclusionBottomCutoff: Float = 0f,
+    /** 相机相对物理桌面的 3D 俯仰倾角 (度数, 0° 垂直正立 ~ 90° 水平俯视桌面) */
+    val cameraPitchDegrees: Float = 45f,
+    /** 相机左右横滚倾角 (度数, -90° ~ 90°，用于重力铅垂锁定) */
+    val cameraRollDegrees: Float = 0f,
+    /** 3D 空间透视投影虚拟相机视距 (Focal Distance) */
+    val cameraFocalDistance: Float = 10f,
+    /** 伴侣脚底采样到的现实桌面材质底色 (ARGB) */
+    val localSurfaceTintHex: Long = 0xFFFFFFFF,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

@@ -97,7 +97,10 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
                 parallaxShiftX = parallaxOffsetX,
                 parallaxShiftY = parallaxOffsetY,
                 cameraGazeOffsetX = gazeX,
-                cameraGazeOffsetY = gazeY
+                cameraGazeOffsetY = gazeY,
+                cameraPitchDegrees = pitch,
+                cameraRollDegrees = roll,
+                cameraFocalDistance = 10f
             )
         }
     }
@@ -113,6 +116,9 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             screenY = screenY,
             isAnchored = true,
             distanceMeters = 0.65f,
+            cameraPitchDegrees = pitch,
+            cameraRollDegrees = roll,
+            cameraFocalDistance = 10f,
             planeTypeDescription = "书桌实景 (离线通用视差)"
         )
         _trackingStatus.value = ARTrackingStatus.ANCHORED
