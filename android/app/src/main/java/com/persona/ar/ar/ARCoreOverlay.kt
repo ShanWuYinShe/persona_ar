@@ -1,9 +1,6 @@
 package com.persona.ar.ar
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Refresh
@@ -25,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -36,10 +35,13 @@ import androidx.compose.ui.unit.sp
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.character.CharacterVisualState
 import com.persona.ar.data.model.TouchPart
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
- * 完整 ARCore 空间增强层与物理平面锚定组件
- * 包含：平面扫描点阵、贴地准心 (Reticle)、自适应柔和接触阴影、手势位姿操控与状态指示胶囊
+ * 零 GMS 依赖的通用 AR 空间实景增强层
+ * 包含：二游契约魔法阵 (Summoning Circle)、视差贴地准心 (Reticle)、自适应柔和接触阴影与全手势位姿操控
  */
 @Composable
 fun ARCoreOverlay(
@@ -55,8 +57,8 @@ fun ARCoreOverlay(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "arPulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.15f,
+        initialValue = 0.9f,
+        targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
             animation = tween(1200, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -64,14 +66,24 @@ fun ARCoreOverlay(
         label = "reticlePulse"
     )
 
-    val reticleRotation by infiniteTransition.animateFloat(
+    val runeRotationCW by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
+            animation = tween(10000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "reticleRotation"
+        label = "runeRotationCW"
+    )
+
+    val runeRotationCCW by infiniteTransition.animateFloat(
+        initialValue = 360f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(7000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "runeRotationCCW"
     )
 
     Box(
@@ -85,7 +97,7 @@ fun ARCoreOverlay(
                 }
             }
     ) {
-        // 1. 物理平面网格与接触阴影绘制层
+        // 1. 物理平面网格、契约法阵与接触阴影绘制层
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -107,68 +119,93 @@ fun ARCoreOverlay(
             val w = size.width
             val h = size.height
 
-            // A. 未放置角色时：绘制地面贴地引导准心 (Reticle)
+            // A. 未放置角色时：绘制契约召唤魔法阵与贴地视差准心 (Summoning Circle & Reticle)
             if (!spatialAnchor.isAnchored) {
                 val rx = w * 0.5f
                 val ry = h * 0.65f
-                val baseRadius = 55f * pulseScale
+                val baseRadius = 60f * pulseScale
 
-                // 贴地椭圆准心（带透视压扁效果）
+                // 1) 贴地透视压扁外环 (45° 俯视视差透视)
                 drawOval(
-                    color = Color(0x3300E5FF),
-                    topLeft = Offset(rx - baseRadius * 1.4f, ry - baseRadius * 0.5f),
-                    size = androidx.compose.ui.geometry.Size(baseRadius * 2.8f, baseRadius),
+                    color = Color(0x4400E5FF),
+                    topLeft = Offset(rx - baseRadius * 1.5f, ry - baseRadius * 0.55f),
+                    size = Size(baseRadius * 3.0f, baseRadius * 1.1f),
                     style = Stroke(width = 2.5f)
                 )
 
-                rotate(degrees = reticleRotation, pivot = Offset(rx, ry)) {
-                    drawCircle(
-                        color = Color(0x6600E5FF),
-                        radius = baseRadius * 0.7f,
-                        center = Offset(rx, ry),
-                        style = Stroke(width = 2f)
+                // 2) 顺时针旋转刻度圈
+                rotate(degrees = runeRotationCW, pivot = Offset(rx, ry)) {
+                    for (i in 0 until 12) {
+                        val angle = (i * 30f) * PI / 180.0
+                        val tickLen = if (i % 3 == 0) 8f else 4f
+                        val ox = rx + (cos(angle) * baseRadius * 1.35f).toFloat()
+                        val oy = ry + (sin(angle) * baseRadius * 0.5f).toFloat()
+                        drawCircle(
+                            color = Color(0x8800E5FF),
+                            radius = tickLen * 0.4f,
+                            center = Offset(ox, oy)
+                        )
+                    }
+                }
+
+                // 3) 逆时针旋转内圈星芒阵法
+                rotate(degrees = runeRotationCCW, pivot = Offset(rx, ry)) {
+                    drawOval(
+                        color = Color(0x66FF5277),
+                        topLeft = Offset(rx - baseRadius * 0.9f, ry - baseRadius * 0.35f),
+                        size = Size(baseRadius * 1.8f, baseRadius * 0.7f),
+                        style = Stroke(width = 1.8f)
                     )
                 }
 
-                // 中心定位点
+                // 4) 核心定位聚焦星点
                 drawCircle(
                     color = Color(0xFF00E5FF),
-                    radius = 4f,
+                    radius = 4.5f,
                     center = Offset(rx, ry)
                 )
             } else {
-                // B. 已放置角色时：在真实平面绘制根据环境光强衰减的柔和接触阴影 (Contact Shadow)
-                val ax = w * spatialAnchor.screenX
-                val ay = h * spatialAnchor.screenY + (140f * spatialAnchor.scaleFactor)
-                val shadowWidth = 160f * spatialAnchor.scaleFactor
-                val shadowHeight = 45f * spatialAnchor.scaleFactor
-                val alpha = (0.45f * spatialAnchor.lightIntensity).coerceIn(0.15f, 0.55f)
+                // B. 已放置角色时：在真实桌面绘制柔和接触阴影 (Soft Contact Shadow) 与微光契约印记
+                val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX
+                val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
+                val shadowWidth = 165f * spatialAnchor.scaleFactor
+                val shadowHeight = 48f * spatialAnchor.scaleFactor
+                val alpha = (0.48f * spatialAnchor.lightIntensity).coerceIn(0.18f, 0.55f)
 
+                // 柔和椭圆环境光衰减阴影
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
                             Color.Black.copy(alpha = alpha),
-                            Color.Black.copy(alpha = alpha * 0.5f),
+                            Color.Black.copy(alpha = alpha * 0.45f),
                             Color.Transparent
                         ),
                         center = Offset(ax, ay),
-                        radius = shadowWidth * 0.8f
+                        radius = shadowWidth * 0.85f
                     ),
                     topLeft = Offset(ax - shadowWidth * 0.5f, ay - shadowHeight * 0.5f),
-                    size = androidx.compose.ui.geometry.Size(shadowWidth, shadowHeight)
+                    size = Size(shadowWidth, shadowHeight)
+                )
+
+                // 伴侣脚下若隐若现的二游契约微光光环
+                drawOval(
+                    color = Color(0x2200E5FF),
+                    topLeft = Offset(ax - shadowWidth * 0.45f, ay - shadowHeight * 0.45f),
+                    size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
+                    style = Stroke(width = 1.5f)
                 )
             }
         }
 
-        // 2. 纸片人实体立绘投射 (带空间位姿与距离缩放)
+        // 2. 纸片人实体立绘投射 (融合视差微位移与手势位姿)
         if (spatialAnchor.isAnchored) {
+            val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX).dp
+            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY).dp
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .offset(
-                        x = ((spatialAnchor.screenX - 0.5f) * 300).dp,
-                        y = ((spatialAnchor.screenY - 0.5f) * 200).dp
-                    )
+                    .offset(x = offsetX, y = offsetY)
             ) {
                 CharacterCanvasRenderer(
                     visualState = visualState.copy(scale = spatialAnchor.scaleFactor),
@@ -189,21 +226,21 @@ fun ARCoreOverlay(
                 ARTrackingStatus.INITIALIZING -> {
                     ARGuidePill(
                         icon = Icons.Filled.NearMe,
-                        text = "正在启动空间相机与 ARCore 追踪...",
+                        text = "正在启动原生实景透视相机...",
                         bgColor = Color(0xE6281C38)
                     )
                 }
                 ARTrackingStatus.SEARCHING_PLANE -> {
                     ARGuidePill(
                         icon = Icons.Filled.CenterFocusStrong,
-                        text = "正在扫描平坦桌面，请缓慢平移镜头...",
+                        text = "正在扫描平坦桌面，请缓缓平移镜头...",
                         bgColor = Color(0xE6281C38)
                     )
                 }
                 ARTrackingStatus.PLANE_DETECTED -> {
                     ARGuidePill(
                         icon = Icons.Filled.TouchApp,
-                        text = "已发现平坦桌面！轻触屏幕放置 $partnerName ✨",
+                        text = "已发现平坦桌面！轻触契约阵召唤 $partnerName ✨",
                         bgColor = Color(0xE60091EA)
                     )
                 }
@@ -213,8 +250,8 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         ARGuidePill(
-                            icon = Icons.Filled.ViewInAr,
-                            text = "已锚定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放",
+                            icon = Icons.Filled.AutoAwesome,
+                            text = "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放",
                             bgColor = Color(0xE61B5E20)
                         )
                         // 一键复位按钮
@@ -239,7 +276,7 @@ fun ARCoreOverlay(
                 ARTrackingStatus.TRACKING_LOST -> {
                     ARGuidePill(
                         icon = Icons.Filled.CenterFocusStrong,
-                        text = "空间特征丢失，请对准光线充足的桌面重新追踪",
+                        text = "空间视差受限，请对准书桌平坦表面",
                         bgColor = Color(0xE6C62828)
                     )
                 }

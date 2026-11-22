@@ -240,13 +240,19 @@ fun SettingsDialog(
                         )
                         GameOptionChip(
                             title = "3D 空间追踪",
-                            subtitle = "ARCore 平面落桌",
+                            subtitle = "实景视差·零GMS依赖",
                             isSelected = currentMode == ARMode.ARCORE_3D,
                             activeColor = Color(0xFF00B0FF),
                             onClick = { if (currentMode != ARMode.ARCORE_3D) onToggleMode() },
                             modifier = Modifier.weight(1f)
                         )
                     }
+                    Text(
+                        text = "• 3D 空间追踪: 内置零 GMS 依赖的通用实景视差引擎，国内安卓全机型 100% 离线支持，轻触桌面即可锁定伴侣",
+                        color = Color(0xFF6B587B),
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
                 }
 
                 // 4. 后端 API 地址
