@@ -729,10 +729,62 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * 在现实画面中自由拖拽滑动伴侣模型 (Surface Drag to Reposition)
+     */
+    fun onDragAnchor(deltaNormX: Float, deltaNormY: Float) {
+        _uiState.update { current ->
+            val anchor = current.spatialAnchor
+            val nextX = (anchor.screenX + deltaNormX).coerceIn(0.08f, 0.92f)
+            val nextY = (anchor.screenY + deltaNormY).coerceIn(0.22f, 0.88f)
+
+            // 透视几何：Y 坐标越小 (靠近画面上方远端)，距离越远 (0.8m ~ 1.5m)
+            val depthFactor = (1.0f + (0.65f - nextY) * 0.5f).coerceIn(0.55f, 1.4f)
+            val currentScale = anchor.scaleFactor
+
+            val optical = calculateOpticalParams(
+                screenX = nextX,
+                screenY = nextY,
+                scaleFactor = currentScale,
+                bloomBleedFactor = anchor.bloomIntensity
+            )
+            audioPlayer.updateSpatialAudio(nextX, currentScale)
+
+            current.copy(
+                spatialAnchor = anchor.copy(
+                    screenX = nextX,
+                    screenY = nextY,
+                    isDragging = true,
+                    distanceMeters = ((0.65f * depthFactor) * 10f).toInt() / 10f,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                ),
+                visualState = current.visualState.copy(
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                )
+            )
+        }
+    }
+
+    fun onDragStateChanged(isDragging: Boolean) {
+        _uiState.update { current ->
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(isDragging = isDragging)
+            )
+        }
+    }
+
     private var lastLightNotifyTimestamp = 0L
 
     /**
-     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益、强光光晕与相机高 ISO 噪点)
+     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益、强光光晕、相机高 ISO 噪点与落脚点局部材质底色)
      */
     fun onOpticalProfileChanged(profile: com.persona.ar.ar.EnvironmentalOpticalProfile) {
         val prevLowLight = _uiState.value.spatialAnchor.isLowLight
@@ -745,9 +797,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 bloomBleedFactor = profile.bloomBleedFactor
             )
 
+            // 综合全局环境照度与伴侣落脚点局部桌面照度 (40% 全局 + 60% 局部)
+            val effectiveLighting = (profile.luminance * 0.4f + profile.localSurfaceLuminance * 0.6f).coerceIn(0.2f, 1.35f)
+
             current.copy(
                 spatialAnchor = anchor.copy(
-                    lightIntensity = profile.luminance,
+                    lightIntensity = effectiveLighting,
                     isLowLight = profile.isLowLight,
                     ambientColorTemp = profile.colorTemp,
                     ambientTintRed = profile.tintR,
@@ -759,15 +814,19 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     chromaticAngleRad = optical.chromaticAngle,
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    localSurfaceTintRed = profile.localSurfaceTintR,
+                    localSurfaceTintGreen = profile.localSurfaceTintG,
+                    localSurfaceTintBlue = profile.localSurfaceTintB,
+                    localSurfaceLuminance = profile.localSurfaceLuminance
                 ),
                 visualState = current.visualState.copy(
-                    environmentalLighting = profile.luminance,
+                    environmentalLighting = effectiveLighting,
                     isLowLight = profile.isLowLight,
                     ambientColorTemp = profile.colorTemp,
-                    ambientTintRed = profile.tintR,
-                    ambientTintGreen = profile.tintG,
-                    ambientTintBlue = profile.tintB,
+                    ambientTintRed = (profile.tintR * 0.7f + profile.localSurfaceTintR * 0.3f).coerceIn(0.8f, 1.25f),
+                    ambientTintGreen = (profile.tintG * 0.7f + profile.localSurfaceTintG * 0.3f).coerceIn(0.8f, 1.25f),
+                    ambientTintBlue = (profile.tintB * 0.7f + profile.localSurfaceTintB * 0.3f).coerceIn(0.8f, 1.25f),
                     sensorGrainIntensity = profile.sensorGrainIntensity,
                     bloomIntensity = optical.bloomIntensity,
                     chromaticAberrationIntensity = optical.chromaticAberration,

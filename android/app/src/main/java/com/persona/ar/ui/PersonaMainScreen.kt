@@ -71,19 +71,21 @@ fun PersonaMainScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = {
-                        // 单击现实背景空白处：切换“沉浸陪伴模式 / 交互模式”
+                    onDoubleTap = {
+                        // 双击现实背景空白处：切换“沉浸陪伴模式 / 交互模式” (避免与单点桌面重定位冲突)
                         isUiVisible = !isUiVisible
                     }
                 )
             }
     ) {
-        // 1. 现实摄像头画面透传层 (集成环境光照感知与真实相机帧抓取)
+        // 1. 现实摄像头画面透传层 (集成环境光照感知、局部材质探针与真实相机帧抓取)
         var cameraFrameProvider by remember { mutableStateOf<(() -> android.graphics.Bitmap?)?>(null) }
 
         if (hasCameraPermission) {
             CameraXView(
                 modifier = Modifier.fillMaxSize(),
+                focusAnchorNormX = uiState.spatialAnchor.screenX,
+                focusAnchorNormY = uiState.spatialAnchor.screenY,
                 onEnvironmentLightChanged = { lum, isLow ->
                     viewModel.onEnvironmentalLightChanged(lum, isLow)
                 },
@@ -119,6 +121,8 @@ fun PersonaMainScreen(
                     partnerName = uiState.activeModel?.name ?: "星野",
                     onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
                     onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
+                    onDragAnchor = { dx, dy -> viewModel.onDragAnchor(dx, dy) },
+                    onDragStateChanged = { isDragging -> viewModel.onDragStateChanged(isDragging) },
                     onResetAnchor = { viewModel.onResetAnchor() },
                     onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
                     modifier = Modifier.fillMaxSize()

@@ -86,6 +86,14 @@ data class ARSpatialAnchor(
     val cameraFocalDistance: Float = 10f,
     /** 伴侣脚底采样到的现实桌面材质底色 (ARGB) */
     val localSurfaceTintHex: Long = 0xFFFFFFFF,
+    /** 当前落脚点局部桌面底色红绿蓝反射分量 (用于木质桌面、深色桌面精细漫反射) */
+    val localSurfaceTintRed: Float = 1.0f,
+    val localSurfaceTintGreen: Float = 1.0f,
+    val localSurfaceTintBlue: Float = 1.0f,
+    /** 当前落脚点局部照度 */
+    val localSurfaceLuminance: Float = 1.0f,
+    /** 用户是否正在地面自由拖拽伴侣滑行中 */
+    val isDragging: Boolean = false,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */
