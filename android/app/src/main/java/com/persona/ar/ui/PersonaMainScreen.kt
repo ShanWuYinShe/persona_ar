@@ -216,7 +216,7 @@ fun PersonaMainScreen(
                     displayMode = uiState.bubbleDisplayMode,
                     isSpeaking = uiState.isSpeaking,
                     partnerName = uiState.visualState.name.ifBlank { "星野 Hoshino" },
-                    partnerColorHex = uiState.visualState.model?.primaryColorHex ?: "#FF5277",
+                    partnerColorHex = uiState.visualState.model?.previewColorHex ?: "#FF5277",
                     streamingText = uiState.streamingText,
                     modifier = Modifier.fillMaxWidth()
                 )

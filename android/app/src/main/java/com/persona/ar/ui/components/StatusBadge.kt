@@ -148,7 +148,7 @@ fun StatusBadge(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // AR 现实模式 / 3D 纯净桌面 快速切换快捷键
-            val isARActive = arMode == ARMode.AR_CAMERA
+            val isARActive = arMode == ARMode.ARCORE_3D
             IconButton(
                 onClick = onToggleARMode,
                 modifier = Modifier
