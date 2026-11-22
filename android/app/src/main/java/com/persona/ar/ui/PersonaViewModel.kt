@@ -116,7 +116,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             audioPlayer.interrupt()
         }
         wsClient.onThinkingStart = {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isLoading = true, streamingText = "") }
+        }
+        wsClient.onStreamChunk = { chunk ->
+            _uiState.update { current ->
+                current.copy(streamingText = (current.streamingText ?: "") + chunk)
+            }
         }
         wsClient.onResponseComplete = { respText, emotion, action, expr, audioBase64, affinity, mood ->
             _uiState.update { current ->
@@ -127,6 +132,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 )
                 current.copy(
                     isLoading = false,
+                    streamingText = null,
                     messages = current.messages + personaMsg,
                     visualState = current.visualState.copy(
                         emotion = emotion,
@@ -248,7 +254,30 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun onTouchPart(part: TouchPart) {
+    fun onTouchPart(part: TouchPart, touchX: Float = 0.5f, touchY: Float = 0.45f) {
+        val (expGain, fxText) = when (part) {
+            TouchPart.HEAD -> Pair(3, "+3 羁绊 摸摸头 ❤️")
+            TouchPart.CHEEK -> Pair(2, "+2 羁绊 戳戳脸 ✨")
+            TouchPart.HAND -> Pair(4, "+4 羁绊 牵小手 🤝")
+            TouchPart.BODY -> Pair(5, "+5 羁绊 拥抱 💕")
+        }
+
+        // 触发即时浮空动画粒子
+        val fxItem = FloatingTouchFxItem(
+            text = fxText,
+            x = touchX,
+            y = touchY
+        )
+        _uiState.update { current ->
+            current.copy(floatingTouchFx = current.floatingTouchFx + fxItem)
+        }
+        viewModelScope.launch {
+            delay(1200L)
+            _uiState.update { current ->
+                current.copy(floatingTouchFx = current.floatingTouchFx.filter { it.id != fxItem.id })
+            }
+        }
+
         viewModelScope.launch {
             val result = repository.sendTouch(part)
             result.onSuccess { resp ->
@@ -277,7 +306,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     audioPlayer.speakTextFallback(resp.text)
                 }
-                addBondExp(3)
+                addBondExp(expGain)
             }
         }
     }

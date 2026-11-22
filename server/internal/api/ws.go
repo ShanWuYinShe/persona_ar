@@ -73,7 +73,14 @@ func handleContinuousWebSocket(c *gin.Context) {
 				"message": "正在思考回应...",
 			})
 
-			resp, err := persona.DefaultEngine.Chat(userID, inMsg.Text)
+			onChunk := func(chunk string) {
+				_ = safeWriteJSON(gin.H{
+					"type":  "stream_chunk",
+					"delta": chunk,
+				})
+			}
+
+			resp, err := persona.DefaultEngine.ChatStream(userID, inMsg.Text, onChunk)
 			if err != nil {
 				_ = safeWriteJSON(gin.H{
 					"type":  "error",

@@ -375,11 +375,19 @@ func TestWebSocketContinuous(t *testing.T) {
 	}
 
 	var respFrame map[string]interface{}
-	if err := ws.ReadJSON(&respFrame); err != nil {
-		t.Fatalf("read response frame failed: %v", err)
-	}
-	if respFrame["type"] != "response_complete" {
-		t.Errorf("expected response_complete, got %v", respFrame["type"])
+	for {
+		var frame map[string]interface{}
+		if err := ws.ReadJSON(&frame); err != nil {
+			t.Fatalf("read frame failed: %v", err)
+		}
+		if frame["type"] == "stream_chunk" {
+			continue
+		}
+		if frame["type"] == "response_complete" {
+			respFrame = frame
+			break
+		}
+		t.Fatalf("unexpected frame type: %v", frame["type"])
 	}
 	if respFrame["text"] == nil || respFrame["text"] == "" {
 		t.Errorf("expected text in response_complete")
@@ -480,5 +488,63 @@ func TestLLMProviderAndGracefulFallback(t *testing.T) {
 	_ = json.Unmarshal(wChat.Body.Bytes(), &chatResp)
 	if chatResp.Text == "" {
 		t.Errorf("expected non-empty fallback chat response")
+	}
+}
+
+func TestChatStreamAndCyberKPersona(t *testing.T) {
+	// 1. 切换至 K-07 战术机娘
+	userID := "test_stream_cyberk_user"
+	ok := persona.DefaultEngine.SwitchUserPersona(userID, "cyber_k")
+	if !ok {
+		t.Fatalf("switch to cyber_k failed")
+	}
+
+	// 2. 测试 K-07 专属时段与打招呼应答
+	respHello, err := persona.DefaultEngine.Chat(userID, "早安，K-07！")
+	if err != nil {
+		t.Fatalf("chat with cyber_k failed: %v", err)
+	}
+	if !strings.Contains(respHello.Text, "战术机娘K-07") {
+		t.Errorf("expected K-07 identity in hello response, got: %s", respHello.Text)
+	}
+
+	respNight, err := persona.DefaultEngine.Chat(userID, "好困，准备晚安睡觉了。")
+	if err != nil {
+		t.Fatalf("chat night with cyber_k failed: %v", err)
+	}
+	if !strings.Contains(respNight.Text, "静音护航") {
+		t.Errorf("expected silent guard mode in night response, got: %s", respNight.Text)
+	}
+
+	// 3. 测试 K-07 肢体触碰反馈
+	touchHead, err := persona.DefaultEngine.Touch(userID, model.TouchPartHead)
+	if err != nil {
+		t.Fatalf("touch head failed: %v", err)
+	}
+	if !strings.Contains(touchHead.Text, "全息核心温度") {
+		t.Errorf("expected cyber_k head touch response, got: %s", touchHead.Text)
+	}
+
+	touchCheek, err := persona.DefaultEngine.Touch(userID, model.TouchPartCheek)
+	if err != nil {
+		t.Fatalf("touch cheek failed: %v", err)
+	}
+	if !strings.Contains(touchCheek.Text, "感知网格") {
+		t.Errorf("expected cyber_k cheek touch response, got: %s", touchCheek.Text)
+	}
+
+	// 4. 测试 ChatStream 流式生成管道
+	var chunks []string
+	streamResp, err := persona.DefaultEngine.ChatStream(userID, "汇报一下当前战术机体状态。", func(chunk string) {
+		chunks = append(chunks, chunk)
+	})
+	if err != nil {
+		t.Fatalf("chat stream failed: %v", err)
+	}
+	if streamResp == nil || streamResp.Text == "" {
+		t.Fatalf("expected non-empty stream response")
+	}
+	if len(chunks) == 0 {
+		t.Errorf("expected at least 1 stream chunk emitted")
 	}
 }

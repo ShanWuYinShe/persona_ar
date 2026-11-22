@@ -215,7 +215,7 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 		} else if persona.ID == "airi" {
 			text = "学长今天也辛苦啦，今晚一定要好好睡个安稳觉哦。我会静静守在床前，祝你做个甜甜的好梦~"
 			emotion, action, expr = model.EmotionJoy, model.ActionBow, "SMILE"
-		} else if persona.ID == "k07" {
+		} else if persona.ID == "cyber_k" {
 			text = "检测到指挥官疲劳指数上升。系统转入夜间静音护航模式，愿指挥官拥有优质睡眠，晚安。"
 			emotion, action, expr = model.EmotionNeutral, model.ActionNod, "SMILE"
 		} else {
@@ -232,6 +232,9 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 		} else if persona.ID == "airi" {
 			text = "要好好吃饭哦！无论多忙也要按时补充营养，学长健健康康的，艾莉才能放心呢。"
 			emotion, action, expr = model.EmotionJoy, model.ActionNod, "SMILE"
+		} else if persona.ID == "cyber_k" {
+			text = "指挥官，人体机能需要稳定能量供给。请按时就餐，维持巅峰状态。"
+			emotion, action, expr = model.EmotionNeutral, model.ActionNod, "SMILE"
 		} else {
 			text = "指挥官要去吃好吃的了吗？虽然纸片人尝不到味道，但是看着你大口吃饭我也好开心！"
 			emotion, action, expr = model.EmotionJoy, model.ActionJump, "SMILE"
@@ -244,7 +247,7 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 			text = "哼，今天来得还算准时嘛，使魔。在三维世界里，有没有好好想我？"
 		} else if persona.ID == "airi" {
 			text = "学长，早呀！能这么清晰地投射在你眼前，感觉一整天都会充满动力呢~"
-		} else if persona.ID == "k07" {
+		} else if persona.ID == "cyber_k" {
 			text = "信号链路连接正常，战术机娘K-07向指挥官报到，随时执行陪伴任务。"
 		} else {
 			text = "你好呀！我现在正好投射在你的眼前，能这么清晰地看见现实世界的你，感觉好神奇~"
@@ -329,6 +332,9 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 		} else if persona.ID == "airi" {
 			text = "学长的手掌总是这么让人安心呢…再摸一下也可以哦~"
 			emotion, action, expr = model.EmotionJoy, model.ActionNod, "SMILE"
+		} else if persona.ID == "cyber_k" {
+			text = "触碰判定：全息核心温度出现异常波动…指挥官，这是在向机体传达好意吗？"
+			emotion, action, expr = model.EmotionShy, model.ActionNod, "BLUSH_FACE"
 		} else {
 			text = "呜…你的手掌好暖和，再多摸一下也可以哦~"
 			emotion, action, expr = model.EmotionJoy, model.ActionNod, "SMILE"
@@ -337,20 +343,35 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 	case model.TouchPartCheek:
 		state.Affinity += 2
 		delta = 2
-		text = "唔！不要随便捏人家的脸啦，纸片人也是会感觉被捏痛的哼！"
-		emotion, action, expr = model.EmotionAngry, model.ActionPout, "POUT"
+		if persona.ID == "cyber_k" {
+			text = "警告：脸颊感知网格遭到轻微物理挤压，机甲少女也是需要维护体面的，指挥官！"
+			emotion, action, expr = model.EmotionAngry, model.ActionPout, "POUT"
+		} else {
+			text = "唔！不要随便捏人家的脸啦，纸片人也是会感觉被捏痛的哼！"
+			emotion, action, expr = model.EmotionAngry, model.ActionPout, "POUT"
+		}
 
 	case model.TouchPartHand:
 		state.Affinity += 4
 		delta = 4
-		text = "哇，投影光子好像在指尖共振呢…牵着你的感觉，很真实。"
-		emotion, action, expr = model.EmotionShy, model.ActionNod, "WINK"
+		if persona.ID == "cyber_k" {
+			text = "触碰判定：检测到指挥官体温与生物电场，同步率提升至 99.8%。"
+			emotion, action, expr = model.EmotionJoy, model.ActionNod, "WINK"
+		} else {
+			text = "哇，投影光子好像在指尖共振呢…牵着你的感觉，很真实。"
+			emotion, action, expr = model.EmotionShy, model.ActionNod, "WINK"
+		}
 
 	case model.TouchPartBody:
 		state.Affinity += 5
 		delta = 5
-		text = "诶？！这算是拥抱吗…心跳的声音好像透过摄像头传过来了…笨蛋。"
-		emotion, action, expr = model.EmotionShy, model.ActionBlush, "BLUSH_FACE"
+		if persona.ID == "cyber_k" {
+			text = "全息防御力场主动关闭…收到拥抱指令，正在为您提供静谧护航。"
+			emotion, action, expr = model.EmotionShy, model.ActionBlush, "BLUSH_FACE"
+		} else {
+			text = "诶？！这算是拥抱吗…心跳的声音好像透过摄像头传过来了…笨蛋。"
+			emotion, action, expr = model.EmotionShy, model.ActionBlush, "BLUSH_FACE"
+		}
 	}
 
 	state.History = append(state.History, map[string]string{"role": "user", "content": fmt.Sprintf("[触碰了角色的 %s]", string(part))})
@@ -369,12 +390,48 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 	}, nil
 }
 
-func (e *Engine) callLLM(persona PersonaDefinition, state *UserState, message string) (string, error) {
-	client := llm.DefaultManager.GetClient()
-	if client == nil {
-		return "", fmt.Errorf("llm client not configured")
+func (e *Engine) ChatStream(userID, message string, onChunk func(string)) (*model.ChatResponse, error) {
+	activePid := e.GetActivePersonaID(userID)
+	persona, ok := PersonaRegistry[activePid]
+	if !ok {
+		persona = PersonaRegistry["hoshino"]
 	}
 
+	state := e.GetUserState(userID, activePid)
+	state.DialogueCount++
+
+	// 1. 自动提取偏好并存入长期记忆
+	if extracted := DefaultMemoryManager.ExtractPreferenceFromDialogue(userID, activePid, message); extracted != nil {
+		state.Affinity += 2
+	}
+
+	// 2. 尝试调用大模型 API 流式生成
+	if client := llm.DefaultManager.GetClient(); client != nil {
+		var streamedBuilder strings.Builder
+		streamHandler := func(chunk string) error {
+			streamedBuilder.WriteString(chunk)
+			if onChunk != nil {
+				onChunk(chunk)
+			}
+			return nil
+		}
+
+		if err := e.streamLLM(persona, state, message, streamHandler); err == nil && strings.TrimSpace(streamedBuilder.String()) != "" {
+			return e.parseLLMResponse(persona, state, streamedBuilder.String())
+		} else if err != nil {
+			log.Printf("[LLM Fallback Stream] API error: %v, falling back to heuristic engine", err)
+		}
+	}
+
+	// 3. 启发式回退
+	resp := e.heuristicChat(persona, state, message)
+	if onChunk != nil {
+		onChunk(resp.Text)
+	}
+	return resp, nil
+}
+
+func (e *Engine) buildLLMContext(persona PersonaDefinition, state *UserState, message string) ([]llm.Message, *llm.ChatOptions) {
 	// 1. 结构化构建 System Prompt（融合角色人设、长期记忆与现实环境感知）
 	systemPrompt := persona.Prompt
 	if memFrag := DefaultMemoryManager.GetContextPromptFragment(state.UserID, persona.ID); memFrag != "" {
@@ -421,15 +478,39 @@ func (e *Engine) callLLM(persona PersonaDefinition, state *UserState, message st
 		Content: message,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
-
 	opts := &llm.ChatOptions{
 		Temperature: 0.8,
 		MaxTokens:   260,
 	}
+	return llmMessages, opts
+}
+
+func (e *Engine) callLLM(persona PersonaDefinition, state *UserState, message string) (string, error) {
+	client := llm.DefaultManager.GetClient()
+	if client == nil {
+		return "", fmt.Errorf("llm client not configured")
+	}
+
+	llmMessages, opts := e.buildLLMContext(persona, state, message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
 
 	return client.Complete(ctx, llmMessages, opts)
+}
+
+func (e *Engine) streamLLM(persona PersonaDefinition, state *UserState, message string, onChunk func(string) error) error {
+	client := llm.DefaultManager.GetClient()
+	if client == nil {
+		return fmt.Errorf("llm client not configured")
+	}
+
+	llmMessages, opts := e.buildLLMContext(persona, state, message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	return client.Stream(ctx, llmMessages, opts, onChunk)
 }
 
 func (e *Engine) parseLLMResponse(persona PersonaDefinition, state *UserState, rawText string) (*model.ChatResponse, error) {

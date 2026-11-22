@@ -47,5 +47,16 @@ data class PersonaUiState(
     val llmBaseUrl: String = "https://api.deepseek.com",
     val llmApiKey: String = "",
     val llmModel: String = "deepseek-chat",
+    // 大模型流式输出打字机状态 (WebSocket / SSE)
+    val streamingText: String? = null,
+    // 触碰与羁绊即时浮空动画粒子 (Floating FX)
+    val floatingTouchFx: List<FloatingTouchFxItem> = emptyList(),
     val errorMessage: String? = null
+)
+
+data class FloatingTouchFxItem(
+    val id: Long = System.currentTimeMillis(),
+    val text: String,
+    val x: Float = 0.5f,
+    val y: Float = 0.5f
 )

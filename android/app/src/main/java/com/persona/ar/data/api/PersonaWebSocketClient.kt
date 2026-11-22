@@ -25,6 +25,7 @@ class PersonaWebSocketClient {
     var onReady: ((String) -> Unit)? = null
     var onInterruptAck: (() -> Unit)? = null
     var onThinkingStart: (() -> Unit)? = null
+    var onStreamChunk: ((String) -> Unit)? = null
     var onResponseComplete: ((text: String, emotion: EmotionType, action: ActionType, expr: String, audioBase64: String?, affinity: Int, mood: String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
 
@@ -52,6 +53,12 @@ class PersonaWebSocketClient {
                         }
                         "thinking_start" -> {
                             onThinkingStart?.invoke()
+                        }
+                        "stream_chunk" -> {
+                            val delta = obj.optString("delta", "")
+                            if (delta.isNotEmpty()) {
+                                onStreamChunk?.invoke(delta)
+                            }
                         }
                         "response_complete" -> {
                             val respText = obj.optString("text")
