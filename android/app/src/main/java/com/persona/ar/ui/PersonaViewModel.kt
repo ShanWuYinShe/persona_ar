@@ -563,15 +563,15 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val careMessage = ChatMessage(
                 sender = MessageSender.PERSONA,
                 text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
-                emotion = EmotionType.CARING,
+                emotion = EmotionType.SURPRISED,
                 timestamp = now
             )
             _uiState.update { state ->
                 state.copy(
                     messages = state.messages + careMessage,
                     visualState = state.visualState.copy(
-                        emotion = EmotionType.CARING,
-                        expression = "CARING"
+                        emotion = EmotionType.SURPRISED,
+                        expression = "SURPRISED"
                     )
                 )
             }
