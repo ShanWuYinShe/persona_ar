@@ -27,6 +27,7 @@ import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
