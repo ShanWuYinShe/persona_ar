@@ -16,6 +16,9 @@ import com.persona.ar.data.model.TouchResponse
 import com.persona.ar.data.model.VoiceInteractRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class PersonaRepository {
 
@@ -269,11 +272,9 @@ class PersonaRepository {
         filename: String = "voice.wav"
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val reqBody = okhttp3.RequestBody.create(
-                okhttp3.MediaType.parse("audio/wav"),
-                audioBytes
-            )
-            val part = okhttp3.MultipartBody.Part.createFormData("file", filename, reqBody)
+            val mediaType = "audio/wav".toMediaTypeOrNull()
+            val reqBody = audioBytes.toRequestBody(mediaType)
+            val part = MultipartBody.Part.createFormData("file", filename, reqBody)
             val response = ApiClient.service.transcribeAudio(part)
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!.text)
