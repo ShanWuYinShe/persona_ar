@@ -32,7 +32,12 @@ data class EnvironmentalOpticalProfile(
     /** 主光源定向强度 (0.0f 全向漫射 ~ 1.0f 强直射台灯/日光，用于地面斜拉阴影与边缘高光) */
     val lightDirectionalStrength: Float = 0.2f,
     /** 落脚点桌面特征纹理置信度 (0.0f ~ 1.0f, 用于端侧零 GMS 视觉稳定性与光流融合) */
-    val deskTextureConfidence: Float = 0.5f
+    val deskTextureConfidence: Float = 0.5f,
+    /** 端侧零 GMS 局部桌面纹理光流防抖微位移 X/Y (像素，用于抵消手持微平移漂移) */
+    val visualFlowOffsetX: Float = 0.0f,
+    val visualFlowOffsetY: Float = 0.0f,
+    /** 真实广角镜头边缘暗角自然失光衰减系数 (0.72f 边缘 ~ 1.0f 镜头中心) */
+    val lensVignetteFactor: Float = 1.0f
 )
 
 /**
@@ -63,6 +68,15 @@ class CameraEnvironmentalAnalyzer(
     private var smoothedLightDirY = -0.5f
     private var smoothedLightStrength = 0.2f
     private var smoothedTextureConfidence = 0.5f
+    private var smoothedFlowX = 0f
+    private var smoothedFlowY = 0f
+
+    // 零 GMS 局部块匹配光流稳定器缓存 (Zero-GMS Visual Block-Matching Flow Stabilizer)
+    private val tplDim = 8
+    private val refTemplate = IntArray(tplDim * tplDim)
+    private var hasRefTemplate = false
+    private var lastRecordedAnchorX = 0.5f
+    private var lastRecordedAnchorY = 0.65f
     private var frameCounter = 0L
 
     override fun analyze(image: ImageProxy) {
@@ -164,6 +178,76 @@ class CameraEnvironmentalAnalyzer(
                 val rawTextureConf = (avgGradient / 35f).coerceIn(0.2f, 1.0f)
                 smoothedTextureConfidence = smoothedTextureConfidence * 0.8f + rawTextureConf * 0.2f
 
+                // 零 GMS 局部块匹配光流跟踪 (Zero-GMS Local Block-Matching Optical Flow)
+                // 若用户挪动了锚点坐标，重置参考模板
+                if (kotlin.math.abs(focusNormX - lastRecordedAnchorX) > 0.02f ||
+                    kotlin.math.abs(focusNormY - lastRecordedAnchorY) > 0.02f) {
+                    hasRefTemplate = false
+                    lastRecordedAnchorX = focusNormX
+                    lastRecordedAnchorY = focusNormY
+                }
+
+                var rawShiftX = 0f
+                var rawShiftY = 0f
+                val anchorCenterX = (focusNormX * imgWidth).toInt().coerceIn(tplDim, imgWidth - tplDim - 1)
+                val anchorCenterY = (focusNormY * imgHeight).toInt().coerceIn(tplDim, imgHeight - tplDim - 1)
+
+                if (!hasRefTemplate) {
+                    // 记录当前落脚点的基准微模板
+                    for (ty in 0 until tplDim) {
+                        for (tx in 0 until tplDim) {
+                            val idx = (anchorCenterY - tplDim / 2 + ty) * imgWidth + (anchorCenterX - tplDim / 2 + tx)
+                            if (idx in 0 until yRemaining) {
+                                refTemplate[ty * tplDim + tx] = yBuffer.get(idx).toInt() and 0xFF
+                            }
+                        }
+                    }
+                    hasRefTemplate = true
+                    smoothedFlowX = 0f
+                    smoothedFlowY = 0f
+                } else {
+                    // 在中心周围 ±4 像素内做 SAD 块匹配搜索
+                    var minSAD = Long.MAX_VALUE
+                    var bestDx = 0
+                    var bestDy = 0
+                    val searchRadius = 4
+                    for (dy in -searchRadius..searchRadius) {
+                        for (dx in -searchRadius..searchRadius) {
+                            var currentSAD = 0L
+                            for (ty in 0 until tplDim) {
+                                val py = anchorCenterY - tplDim / 2 + ty + dy
+                                val rowOffset = py * imgWidth
+                                for (tx in 0 until tplDim) {
+                                    val px = anchorCenterX - tplDim / 2 + tx + dx
+                                    val idx = rowOffset + px
+                                    if (idx in 0 until yRemaining) {
+                                        val curVal = yBuffer.get(idx).toInt() and 0xFF
+                                        currentSAD += kotlin.math.abs(curVal - refTemplate[ty * tplDim + tx])
+                                    }
+                                }
+                            }
+                            if (currentSAD < minSAD) {
+                                minSAD = currentSAD
+                                bestDx = dx
+                                bestDy = dy
+                            }
+                        }
+                    }
+                    rawShiftX = bestDx.toFloat()
+                    rawShiftY = bestDy.toFloat()
+                }
+
+                // 结合桌面纹理置信度进行平滑滤波
+                val flowWeight = (smoothedTextureConfidence * 0.45f).coerceIn(0.1f, 0.45f)
+                smoothedFlowX = smoothedFlowX * (1f - flowWeight) + rawShiftX * flowWeight
+                smoothedFlowY = smoothedFlowY * (1f - flowWeight) + rawShiftY * flowWeight
+
+                // 真实广角镜头边缘暗角自然失光 (Lens Optical Vignetting)
+                val radialDistNorm = kotlin.math.sqrt(
+                    (focusNormX - 0.5f) * (focusNormX - 0.5f) + (focusNormY - 0.5f) * (focusNormY - 0.5f)
+                ) * 2.0f
+                val vignetteFactor = (1.0f - radialDistNorm * radialDistNorm * 0.18f).coerceIn(0.75f, 1.0f)
+
                 // 3. 采样 U/V 通道色度 (全局色温与局部桌面材质底色探针)
                 var rawTemp = 0.0f
                 var localRawTemp = 0.0f
@@ -244,7 +328,10 @@ class CameraEnvironmentalAnalyzer(
                         lightDirectionX = smoothedLightDirX,
                         lightDirectionY = smoothedLightDirY,
                         lightDirectionalStrength = smoothedLightStrength,
-                        deskTextureConfidence = smoothedTextureConfidence
+                        deskTextureConfidence = smoothedTextureConfidence,
+                        visualFlowOffsetX = smoothedFlowX,
+                        visualFlowOffsetY = smoothedFlowY,
+                        lensVignetteFactor = vignetteFactor
                     )
                 )
             }

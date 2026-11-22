@@ -54,5 +54,12 @@ data class CharacterVisualState(
     val lightDirectionalStrength: Float = 0.2f,
     /** 相机 3D 俯仰角与横滚角 (用于多层 3D 视差分层空间错位) */
     val cameraPitchDegrees: Float = 45f,
-    val cameraRollDegrees: Float = 0f
+    val cameraRollDegrees: Float = 0f,
+    /** 端侧零 GMS 视觉光流防抖微偏移 (像素) */
+    val visualFlowOffsetX: Float = 0f,
+    val visualFlowOffsetY: Float = 0f,
+    /** 镜头边缘暗角自然失光衰减系数 (0.72f 边缘 ~ 1.0f 中心) */
+    val lensVignetteFactor: Float = 1.0f,
+    /** 物理相机是否正在自动对焦中 */
+    val isCameraFocusing: Boolean = false
 )

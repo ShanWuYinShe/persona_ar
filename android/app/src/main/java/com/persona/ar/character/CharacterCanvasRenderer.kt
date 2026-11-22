@@ -161,7 +161,8 @@ fun CharacterCanvasRenderer(
             val cx = size.width / 2f
             val cy = size.height / 2f + 40f
             val s = scale
-            val envLight = visualState.environmentalLighting.coerceIn(0.25f, 1.25f)
+            // 综合环境光照与镜头边缘自然暗角失光系数 (Lens Optical Vignetting Falloff)
+            val envLight = (visualState.environmentalLighting * visualState.lensVignetteFactor).coerceIn(0.18f, 1.35f)
             val isLow = visualState.isLowLight
 
             // 1. 脚底现实接触阴影 (根据现实摄像头环境光自适应深浅)

@@ -178,10 +178,12 @@ fun ARCoreOverlay(
                     center = Offset(rx, ry)
                 )
             } else {
-                // B. 已放置角色时：三层真实物理光学接触模型 (Contact AO + Diffuse Penumbra + Ground Radiosity)
-                val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX
-                val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
-                val envLight = spatialAnchor.lightIntensity.coerceIn(0.25f, 1.25f)
+                // B. 已放置角色时：三层真实物理光学接触模型 (Contact AO + Diffuse Penumbra + Ground Radiosity + 光流吸附)
+                val flowX = spatialAnchor.visualFlowOffsetX
+                val flowY = spatialAnchor.visualFlowOffsetY
+                val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX + flowX
+                val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + flowY
+                val envLight = (spatialAnchor.lightIntensity * spatialAnchor.lensVignetteFactor).coerceIn(0.20f, 1.25f)
                 val alpha = (0.50f * envLight).coerceIn(0.16f, 0.58f)
                 val shadowCenterColor = if (spatialAnchor.isLowLight) Color(0x990A0414) else Color.Black.copy(alpha = alpha)
 
@@ -312,13 +314,40 @@ fun ARCoreOverlay(
                         strokeWidth = 1.0f
                     )
                 }
+                // 4) 专业单反相机硬件对焦测光指示框 (Hardware AF/AE Focus Reticle)
+                val focusAge = System.currentTimeMillis() - spatialAnchor.cameraFocusTimestamp
+                if (spatialAnchor.isCameraFocusing || focusAge < 1600L) {
+                    val focusProgress = (focusAge.toFloat() / 1600f).coerceIn(0f, 1f)
+                    val focusAlpha = if (spatialAnchor.isCameraFocusing) 0.90f else (1.0f - focusProgress).coerceIn(0f, 1f)
+                    val boxSize = (70f - (if (spatialAnchor.isCameraFocusing) 6f else 18f * focusProgress)) * spatialAnchor.scaleFactor
+                    val focusColor = if (spatialAnchor.isCameraFocusing) Color(0xFFFFD54F) else Color(0xFF69F0AE)
+                    val cornerLen = 14f * spatialAnchor.scaleFactor
+                    val fX = ax
+                    val fY = ay - (105f * spatialAnchor.scaleFactor) // 对准角色躯干与心口
+
+                    // 绘制取景器四角直角线瞄准括号 (AF Bracket)
+                    // 左上
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize + cornerLen, fY - boxSize), strokeWidth = 2.5f)
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
+                    // 右上
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize - cornerLen, fY - boxSize), strokeWidth = 2.5f)
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
+                    // 左下
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize + cornerLen, fY + boxSize), strokeWidth = 2.5f)
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
+                    // 右下
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize - cornerLen, fY + boxSize), strokeWidth = 2.5f)
+                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
+                    // 中心十字聚焦微点
+                    drawCircle(focusColor.copy(alpha = focusAlpha * 0.9f), radius = 2.5f, center = Offset(fX, fY))
+                }
             }
         }
 
-        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视)
+        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视 + 视觉光流锁死)
         if (spatialAnchor.isAnchored) {
-            val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX).dp
-            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY).dp
+            val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
+            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY).dp
 
             // 1) 3D 俯仰透视收缩 (相机俯仰看桌面时，角色头部前倾近大远小，下肢透视缩短)
             val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
@@ -404,8 +433,12 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val pillText = when {
+                            spatialAnchor.isCameraFocusing ->
+                                "🎯 物理镜头硬件对焦中 · 桌面局部曝光测光与微纹理锁死 ✨"
                             spatialAnchor.isDragging ->
                                 "📍 正在自由移动 (X: ${(spatialAnchor.screenX * 100).toInt()}%, Y: ${(spatialAnchor.screenY * 100).toInt()}%) · 局部光照自适应 ✨"
+                            spatialAnchor.deskTextureConfidence > 0.65f && (kotlin.math.abs(spatialAnchor.visualFlowOffsetX) > 0.4f || kotlin.math.abs(spatialAnchor.visualFlowOffsetY) > 0.4f) ->
+                                "桌面物理纹理光流吸附锁死 · 零漂移稳固 ⚓"
                             spatialAnchor.isMacroProximity ->
                                 "微距特写已就绪 (${(spatialAnchor.scaleFactor * 100).toInt()}%) · 瞳孔镜头反光与心跳红晕 ✨"
                             spatialAnchor.lightDirectionalStrength > 0.40f ->
