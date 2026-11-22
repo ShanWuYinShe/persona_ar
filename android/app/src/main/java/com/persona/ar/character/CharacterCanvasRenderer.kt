@@ -1212,10 +1212,10 @@ private fun DrawScope.drawHighResolutionHoshino(
 
     // 3. 头顶独立发光星穹光环 (带三维视差与呼吸辉光)
     drawFloatingHalo(
-        haloX = haloX,
-        haloY = topY + 25f * s,
+        hx = haloX,
+        hy = topY + 138f * s,
         s = s * 0.95f,
-        visualState = visualState
+        state = visualState
     )
 
     // 4. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
