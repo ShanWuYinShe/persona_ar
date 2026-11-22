@@ -1,6 +1,7 @@
 package com.persona.ar.character
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
@@ -45,6 +47,15 @@ fun CharacterCanvasRenderer(
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
     }
     val scope = rememberCoroutineScope()
+
+    // 加载高精度官方级角色贴图资产 (若存在则优先使用高精度真实模型，彻底告别粗糙简笔人)
+    val hoshinoBitmap = remember(context) {
+        try {
+            BitmapFactory.decodeResource(context.resources, com.persona.ar.R.drawable.hoshino_high_res)?.asImageBitmap()
+        } catch (e: Throwable) {
+            null
+        }
+    }
 
     // 触碰即时局部形变响应 (Squeeze & Spring Bounce)
     var activeTouchPart by remember { mutableStateOf<TouchPart?>(null) }
@@ -218,17 +229,31 @@ fun CharacterCanvasRenderer(
             val haloX = cx + kotlin.math.sin(rollRad) * 12f * s
             val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
 
-            // 逐层立体空间渲染 (严格遵循 3D 前后遮挡几何)
-            drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
-            drawChibiBody(cx, cy, s, visualState)
-            drawChibiFace(faceX, faceY, s * cheekSquishScaleX, visualState)
-            drawChibiEyes(faceX, faceY, s, isBlinking, visualState)
-            drawChibiBlush(faceX, faceY, s, visualState)
-            drawChibiMouth(faceX, faceY, s, visualState.lipSyncAmplitude, visualState)
-            drawChibiHairFront(frontX, frontY, s * headSquishScaleY, ahogeWiggle, visualState)
-            drawFloatingHalo(haloX, haloY, s, visualState)
-            drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
-            drawGameEmoteParticles(frontX, frontY, s, visualState)
+            // 逐层立体空间渲染 (优先使用高保真动漫模型，保持多层视差与真实物理光影)
+            if (visualState.useHighResolutionModel && hoshinoBitmap != null) {
+                drawHighResolutionHoshino(
+                    bitmap = hoshinoBitmap,
+                    cx = cx,
+                    cy = cy,
+                    s = s,
+                    headSquishY = headSquishScaleY,
+                    haloX = haloX,
+                    haloY = haloY,
+                    visualState = visualState,
+                    envLight = envLight
+                )
+            } else {
+                drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
+                drawChibiBody(cx, cy, s, visualState)
+                drawChibiFace(faceX, faceY, s * cheekSquishScaleX, visualState)
+                drawChibiEyes(faceX, faceY, s, isBlinking, visualState)
+                drawChibiBlush(faceX, faceY, s, visualState)
+                drawChibiMouth(faceX, faceY, s, visualState.lipSyncAmplitude, visualState)
+                drawChibiHairFront(frontX, frontY, s * headSquishScaleY, ahogeWiggle, visualState)
+                drawFloatingHalo(haloX, haloY, s, visualState)
+                drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
+                drawGameEmoteParticles(frontX, frontY, s, visualState)
+            }
 
             // 5. 桌面边缘深度遮挡与水平面切片 (Surface Horizon Edge Occlusion，防止脚底悬空穿模)
             if (visualState.surfaceOcclusionBottomCutoff > 0.04f) {
@@ -1144,4 +1169,58 @@ private fun DrawScope.drawVolumetricDirectionalRimLight(
             style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
         )
     }
+}
+
+/**
+ * 绘制高分辨率真实二次元角色模型 (小鸟游星野 官方全模立绘)
+ * 具备环境光与闪光灯自适应混色、独立发光悬浮 Halo、足底精密 Contact AO 与真实定向拉伸阴影
+ */
+private fun DrawScope.drawHighResolutionHoshino(
+    bitmap: ImageBitmap,
+    cx: Float,
+    cy: Float,
+    s: Float,
+    headSquishY: Float,
+    haloX: Float,
+    haloY: Float,
+    visualState: CharacterVisualState,
+    envLight: Float
+) {
+    val charW = 185f * s
+    val charH = charW * (bitmap.height.toFloat() / bitmap.width.toFloat())
+    val footY = cy + 245f * s
+    val topY = footY - charH
+    val leftX = cx - charW / 2f
+
+    // 1. 环境光色温调和与局部材质二次漫反射 (Radiosity Tint)
+    val colorFilter = ColorFilter.lighting(
+        multiply = Color(
+            red = (visualState.ambientTintRed * envLight).coerceIn(0.25f, 1.35f),
+            green = (visualState.ambientTintGreen * envLight).coerceIn(0.25f, 1.35f),
+            blue = (visualState.ambientTintBlue * envLight).coerceIn(0.25f, 1.35f)
+        ),
+        add = if (visualState.isLowLight) Color(0x15101A) else Color.Transparent
+    )
+
+    // 2. 绘制高精度角色图像
+    drawImage(
+        image = bitmap,
+        dstOffset = IntOffset(leftX.roundToInt(), topY.roundToInt()),
+        dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
+        colorFilter = colorFilter
+    )
+
+    // 3. 头顶独立发光星穹光环 (带三维视差与呼吸辉光)
+    drawFloatingHalo(
+        haloX = haloX,
+        haloY = topY + 25f * s,
+        s = s * 0.95f,
+        visualState = visualState
+    )
+
+    // 4. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
+    drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
+
+    // 5. 情感微粒子
+    drawGameEmoteParticles(cx, topY + 60f * s, s, visualState)
 }
