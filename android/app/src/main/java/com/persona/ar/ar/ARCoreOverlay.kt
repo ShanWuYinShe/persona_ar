@@ -53,6 +53,8 @@ fun ARCoreOverlay(
     partnerName: String,
     onTapPlace: (screenX: Float, screenY: Float) -> Unit,
     onTransformGesture: (scaleMultiplier: Float, rotationYawDelta: Float) -> Unit,
+    onDragAnchor: (deltaNormX: Float, deltaNormY: Float) -> Unit = { _, _ -> },
+    onDragStateChanged: (isDragging: Boolean) -> Unit = {},
     onResetAnchor: () -> Unit,
     onTouchPart: (TouchPart, Float, Float) -> Unit,
     modifier: Modifier = Modifier
@@ -94,7 +96,15 @@ fun ARCoreOverlay(
             .pointerInput(spatialAnchor.isAnchored) {
                 detectTransformGestures { _, pan, zoom, rotation ->
                     if (spatialAnchor.isAnchored) {
-                        onTransformGesture(zoom, pan.x * 0.4f)
+                        if (zoom != 1.0f || kotlin.math.abs(rotation) > 0.4f) {
+                            // 双指手势：双指捏合缩放与偏航旋转
+                            onTransformGesture(zoom, pan.x * 0.4f)
+                        } else if (pan.getDistance() > 1.0f) {
+                            // 单指滑动：在现实桌面物理平面上自由拖拽模型平滑滑行到新位置
+                            val deltaX = pan.x / size.width
+                            val deltaY = pan.y / size.height
+                            onDragAnchor(deltaX, deltaY)
+                        }
                     }
                 }
             }
@@ -108,9 +118,10 @@ fun ARCoreOverlay(
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull()
-                            if (change != null && change.pressed && !spatialAnchor.isAnchored) {
+                            if (change != null && change.pressed) {
                                 val normX = (change.position.x / size.width).coerceIn(0f, 1f)
                                 val normY = (change.position.y / size.height).coerceIn(0f, 1f)
+                                // 无论是首次放置还是已放置后重新选点，用户点击桌面任意位置均可自由重定位！
                                 onTapPlace(normX, normY)
                                 change.consume()
                             }
@@ -185,12 +196,12 @@ fun ARCoreOverlay(
                 val shadowWidth = 175f * spatialAnchor.scaleFactor
                 val shadowHeight = (shadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
 
-                // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed)
-                val bounceAlpha = (0.07f * envLight).coerceIn(0.02f, 0.12f)
+                // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed，融入伴侣所处局部的真实材质底色)
+                val bounceAlpha = (0.09f * envLight).coerceIn(0.03f, 0.16f)
                 val bounceColor = Color(
-                    red = (spatialAnchor.ambientTintRed * 0.25f).coerceIn(0f, 1f),
-                    green = (spatialAnchor.ambientTintGreen * 0.25f).coerceIn(0f, 1f),
-                    blue = (spatialAnchor.ambientTintBlue * 0.35f).coerceIn(0f, 1f),
+                    red = (spatialAnchor.localSurfaceTintRed * 0.32f).coerceIn(0f, 1f),
+                    green = (spatialAnchor.localSurfaceTintGreen * 0.32f).coerceIn(0f, 1f),
+                    blue = (spatialAnchor.localSurfaceTintBlue * 0.32f).coerceIn(0f, 1f),
                     alpha = bounceAlpha
                 )
                 drawOval(
@@ -241,6 +252,16 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
                     style = Stroke(width = 1.5f)
                 )
+
+                // 自由滑动中：高亮贴地滑行瞄准光圈
+                if (spatialAnchor.isDragging) {
+                    drawOval(
+                        color = Color(0x8800E5FF),
+                        topLeft = Offset(shadowCenterX - shadowWidth * 0.58f, shadowCenterY - shadowHeight * 0.58f),
+                        size = Size(shadowWidth * 1.16f, shadowHeight * 1.16f),
+                        style = Stroke(width = 2.0f)
+                    )
+                }
 
                 // 现实桌面透视空间微光切面网格 (横向阶梯透视线 + 纵向透视发散辐射线，构建完整物理贴地切面)
                 val gridColor = Color(0x00E5FF).copy(alpha = 0.13f)
@@ -362,6 +383,8 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val pillText = when {
+                            spatialAnchor.isDragging ->
+                                "📍 正在自由移动 (X: ${(spatialAnchor.screenX * 100).toInt()}%, Y: ${(spatialAnchor.screenY * 100).toInt()}%) · 局部光照自适应 ✨"
                             spatialAnchor.isMacroProximity ->
                                 "微距特写已就绪 (${(spatialAnchor.scaleFactor * 100).toInt()}%) · 瞳孔镜头反光与心跳红晕 ✨"
                             spatialAnchor.bloomIntensity > 0.35f ->
@@ -371,9 +394,10 @@ fun ARCoreOverlay(
                             spatialAnchor.isLowLight ->
                                 "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光与 CMOS 噪点调和 🌙"
                             else ->
-                                "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放"
+                                "已锁定于${spatialAnchor.planeTypeDescription} · 轻触桌面任意处重选位置 / 单指拖拽滑行"
                         }
                         val pillBgColor = when {
+                            spatialAnchor.isDragging -> Color(0xE60288D1)
                             spatialAnchor.isMacroProximity -> Color(0xE6D81B60)
                             spatialAnchor.bloomIntensity > 0.35f -> Color(0xE6E65100)
                             spatialAnchor.chromaticAberrationIntensity > 0.40f -> Color(0xE600838F)

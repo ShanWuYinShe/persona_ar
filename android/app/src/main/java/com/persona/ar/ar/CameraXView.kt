@@ -24,6 +24,8 @@ import java.util.concurrent.Executors
 @Composable
 fun CameraXView(
     modifier: Modifier = Modifier,
+    focusAnchorNormX: Float = 0.5f,
+    focusAnchorNormY: Float = 0.65f,
     onEnvironmentLightChanged: (luminance: Float, isLowLight: Boolean) -> Unit = { _, _ -> },
     onOpticalProfileChanged: ((EnvironmentalOpticalProfile) -> Unit)? = null,
     onFrameCaptureReady: (((() -> Bitmap?)) -> Unit)? = null
@@ -31,6 +33,22 @@ fun CameraXView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    val analyzer = remember {
+        CameraEnvironmentalAnalyzer(
+            onLightEstimated = { lum, isLow ->
+                onEnvironmentLightChanged(lum, isLow)
+            },
+            onOpticalProfileEstimated = { profile ->
+                onOpticalProfileChanged?.invoke(profile)
+            }
+        )
+    }
+
+    LaunchedEffect(focusAnchorNormX, focusAnchorNormY) {
+        analyzer.focusNormX = focusAnchorNormX
+        analyzer.focusNormY = focusAnchorNormY
+    }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -60,17 +78,7 @@ fun CameraXView(
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
                 .also { analysis ->
-                    analysis.setAnalyzer(
-                        analysisExecutor,
-                        CameraEnvironmentalAnalyzer(
-                            onLightEstimated = { lum, isLow ->
-                                onEnvironmentLightChanged(lum, isLow)
-                            },
-                            onOpticalProfileEstimated = { profile ->
-                                onOpticalProfileChanged?.invoke(profile)
-                            }
-                        )
-                    )
+                    analysis.setAnalyzer(analysisExecutor, analyzer)
                 }
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA

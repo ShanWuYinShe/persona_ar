@@ -21,6 +21,8 @@ fun Character3DRenderer(
     partnerName: String = "星野",
     onTapPlace: (Float, Float) -> Unit = { _, _ -> },
     onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
+    onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
+    onDragStateChanged: (Boolean) -> Unit = {},
     onResetAnchor: () -> Unit = {}
 ) {
     ARCoreOverlay(
@@ -30,6 +32,8 @@ fun Character3DRenderer(
         partnerName = partnerName,
         onTapPlace = onTapPlace,
         onTransformGesture = onTransformGesture,
+        onDragAnchor = onDragAnchor,
+        onDragStateChanged = onDragStateChanged,
         onResetAnchor = onResetAnchor,
         onTouchPart = onTouchPart,
         modifier = modifier
@@ -46,6 +50,8 @@ fun Character3DRenderer(
     partnerName: String = "星野",
     onTapPlace: (Float, Float) -> Unit = { _, _ -> },
     onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
+    onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
+    onDragStateChanged: (Boolean) -> Unit = {},
     onResetAnchor: () -> Unit = {}
 ) {
     Character3DRenderer(
@@ -57,6 +63,8 @@ fun Character3DRenderer(
         partnerName = partnerName,
         onTapPlace = onTapPlace,
         onTransformGesture = onTransformGesture,
+        onDragAnchor = onDragAnchor,
+        onDragStateChanged = onDragStateChanged,
         onResetAnchor = onResetAnchor
     )
 }
