@@ -189,6 +189,10 @@ fun ARCoreOverlay(
                 val tiltSkewX = (spatialAnchor.parallaxShiftX * 0.22f)
                 val tiltOffsetY = (spatialAnchor.parallaxShiftY * 0.18f)
 
+                // 基于真实水平桌面光学投影模型：俯视角 pitch 越大 (更俯视)，地面投影越圆；平视时压扁成细线
+                val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
+                val groundAspect = sin(groundPitchRad).toFloat()
+
                 // 真实物理主光源反向投射偏移 (Directional Projected Shadow Displacement)
                 // 当台灯/窗户强光源在一侧时，影子反向延展并依入射角拉长，彻底告别单调正圆阴影
                 val lightStrength = spatialAnchor.lightDirectionalStrength.coerceIn(0.1f, 1.0f)
@@ -205,9 +209,7 @@ fun ARCoreOverlay(
                 // 定向投射阴影中心 (随真实环境光源方向反向拉长)
                 val shadowCenterX = footContactX + dirShadowShiftX
                 val shadowCenterY = footContactY + dirShadowShiftY
-                // 基于真实水平桌面光学投影模型：俯视角 pitch 越大 (更俯视)，地面投影越圆；平视时压扁成细线
-                val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
-                val groundAspect = sin(groundPitchRad).toFloat()
+
                 val baseShadowWidth = 175f * spatialAnchor.scaleFactor
                 val baseShadowHeight = (baseShadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
                 val shadowWidth = baseShadowWidth * stretchFactorX
