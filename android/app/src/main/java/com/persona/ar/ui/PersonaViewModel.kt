@@ -80,6 +80,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun playPersonaVoice(audioBase64: String?, fallbackText: String) {
+        val anchor = _uiState.value.spatialAnchor
+        audioPlayer.updateSpatialAudio(anchor.screenX, anchor.scaleFactor)
+        if (!audioBase64.isNullOrEmpty()) {
+            audioPlayer.playAudioBase64(audioBase64)
+        } else {
+            audioPlayer.speakTextFallback(fallbackText)
+        }
+    }
+
     private fun setupAudioPlayer() {
         audioPlayer.onAmplitudeUpdate = { amplitude ->
             _uiState.update { current ->
@@ -168,11 +178,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
-            if (!audioBase64.isNullOrEmpty()) {
-                audioPlayer.playAudioBase64(audioBase64)
-            } else {
-                audioPlayer.speakTextFallback(respText)
-            }
+            playPersonaVoice(audioBase64, respText)
             addBondExp(3)
         }
     }
@@ -284,12 +290,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-
-                if (!resp.audioBase64.isNullOrEmpty()) {
-                    audioPlayer.playAudioBase64(resp.audioBase64)
-                } else {
-                    audioPlayer.speakTextFallback(resp.text)
-                }
+                playPersonaVoice(resp.audioBase64, resp.text)
                 addBondExp(3)
             }
         }
@@ -355,12 +356,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-
-                if (!resp.audioBase64.isNullOrEmpty()) {
-                    audioPlayer.playAudioBase64(resp.audioBase64)
-                } else {
-                    audioPlayer.speakTextFallback(resp.text)
-                }
+                playPersonaVoice(resp.audioBase64, resp.text)
                 addBondExp(4)
             }.onFailure {
                 _uiState.update { it.copy(isLoading = false) }
@@ -414,12 +410,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-
-                if (!resp.audioBase64.isNullOrEmpty()) {
-                    audioPlayer.playAudioBase64(resp.audioBase64)
-                } else {
-                    audioPlayer.speakTextFallback(resp.text)
-                }
+                playPersonaVoice(resp.audioBase64, resp.text)
                 addBondExp(expGain)
             }
         }
@@ -568,6 +559,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onTapPlaceAnchor(screenX: Float, screenY: Float) {
+        audioPlayer.updateSpatialAudio(screenX, 1.0f)
         _uiState.update { current ->
             current.copy(
                 arTrackingStatus = ARTrackingStatus.ANCHORED,
@@ -587,6 +579,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val anchor = current.spatialAnchor
             val nextScale = (anchor.scaleFactor * scaleMultiplier).coerceIn(0.4f, 2.2f)
             val nextYaw = (anchor.rotationYaw + rotationYawDelta) % 360f
+            audioPlayer.updateSpatialAudio(anchor.screenX, nextScale)
             current.copy(
                 spatialAnchor = anchor.copy(
                     scaleFactor = nextScale,
@@ -597,6 +590,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onResetAnchor() {
+        audioPlayer.updateSpatialAudio(0.5f, 1.0f)
         _uiState.update { current ->
             current.copy(
                 arTrackingStatus = ARTrackingStatus.PLANE_DETECTED,

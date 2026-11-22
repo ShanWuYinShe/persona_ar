@@ -52,7 +52,7 @@ fun ARCoreOverlay(
     onTapPlace: (screenX: Float, screenY: Float) -> Unit,
     onTransformGesture: (scaleMultiplier: Float, rotationYawDelta: Float) -> Unit,
     onResetAnchor: () -> Unit,
-    onTouchPart: (TouchPart) -> Unit,
+    onTouchPart: (TouchPart, Float, Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "arPulse")
@@ -165,27 +165,34 @@ fun ARCoreOverlay(
                     center = Offset(rx, ry)
                 )
             } else {
-                // B. 已放置角色时：在真实桌面绘制柔和接触阴影 (Soft Contact Shadow) 与微光契约印记
+                // B. 已放置角色时：在真实桌面绘制自适应倾角透视接触阴影 (Perspective Contact Shadow) 与全息网格
                 val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX
                 val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
-                val shadowWidth = 165f * spatialAnchor.scaleFactor
-                val shadowHeight = 48f * spatialAnchor.scaleFactor
                 val envLight = spatialAnchor.lightIntensity.coerceIn(0.25f, 1.25f)
                 val alpha = (0.50f * envLight).coerceIn(0.16f, 0.58f)
                 val shadowCenterColor = if (spatialAnchor.isLowLight) Color(0x990A0414) else Color.Black.copy(alpha = alpha)
+
+                // 随设备俯仰与偏转动态自适应透视阴影偏心距与扁平比
+                val tiltSkewX = (spatialAnchor.parallaxShiftX * 0.22f)
+                val tiltOffsetY = (spatialAnchor.parallaxShiftY * 0.18f)
+                val shadowCenterX = ax + tiltSkewX
+                val shadowCenterY = ay + tiltOffsetY
+                val aspectFactor = (1.0f + (spatialAnchor.parallaxShiftY * 0.012f)).coerceIn(0.72f, 1.35f)
+                val shadowWidth = 168f * spatialAnchor.scaleFactor
+                val shadowHeight = 46f * spatialAnchor.scaleFactor * aspectFactor
 
                 // 柔和椭圆环境光衰减阴影 (自然融合摄像头采集的现实桌面背景纹理)
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
                             shadowCenterColor,
-                            shadowCenterColor.copy(alpha = alpha * 0.45f),
+                            shadowCenterColor.copy(alpha = alpha * 0.42f),
                             Color.Transparent
                         ),
-                        center = Offset(ax, ay),
+                        center = Offset(shadowCenterX, shadowCenterY),
                         radius = shadowWidth * 0.85f
                     ),
-                    topLeft = Offset(ax - shadowWidth * 0.5f, ay - shadowHeight * 0.5f),
+                    topLeft = Offset(shadowCenterX - shadowWidth * 0.5f, shadowCenterY - shadowHeight * 0.5f),
                     size = Size(shadowWidth, shadowHeight)
                 )
 
@@ -193,23 +200,37 @@ fun ARCoreOverlay(
                 val ringAlpha = if (spatialAnchor.isLowLight) 0.35f else 0.18f
                 drawOval(
                     color = Color(0x00E5FF).copy(alpha = ringAlpha),
-                    topLeft = Offset(ax - shadowWidth * 0.45f, ay - shadowHeight * 0.45f),
+                    topLeft = Offset(shadowCenterX - shadowWidth * 0.45f, shadowCenterY - shadowHeight * 0.45f),
                     size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
                     style = Stroke(width = 1.5f)
                 )
 
-                // 现实桌面透视空间微光切面网格 (强化物理桌面深度贴合)
-                val gridColor = Color(0x00E5FF).copy(alpha = 0.12f)
-                val gridW = shadowWidth * 1.6f
+                // 现实桌面透视空间微光切面网格 (横向阶梯透视线 + 纵向透视发散辐射线，构建完整物理贴地切面)
+                val gridColor = Color(0x00E5FF).copy(alpha = 0.13f)
+                val gridW = shadowWidth * 1.65f
                 val gridH = shadowHeight * 2.2f
+
+                // 1) 横向深度阶梯线
                 for (step in -3..3) {
-                    val lineY = ay + (step * (gridH / 7f))
+                    val lineY = shadowCenterY + (step * (gridH / 7f))
                     val shrink = 1.0f - (step * 0.06f)
                     drawLine(
                         color = gridColor,
-                        start = Offset(ax - (gridW * 0.5f * shrink), lineY),
-                        end = Offset(ax + (gridW * 0.5f * shrink), lineY),
+                        start = Offset(shadowCenterX - (gridW * 0.5f * shrink), lineY),
+                        end = Offset(shadowCenterX + (gridW * 0.5f * shrink), lineY),
                         strokeWidth = 1.2f
+                    )
+                }
+
+                // 2) 纵向透视发散辐射线 (以远端视差消失点发散到近端地面)
+                for (k in -2..2) {
+                    val farX = shadowCenterX + (k * (gridW * 0.20f))
+                    val nearX = shadowCenterX + (k * (gridW * 0.46f))
+                    drawLine(
+                        color = gridColor.copy(alpha = 0.09f),
+                        start = Offset(farX, shadowCenterY - (gridH * 0.48f)),
+                        end = Offset(nearX, shadowCenterY + (gridH * 0.48f)),
+                        strokeWidth = 1.0f
                     )
                 }
             }
@@ -342,4 +363,29 @@ private fun ARGuidePill(
             fontWeight = FontWeight.Bold
         )
     }
+}
+
+@Composable
+fun ARCoreOverlay(
+    trackingStatus: ARTrackingStatus,
+    spatialAnchor: ARSpatialAnchor,
+    visualState: CharacterVisualState,
+    partnerName: String,
+    onTapPlace: (screenX: Float, screenY: Float) -> Unit,
+    onTransformGesture: (scaleMultiplier: Float, rotationYawDelta: Float) -> Unit,
+    onResetAnchor: () -> Unit,
+    onTouchPart: (TouchPart) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ARCoreOverlay(
+        trackingStatus = trackingStatus,
+        spatialAnchor = spatialAnchor,
+        visualState = visualState,
+        partnerName = partnerName,
+        onTapPlace = onTapPlace,
+        onTransformGesture = onTransformGesture,
+        onResetAnchor = onResetAnchor,
+        onTouchPart = { part, _, _ -> onTouchPart(part) },
+        modifier = modifier
+    )
 }

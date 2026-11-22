@@ -14,7 +14,7 @@ import com.persona.ar.data.model.TouchPart
 @Composable
 fun Character3DRenderer(
     visualState: CharacterVisualState,
-    onTouchPart: (TouchPart) -> Unit,
+    onTouchPart: (TouchPart, Float, Float) -> Unit,
     modifier: Modifier = Modifier,
     trackingStatus: ARTrackingStatus = ARTrackingStatus.ANCHORED,
     spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(isAnchored = true),
@@ -33,5 +33,30 @@ fun Character3DRenderer(
         onResetAnchor = onResetAnchor,
         onTouchPart = onTouchPart,
         modifier = modifier
+    )
+}
+
+@Composable
+fun Character3DRenderer(
+    visualState: CharacterVisualState,
+    onTouchPart: (TouchPart) -> Unit,
+    modifier: Modifier = Modifier,
+    trackingStatus: ARTrackingStatus = ARTrackingStatus.ANCHORED,
+    spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(isAnchored = true),
+    partnerName: String = "星野",
+    onTapPlace: (Float, Float) -> Unit = { _, _ -> },
+    onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
+    onResetAnchor: () -> Unit = {}
+) {
+    Character3DRenderer(
+        visualState = visualState,
+        onTouchPart = { part, _, _ -> onTouchPart(part) },
+        modifier = modifier,
+        trackingStatus = trackingStatus,
+        spatialAnchor = spatialAnchor,
+        partnerName = partnerName,
+        onTapPlace = onTapPlace,
+        onTransformGesture = onTransformGesture,
+        onResetAnchor = onResetAnchor
     )
 }
