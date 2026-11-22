@@ -100,6 +100,12 @@ fun PersonaMainScreen(
             ARMode.ARCORE_3D -> {
                 Character3DRenderer(
                     visualState = uiState.visualState,
+                    trackingStatus = uiState.arTrackingStatus,
+                    spatialAnchor = uiState.spatialAnchor,
+                    partnerName = uiState.activeModel?.name ?: "星野",
+                    onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
+                    onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
+                    onResetAnchor = { viewModel.onResetAnchor() },
                     onTouchPart = { part -> viewModel.onTouchPart(part) },
                     modifier = Modifier.fillMaxSize()
                 )

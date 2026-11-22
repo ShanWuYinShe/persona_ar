@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.persona.ar.ar.ARMode
+import com.persona.ar.ar.ARSpatialAnchor
+import com.persona.ar.ar.ARTrackingStatus
 import com.persona.ar.ar.SensorTiltHelper
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
@@ -457,7 +459,56 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     fun toggleARMode() {
         _uiState.update {
             val nextMode = if (it.arMode == ARMode.BILLBOARD_2_5D) ARMode.ARCORE_3D else ARMode.BILLBOARD_2_5D
-            it.copy(arMode = nextMode)
+            it.copy(
+                arMode = nextMode,
+                arTrackingStatus = if (nextMode == ARMode.ARCORE_3D) {
+                    if (it.spatialAnchor.isAnchored) ARTrackingStatus.ANCHORED else ARTrackingStatus.PLANE_DETECTED
+                } else {
+                    ARTrackingStatus.ANCHORED
+                }
+            )
+        }
+    }
+
+    fun onTapPlaceAnchor(screenX: Float, screenY: Float) {
+        _uiState.update { current ->
+            current.copy(
+                arTrackingStatus = ARTrackingStatus.ANCHORED,
+                spatialAnchor = current.spatialAnchor.copy(
+                    screenX = screenX,
+                    screenY = screenY,
+                    isAnchored = true,
+                    distanceMeters = 0.75f,
+                    planeTypeDescription = "物理桌面"
+                )
+            )
+        }
+    }
+
+    fun onTransformAnchor(scaleMultiplier: Float, rotationYawDelta: Float) {
+        _uiState.update { current ->
+            val anchor = current.spatialAnchor
+            val nextScale = (anchor.scaleFactor * scaleMultiplier).coerceIn(0.4f, 2.2f)
+            val nextYaw = (anchor.rotationYaw + rotationYawDelta) % 360f
+            current.copy(
+                spatialAnchor = anchor.copy(
+                    scaleFactor = nextScale,
+                    rotationYaw = nextYaw
+                )
+            )
+        }
+    }
+
+    fun onResetAnchor() {
+        _uiState.update { current ->
+            current.copy(
+                arTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
+                spatialAnchor = current.spatialAnchor.copy(
+                    isAnchored = false,
+                    scaleFactor = 1.0f,
+                    rotationYaw = 0f
+                )
+            )
         }
     }
 

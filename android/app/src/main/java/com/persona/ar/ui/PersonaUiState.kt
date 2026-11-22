@@ -1,6 +1,8 @@
 package com.persona.ar.ui
 
 import com.persona.ar.ar.ARMode
+import com.persona.ar.ar.ARSpatialAnchor
+import com.persona.ar.ar.ARTrackingStatus
 import com.persona.ar.character.CharacterVisualState
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
@@ -11,6 +13,8 @@ import com.persona.ar.data.model.VoiceMode
 
 data class PersonaUiState(
     val arMode: ARMode = ARMode.BILLBOARD_2_5D,
+    val arTrackingStatus: ARTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
+    val spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(),
     val visualState: CharacterVisualState = CharacterVisualState(),
     val personaStatus: PersonaStatus? = null,
     val messages: List<ChatMessage> = emptyList(),
