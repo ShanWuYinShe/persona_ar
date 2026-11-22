@@ -624,6 +624,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
                     surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    cameraFocusTimestamp = System.currentTimeMillis(),
+                    isCameraFocusing = true,
                     planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
                 ),
                 visualState = current.visualState.copy(
@@ -632,7 +634,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     bloomIntensity = optical.bloomIntensity,
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    isCameraFocusing = true
                 )
             )
         }
@@ -778,7 +781,23 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     fun onDragStateChanged(isDragging: Boolean) {
         _uiState.update { current ->
             current.copy(
-                spatialAnchor = current.spatialAnchor.copy(isDragging = isDragging)
+                spatialAnchor = current.spatialAnchor.copy(
+                    isDragging = isDragging,
+                    isCameraFocusing = !isDragging,
+                    cameraFocusTimestamp = if (!isDragging) System.currentTimeMillis() else current.spatialAnchor.cameraFocusTimestamp
+                ),
+                visualState = current.visualState.copy(
+                    isCameraFocusing = !isDragging
+                )
+            )
+        }
+    }
+
+    fun onCameraFocusStateChanged(isFocusing: Boolean) {
+        _uiState.update { current ->
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(isCameraFocusing = isFocusing),
+                visualState = current.visualState.copy(isCameraFocusing = isFocusing)
             )
         }
     }
@@ -824,10 +843,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     lightDirectionX = profile.lightDirectionX,
                     lightDirectionY = profile.lightDirectionY,
                     lightDirectionalStrength = profile.lightDirectionalStrength,
-                    deskTextureConfidence = profile.deskTextureConfidence
+                    deskTextureConfidence = profile.deskTextureConfidence,
+                    visualFlowOffsetX = profile.visualFlowOffsetX,
+                    visualFlowOffsetY = profile.visualFlowOffsetY,
+                    lensVignetteFactor = profile.lensVignetteFactor
                 ),
                 visualState = current.visualState.copy(
-                    environmentalLighting = effectiveLighting,
+                    environmentalLighting = (effectiveLighting * profile.lensVignetteFactor).coerceIn(0.18f, 1.35f),
                     isLowLight = profile.isLowLight,
                     ambientColorTemp = profile.colorTemp,
                     ambientTintRed = (profile.tintR * 0.7f + profile.localSurfaceTintR * 0.3f).coerceIn(0.8f, 1.25f),
@@ -844,7 +866,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     lightDirectionY = profile.lightDirectionY,
                     lightDirectionalStrength = profile.lightDirectionalStrength,
                     cameraPitchDegrees = anchor.cameraPitchDegrees,
-                    cameraRollDegrees = anchor.cameraRollDegrees
+                    cameraRollDegrees = anchor.cameraRollDegrees,
+                    visualFlowOffsetX = profile.visualFlowOffsetX,
+                    visualFlowOffsetY = profile.visualFlowOffsetY,
+                    lensVignetteFactor = profile.lensVignetteFactor
                 )
             )
         }

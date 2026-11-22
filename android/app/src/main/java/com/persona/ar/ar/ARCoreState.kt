@@ -99,6 +99,15 @@ data class ARSpatialAnchor(
     val lightDirectionalStrength: Float = 0.2f,
     /** 桌面特征纹理置信度 (0.0f ~ 1.0f) */
     val deskTextureConfidence: Float = 0.5f,
+    /** 端侧零 GMS 视觉光流防抖微偏移 (像素) */
+    val visualFlowOffsetX: Float = 0f,
+    val visualFlowOffsetY: Float = 0f,
+    /** 镜头边缘暗角自然失光衰减系数 (0.72f 边缘 ~ 1.0f 中心) */
+    val lensVignetteFactor: Float = 1.0f,
+    /** 物理相机是否正在自动对焦中 (触发相机黄色专业对焦环动画) */
+    val isCameraFocusing: Boolean = false,
+    /** 触发对焦时间戳 (供合焦对焦框动画显示) */
+    val cameraFocusTimestamp: Long = 0L,
     /** 用户是否正在地面自由拖拽伴侣滑行中 */
     val isDragging: Boolean = false,
     /** 是否已将角色锚定在现实平面 */

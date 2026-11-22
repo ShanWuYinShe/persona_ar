@@ -86,6 +86,10 @@ fun PersonaMainScreen(
                 modifier = Modifier.fillMaxSize(),
                 focusAnchorNormX = uiState.spatialAnchor.screenX,
                 focusAnchorNormY = uiState.spatialAnchor.screenY,
+                isFocusTriggered = uiState.spatialAnchor.isCameraFocusing,
+                onFocusStateChanged = { isFocusing ->
+                    viewModel.onCameraFocusStateChanged(isFocusing)
+                },
                 onEnvironmentLightChanged = { lum, isLow ->
                     viewModel.onEnvironmentalLightChanged(lum, isLow)
                 },
