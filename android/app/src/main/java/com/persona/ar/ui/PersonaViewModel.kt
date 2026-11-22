@@ -176,7 +176,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val shiftX = (roll * 25f).coerceIn(-30f, 30f)
             val shiftY = (pitch * 25f).coerceIn(-30f, 30f)
             _uiState.update { current ->
+                val updatedSpatialAnchor = if (current.spatialAnchor.isAnchored) {
+                    current.spatialAnchor.copy(
+                        parallaxShiftX = shiftX * 0.75f,
+                        parallaxShiftY = shiftY * 0.75f
+                    )
+                } else {
+                    current.spatialAnchor
+                }
                 current.copy(
+                    spatialAnchor = updatedSpatialAnchor,
                     visualState = current.visualState.copy(
                         tiltOffsetX = shiftX,
                         tiltOffsetY = shiftY
@@ -478,8 +487,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     screenX = screenX,
                     screenY = screenY,
                     isAnchored = true,
-                    distanceMeters = 0.75f,
-                    planeTypeDescription = "物理桌面"
+                    distanceMeters = 0.65f,
+                    planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
                 )
             )
         }
@@ -506,7 +515,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 spatialAnchor = current.spatialAnchor.copy(
                     isAnchored = false,
                     scaleFactor = 1.0f,
-                    rotationYaw = 0f
+                    rotationYaw = 0f,
+                    parallaxShiftX = 0f,
+                    parallaxShiftY = 0f,
+                    planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
                 )
             )
         }
