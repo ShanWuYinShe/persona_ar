@@ -66,6 +66,18 @@ data class ARSpatialAnchor(
     val cameraGazeOffsetX: Float = 0f,
     /** 镜头注视微动偏移 Y (-1f..1f) */
     val cameraGazeOffsetY: Float = 0f,
+    /** 真实广角镜头边缘径向色散强度 (0.0f ~ 1.0f) */
+    val chromaticAberrationIntensity: Float = 0f,
+    /** 镜头色散径向倾角弧度 */
+    val chromaticAngleRad: Float = 0f,
+    /** 强光逆光环境下的镜头光渗与边缘光晕 (0.0f ~ 1.0f) */
+    val bloomIntensity: Float = 0f,
+    /** 镜头景深焦外弥散度 (0.0f ~ 1.0f) */
+    val depthOfFieldBlur: Float = 0f,
+    /** 镜头微距特写状态 */
+    val isMacroProximity: Boolean = false,
+    /** 桌面边缘深度遮挡切片比例 (0.0f ~ 1.0f) */
+    val surfaceOcclusionBottomCutoff: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

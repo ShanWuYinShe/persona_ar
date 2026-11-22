@@ -177,16 +177,26 @@ fun CharacterCanvasRenderer(
                 size = Size(190f * s, 32f * s)
             )
 
-            // 2. 现实明亮环境时的柔和边缘光晕 (Camera Rim Light Wrap)
-            if (envLight > 0.85f) {
-                drawCircle(
-                    color = Color(0x18FFFFFF),
-                    radius = 100f * s,
-                    center = Offset(cx, cy - 8f * s)
+            // 2. 现实强光源边缘光渗与环境光散射 (Bloom Bleed & Atmospheric Rim Light)
+            if (visualState.bloomIntensity > 0.04f || envLight > 0.85f) {
+                val effectiveBloom = visualState.bloomIntensity.coerceAtLeast(
+                    if (envLight > 0.85f) (envLight - 0.75f) * 0.8f else 0f
+                )
+                drawAtmosphericBloomBleed(cx, cy, s, effectiveBloom, visualState.ambientColorTemp)
+            }
+
+            // 3. 真实广角镜头边缘径向色散 (Chromatic Aberration Fringe)
+            if (visualState.chromaticAberrationIntensity > 0.04f) {
+                drawChromaticAberrationFringe(
+                    cx = cx,
+                    cy = cy,
+                    s = s,
+                    intensity = visualState.chromaticAberrationIntensity,
+                    angleRad = visualState.chromaticAngleRad
                 )
             }
 
-            // 3. 绘制萌系角色主体 (融入触摸局部形变、相机环境光与视线注视)
+            // 4. 绘制萌系角色主体 (融入触摸局部形变、相机环境光、视线注视与微距亲密特写)
             drawChibiBody(cx, cy, s, visualState)
             drawChibiHairBack(cx, cy, s * headSquishScaleY, visualState)
             drawChibiFace(cx, cy, s * cheekSquishScaleX, visualState)
@@ -196,7 +206,12 @@ fun CharacterCanvasRenderer(
             drawChibiHairFront(cx, cy, s * headSquishScaleY, ahogeWiggle, visualState)
             drawGameEmoteParticles(cx, cy, s, visualState)
 
-            // 4. 现实物理相机高 ISO 传感器微噪点粒子模拟 (消除纯数码矢量的过度纯净感，完美融合摄像头 CMOS 真实质感)
+            // 5. 桌面边缘深度遮挡与水平面切片 (Surface Horizon Edge Occlusion，防止脚底悬空穿模)
+            if (visualState.surfaceOcclusionBottomCutoff > 0.04f) {
+                drawSurfaceEdgeOcclusion(cx, cy, s, visualState.surfaceOcclusionBottomCutoff)
+            }
+
+            // 6. 现实物理相机高 ISO 传感器微噪点粒子模拟 (消除纯数码矢量的过度纯净感，完美融合摄像头 CMOS 真实质感)
             if (visualState.isLowLight || visualState.sensorGrainIntensity > 0.04f) {
                 drawCameraSensorGrain(cx, cy, s, visualState.sensorGrainIntensity.coerceIn(0.04f, 0.16f))
             }
@@ -576,11 +591,11 @@ private fun DrawScope.drawChibiEyes(
             }
             drawPath(blinkPathRight, strokeColor, style = Stroke(4.5f * s, cap = StrokeCap.Round))
         } else {
-            drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
+            drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY, state.isMacroProximity)
         }
     } else {
-        drawBigChibiEye(leftEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
-        drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
+        drawBigChibiEye(leftEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY, state.isMacroProximity)
+        drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY, state.isMacroProximity)
     }
 }
 
@@ -590,11 +605,13 @@ private fun DrawScope.drawBigChibiEye(
     s: Float,
     irisColor: Color,
     gazeShiftX: Float = 0f,
-    gazeShiftY: Float = 0f
+    gazeShiftY: Float = 0f,
+    isMacroProximity: Boolean = false
 ) {
     val strokeColor = Color(0xFF281C38)
     val gazeX = gazeShiftX.coerceIn(-1f, 1f) * 4.5f * s
     val gazeY = gazeShiftY.coerceIn(-1f, 1f) * 3.0f * s
+    val pupilScale = if (isMacroProximity) 1.15f else 1.0f
 
     // 眼白
     drawOval(
@@ -609,21 +626,23 @@ private fun DrawScope.drawBigChibiEye(
         style = Stroke(2.5f * s)
     )
 
-    // 瞳孔多层渐变 (融入视线追踪)
+    // 瞳孔多层渐变 (微距特写瞳孔放大与视线注视)
+    val pupilW = 30f * s * pupilScale
+    val pupilH = 40f * s * pupilScale
     drawOval(
         brush = Brush.verticalGradient(
             colors = listOf(irisColor, irisColor.copy(alpha = 0.6f), Color(0xFFFF80AB)),
             startY = ey - 20f * s + gazeY,
             endY = ey + 20f * s + gazeY
         ),
-        topLeft = Offset(ex - 15f * s + gazeX, ey - 20f * s + gazeY),
-        size = Size(30f * s, 40f * s)
+        topLeft = Offset(ex - pupilW * 0.5f + gazeX, ey - pupilH * 0.5f + gazeY),
+        size = Size(pupilW, pupilH)
     )
 
     // 顶部超大高光
     drawCircle(
         color = Color.White,
-        radius = 7.5f * s,
+        radius = 7.5f * s * pupilScale,
         center = Offset(ex - 5f * s + gazeX * 0.4f, ey - 8f * s + gazeY * 0.4f)
     )
     // 底部星芒/小高光
@@ -632,6 +651,15 @@ private fun DrawScope.drawBigChibiEye(
         radius = 3.5f * s,
         center = Offset(ex + 6f * s + gazeX * 0.4f, ey + 7f * s + gazeY * 0.4f)
     )
+
+    // 镜头微距特写专属：相机近景双光斑反光 (Macro Specular Glint)
+    if (isMacroProximity) {
+        drawCircle(
+            color = Color(0xCC00E5FF),
+            radius = 2.4f * s,
+            center = Offset(ex - 1.5f * s + gazeX * 0.4f, ey + 1.5f * s + gazeY * 0.4f)
+        )
+    }
 
     // 翘睫毛
     drawArc(
@@ -652,9 +680,9 @@ private fun DrawScope.drawChibiBlush(
     s: Float,
     state: CharacterVisualState
 ) {
-    val isBlushing = state.emotion == EmotionType.SHY || state.action == ActionType.BLUSH
+    val isBlushing = state.emotion == EmotionType.SHY || state.action == ActionType.BLUSH || state.isMacroProximity
     val blushColor = if (isBlushing) Color(0xFFFF4081) else Color(0xFFFF80AB)
-    val blushAlpha = if (isBlushing) 0.8f else 0.45f
+    val blushAlpha = if (state.isMacroProximity) 0.82f else if (isBlushing) 0.72f else 0.45f
 
     // 左腮红圆圈
     drawCircle(
@@ -862,4 +890,120 @@ private fun DrawScope.drawStar(
     path.close()
     drawPath(path, color)
     drawPath(path, Color(0xFF281C38), style = Stroke(2.5f))
+}
+
+/**
+ * 真实广角光学镜头边缘径向色散 (Chromatic Aberration Radial Fringe)
+ * 在偏离画面中心 (光轴) 时，物理玻璃透镜对不同波长光线的折射率差异产生红/青边缘色散分离
+ */
+private fun DrawScope.drawChromaticAberrationFringe(
+    cx: Float,
+    cy: Float,
+    s: Float,
+    intensity: Float,
+    angleRad: Float
+) {
+    val fringeDistance = (2.6f * intensity * s).coerceIn(1.0f, 4.2f)
+    val redOffsetX = (kotlin.math.cos(angleRad) * fringeDistance).toFloat()
+    val redOffsetY = (kotlin.math.sin(angleRad) * fringeDistance).toFloat()
+    val cyanOffsetX = -redOffsetX
+    val cyanOffsetY = -redOffsetY
+
+    val redFringeColor = Color(0x32FF2D55)
+    val cyanFringeColor = Color(0x3200E5FF)
+    val strokeWidth = (2.2f * s).coerceAtLeast(1.5f)
+
+    // 红移外边缘弧光
+    drawCircle(
+        color = redFringeColor,
+        radius = 89f * s,
+        center = Offset(cx + redOffsetX, cy - 8f * s + redOffsetY),
+        style = Stroke(width = strokeWidth)
+    )
+
+    // 青移外边缘弧光 (反向互补色散)
+    drawCircle(
+        color = cyanFringeColor,
+        radius = 89f * s,
+        center = Offset(cx + cyanOffsetX, cy - 8f * s + cyanOffsetY),
+        style = Stroke(width = strokeWidth)
+    )
+}
+
+/**
+ * 现实环境强光源/逆光边缘光晕溢出与光渗漫射 (Atmospheric Bloom & Rim Light Bleed)
+ * 当摄像头画面存在台灯、窗外日光等强光源时，光子在镜头介质内散射并漫射浸润角色边缘，打破死板贴图感
+ */
+private fun DrawScope.drawAtmosphericBloomBleed(
+    cx: Float,
+    cy: Float,
+    s: Float,
+    bloomIntensity: Float,
+    colorTemp: Float
+) {
+    val bloomClamped = bloomIntensity.coerceIn(0.06f, 0.85f)
+    // 根据色温调整光晕冷暖：暖光偏金白 (0xFFFFF4D0)，冷光偏冰蓝白 (0xFFD8F3FF)
+    val bloomTint = if (colorTemp > 0.1f) {
+        Color(0xFFFFF6DF)
+    } else if (colorTemp < -0.1f) {
+        Color(0xFFE2F7FF)
+    } else {
+        Color(0xFFFFFFFF)
+    }
+
+    // 1) 最外层大范围柔和光晕
+    val outerAlpha = (0.16f * bloomClamped).coerceIn(0.04f, 0.22f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                bloomTint.copy(alpha = outerAlpha),
+                bloomTint.copy(alpha = outerAlpha * 0.4f),
+                Color.Transparent
+            ),
+            center = Offset(cx, cy - 15f * s),
+            radius = 135f * s
+        ),
+        radius = 135f * s,
+        center = Offset(cx, cy - 15f * s)
+    )
+
+    // 2) 头发与双肩菲涅尔高光边缘轮廓 (Fresnel Rim Bleed)
+    val rimAlpha = (0.35f * bloomClamped).coerceIn(0.08f, 0.45f)
+    drawCircle(
+        color = bloomTint.copy(alpha = rimAlpha),
+        radius = 89.5f * s,
+        center = Offset(cx, cy - 8f * s),
+        style = Stroke(width = 3.8f * s)
+    )
+}
+
+/**
+ * 桌面边缘物理深度遮挡与水平面切片 (Surface Horizon Edge Occlusion)
+ * 当角色靠近桌面边缘或视线倾角较大时，下半身与脚底呈现物理桌面边缘遮挡与平滑渐隐，
+ * 彻底消除角色脚底穿模漂浮在桌面半空的视觉违和感。
+ */
+private fun DrawScope.drawSurfaceEdgeOcclusion(
+    cx: Float,
+    cy: Float,
+    s: Float,
+    cutoff: Float
+) {
+    val clampedCutoff = cutoff.coerceIn(0f, 1f)
+    val footBaseY = cy + 245f * s
+    val occlusionHeight = (75f * s * clampedCutoff).coerceAtLeast(10f)
+    val occlusionWidth = 260f * s
+
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color(0x3310081C).copy(alpha = 0.35f * clampedCutoff),
+                Color(0x9910081C).copy(alpha = 0.75f * clampedCutoff)
+            ),
+            startY = footBaseY - occlusionHeight,
+            endY = footBaseY + 12f * s
+        ),
+        topLeft = Offset(cx - occlusionWidth * 0.5f, footBaseY - occlusionHeight),
+        size = Size(occlusionWidth, occlusionHeight + 12f * s)
+    )
 }

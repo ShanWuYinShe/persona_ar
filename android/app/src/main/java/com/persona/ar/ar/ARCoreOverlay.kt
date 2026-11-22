@@ -195,7 +195,8 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * 1.1f, shadowHeight * 1.1f)
                 )
 
-                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减
+                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减与焦外弥散扩展
+                val penumbraSpread = 1.0f + (spatialAnchor.depthOfFieldBlur * 0.30f)
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -204,10 +205,10 @@ fun ARCoreOverlay(
                             Color.Transparent
                         ),
                         center = Offset(shadowCenterX, shadowCenterY),
-                        radius = shadowWidth * 0.85f
+                        radius = shadowWidth * 0.85f * penumbraSpread
                     ),
-                    topLeft = Offset(shadowCenterX - shadowWidth * 0.5f, shadowCenterY - shadowHeight * 0.5f),
-                    size = Size(shadowWidth, shadowHeight)
+                    topLeft = Offset(shadowCenterX - shadowWidth * 0.5f * penumbraSpread, shadowCenterY - shadowHeight * 0.5f * penumbraSpread),
+                    size = Size(shadowWidth * penumbraSpread, shadowHeight * penumbraSpread)
                 )
 
                 // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底的深色物理贴合缝隙
@@ -289,7 +290,13 @@ fun ARCoreOverlay(
                         ambientTintBlue = spatialAnchor.ambientTintBlue,
                         sensorGrainIntensity = spatialAnchor.sensorGrainIntensity,
                         gazeShiftX = spatialAnchor.cameraGazeOffsetX,
-                        gazeShiftY = spatialAnchor.cameraGazeOffsetY
+                        gazeShiftY = spatialAnchor.cameraGazeOffsetY,
+                        chromaticAberrationIntensity = spatialAnchor.chromaticAberrationIntensity,
+                        chromaticAngleRad = spatialAnchor.chromaticAngleRad,
+                        bloomIntensity = spatialAnchor.bloomIntensity,
+                        depthOfFieldBlur = spatialAnchor.depthOfFieldBlur,
+                        isMacroProximity = spatialAnchor.isMacroProximity,
+                        surfaceOcclusionBottomCutoff = spatialAnchor.surfaceOcclusionBottomCutoff
                     ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
@@ -331,15 +338,29 @@ fun ARCoreOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val pillText = if (spatialAnchor.isLowLight) {
-                            "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光自适应融合"
-                        } else {
-                            "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放"
+                        val pillText = when {
+                            spatialAnchor.isMacroProximity ->
+                                "微距特写已就绪 (${(spatialAnchor.scaleFactor * 100).toInt()}%) · 瞳孔镜头反光与心跳红晕 ✨"
+                            spatialAnchor.bloomIntensity > 0.35f ->
+                                "环境强光漫射 · 边缘光晕溢出与光影融合 (Bloom Bleed) ☀️"
+                            spatialAnchor.chromaticAberrationIntensity > 0.40f ->
+                                "边缘广角透镜色散校准中 · 真实物理光学嵌入 🌈"
+                            spatialAnchor.isLowLight ->
+                                "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光与 CMOS 噪点调和 🌙"
+                            else ->
+                                "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放"
+                        }
+                        val pillBgColor = when {
+                            spatialAnchor.isMacroProximity -> Color(0xE6D81B60)
+                            spatialAnchor.bloomIntensity > 0.35f -> Color(0xE6E65100)
+                            spatialAnchor.chromaticAberrationIntensity > 0.40f -> Color(0xE600838F)
+                            spatialAnchor.isLowLight -> Color(0xE61A237E)
+                            else -> Color(0xE61B5E20)
                         }
                         ARGuidePill(
                             icon = Icons.Filled.AutoAwesome,
                             text = pillText,
-                            bgColor = if (spatialAnchor.isLowLight) Color(0xE61A237E) else Color(0xE61B5E20)
+                            bgColor = pillBgColor
                         )
                         // 一键复位按钮
                         Box(
