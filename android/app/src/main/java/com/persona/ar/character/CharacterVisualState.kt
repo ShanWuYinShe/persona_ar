@@ -61,5 +61,7 @@ data class CharacterVisualState(
     /** 镜头边缘暗角自然失光衰减系数 (0.72f 边缘 ~ 1.0f 中心) */
     val lensVignetteFactor: Float = 1.0f,
     /** 物理相机是否正在自动对焦中 */
-    val isCameraFocusing: Boolean = false
+    val isCameraFocusing: Boolean = false,
+    /** 是否启用高精度二次元角色全模渲染 (彻底替代简易几何 Chibi，达到商业级精细画质) */
+    val useHighResolutionModel: Boolean = true
 )
