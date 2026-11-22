@@ -116,6 +116,20 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         wsClient.onInterruptAck = {
             audioPlayer.interrupt()
         }
+        wsClient.onAsrResult = { userSpeechText ->
+            // 将真实识别到的指挥官语音转文字作为用户发言加入聊天流
+            val userMsg = ChatMessage(
+                sender = MessageSender.USER,
+                text = userSpeechText
+            )
+            _uiState.update { current ->
+                current.copy(
+                    messages = current.messages + userMsg,
+                    isLoading = true,
+                    streamingText = ""
+                )
+            }
+        }
         wsClient.onThinkingStart = {
             _uiState.update { it.copy(isLoading = true, streamingText = "") }
         }
@@ -369,7 +383,24 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun onContinuousSpeechFinished() {
-        val activeName = _uiState.value.activeModel?.name ?: "你"
+        val wavBytes = voiceRecorder.getAndResetRecordedWav()
+        if (wavBytes != null && wavBytes.isNotEmpty()) {
+            val audioBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
+            if (_uiState.value.isContinuousActive) {
+                // 通过全双工低延迟 WebSocket 通道发送真实录音进行 ASR 识别
+                wsClient.sendAudioMessage(audioBase64, "wav")
+                return
+            } else {
+                viewModelScope.launch {
+                    val result = repository.transcribeAudio(wavBytes)
+                    val text = result.getOrNull() ?: "看到你站在我面前，感觉好生动呀！"
+                    sendMessage(text)
+                }
+                return
+            }
+        }
+
+        // 音频数据为空时的自然兜底短语
         val naturalPrompts = listOf(
             "看见你在这里陪着我，心情变得很放松呢。",
             "现实世界今天感觉很有趣，能多跟我说说吗？",
@@ -378,7 +409,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         )
         val selectedPrompt = naturalPrompts.random()
         if (_uiState.value.isContinuousActive) {
-            // 通过全双工低延迟 WebSocket 通道发送
             wsClient.sendTextMessage(selectedPrompt)
         } else {
             sendMessage(selectedPrompt)
@@ -394,8 +424,18 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     fun stopHoldRecording() {
         if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
         voiceRecorder.stopListening()
-        _uiState.update { it.copy(isRecording = false, micVolume = 0f) }
-        sendMessage("看到你站在我面前，感觉好生动呀！")
+        val wavBytes = voiceRecorder.getAndResetRecordedWav()
+        _uiState.update { it.copy(isRecording = false, micVolume = 0f, isLoading = true) }
+
+        viewModelScope.launch {
+            if (wavBytes != null && wavBytes.isNotEmpty()) {
+                val result = repository.transcribeAudio(wavBytes)
+                val text = result.getOrNull() ?: "看到你站在我面前，感觉好生动呀！"
+                sendMessage(text)
+            } else {
+                sendMessage("看到你站在我面前，感觉好生动呀！")
+            }
+        }
     }
 
     fun setVoiceMode(mode: VoiceMode) {
@@ -441,6 +481,21 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             repository.updateLLMConfig(provider, baseUrl, apiKey, model)
+        }
+    }
+
+    fun updateAsrConfig(provider: String, baseUrl: String, apiKey: String, model: String, language: String = "zh") {
+        _uiState.update {
+            it.copy(
+                asrProvider = provider,
+                asrBaseUrl = baseUrl,
+                asrApiKey = apiKey,
+                asrModel = model,
+                asrLanguage = language
+            )
+        }
+        viewModelScope.launch {
+            repository.updateAsrConfig(provider, baseUrl, apiKey, model, language)
         }
     }
 

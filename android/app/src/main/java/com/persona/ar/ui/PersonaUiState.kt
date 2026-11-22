@@ -47,6 +47,12 @@ data class PersonaUiState(
     val llmBaseUrl: String = "https://api.deepseek.com",
     val llmApiKey: String = "",
     val llmModel: String = "deepseek-chat",
+    // 语音识别 ASR 接入配置 (Whisper / Groq / 智能降级)
+    val asrProvider: String = "mock",
+    val asrBaseUrl: String = "https://api.openai.com/v1",
+    val asrApiKey: String = "",
+    val asrModel: String = "whisper-1",
+    val asrLanguage: String = "zh",
     // 大模型流式输出打字机状态 (WebSocket / SSE)
     val streamingText: String? = null,
     // 触碰与羁绊即时浮空动画粒子 (Floating FX)

@@ -369,6 +369,10 @@ fun PersonaMainScreen(
                 currentLlmBaseUrl = uiState.llmBaseUrl,
                 currentLlmApiKey = uiState.llmApiKey,
                 currentLlmModel = uiState.llmModel,
+                currentAsrProvider = uiState.asrProvider,
+                currentAsrBaseUrl = uiState.asrBaseUrl,
+                currentAsrApiKey = uiState.asrApiKey,
+                currentAsrModel = uiState.asrModel,
                 onDismiss = { viewModel.setSettingsOpen(false) },
                 onToggleMode = { viewModel.toggleARMode() },
                 onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
@@ -376,6 +380,9 @@ fun PersonaMainScreen(
                 onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) },
                 onUpdateLlmConfig = { provider, baseUrl, apiKey, model ->
                     viewModel.updateLlmConfig(provider, baseUrl, apiKey, model)
+                },
+                onUpdateAsrConfig = { provider, baseUrl, apiKey, model ->
+                    viewModel.updateAsrConfig(provider, baseUrl, apiKey, model)
                 }
             )
         }

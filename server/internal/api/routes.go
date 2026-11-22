@@ -40,9 +40,10 @@ func RegisterRoutes(r *gin.Engine) {
 		apiV1.POST("/persona/reset", handlePersonaReset)
 	}
 
-	// 注册商城工坊、大模型配置与全双工 WebSocket
+	// 注册商城工坊、大模型配置、语音识别 (ASR) 与全双工 WebSocket
 	RegisterStoreRoutes(apiV1)
 	RegisterLLMRoutes(apiV1)
+	RegisterASRRoutes(apiV1)
 	RegisterWebSocketRoutes(apiV1)
 }
 

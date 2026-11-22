@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
+	"encoding/base64"
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"github.com/ShanWuYinShe/persona_ar/server/internal/asr"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/persona"
 )
 
@@ -18,9 +22,11 @@ var upgrader = websocket.Upgrader{
 }
 
 type WSIncomingMessage struct {
-	Type      string      `json:"type"`
-	Timestamp interface{} `json:"timestamp,omitempty"`
-	Text      string      `json:"text,omitempty"`
+	Type        string      `json:"type"`
+	Timestamp   interface{} `json:"timestamp,omitempty"`
+	Text        string      `json:"text,omitempty"`
+	AudioBase64 string      `json:"audio_base64,omitempty"`
+	AudioFormat string      `json:"audio_format,omitempty"`
 }
 
 func RegisterWebSocketRoutes(rg *gin.RouterGroup) {
@@ -52,6 +58,44 @@ func handleContinuousWebSocket(c *gin.Context) {
 		"persona_id": activePid,
 	})
 
+	processTextMessage := func(userText string) {
+		// 广播思考开始态
+		_ = safeWriteJSON(gin.H{
+			"type":    "thinking_start",
+			"message": "正在思考回应...",
+		})
+
+		onChunk := func(chunk string) {
+			_ = safeWriteJSON(gin.H{
+				"type":  "stream_chunk",
+				"delta": chunk,
+			})
+		}
+
+		resp, err := persona.DefaultEngine.ChatStream(userID, userText, onChunk)
+		if err != nil {
+			_ = safeWriteJSON(gin.H{
+				"type":  "error",
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// 下发完整应答包
+		_ = safeWriteJSON(gin.H{
+			"type":             "response_complete",
+			"text":             resp.Text,
+			"emotion":          resp.Emotion,
+			"action":           resp.Action,
+			"expression":       resp.Expression,
+			"audio_base64":     resp.AudioBase64,
+			"audio_format":     resp.AudioFormat,
+			"affinity_change":  resp.AffinityChange,
+			"current_affinity": resp.CurrentAffinity,
+			"mood":             resp.Mood,
+		})
+	}
+
 	for {
 		var inMsg WSIncomingMessage
 		if err := conn.ReadJSON(&inMsg); err != nil {
@@ -67,41 +111,44 @@ func handleContinuousWebSocket(c *gin.Context) {
 			})
 
 		case "text_message":
-			// 广播思考开始态
-			_ = safeWriteJSON(gin.H{
-				"type":    "thinking_start",
-				"message": "正在思考回应...",
-			})
+			processTextMessage(inMsg.Text)
 
-			onChunk := func(chunk string) {
-				_ = safeWriteJSON(gin.H{
-					"type":  "stream_chunk",
-					"delta": chunk,
-				})
-			}
-
-			resp, err := persona.DefaultEngine.ChatStream(userID, inMsg.Text, onChunk)
-			if err != nil {
+		case "audio_message":
+			// 1. 解码音频并进行语音识别
+			audioBytes, err := base64.StdEncoding.DecodeString(inMsg.AudioBase64)
+			if err != nil || len(audioBytes) == 0 {
 				_ = safeWriteJSON(gin.H{
 					"type":  "error",
-					"error": err.Error(),
+					"error": "无效的音频数据",
 				})
 				continue
 			}
 
-			// 下发完整应答包
+			format := inMsg.AudioFormat
+			if format == "" {
+				format = "wav"
+			}
+
+			asrCtx, asrCancel := context.WithTimeout(context.Background(), 25*time.Second)
+			transcribedText, asrErr := asr.DefaultManager.Transcribe(asrCtx, audioBytes, "ws_voice."+format)
+			asrCancel()
+
+			if asrErr != nil {
+				_ = safeWriteJSON(gin.H{
+					"type":  "error",
+					"error": "语音识别失败: " + asrErr.Error(),
+				})
+				continue
+			}
+
+			// 2. 广播识别结果给客户端（作为用户发言气泡显示）
 			_ = safeWriteJSON(gin.H{
-				"type":             "response_complete",
-				"text":             resp.Text,
-				"emotion":          resp.Emotion,
-				"action":           resp.Action,
-				"expression":       resp.Expression,
-				"audio_base64":     resp.AudioBase64,
-				"audio_format":     resp.AudioFormat,
-				"affinity_change":  resp.AffinityChange,
-				"current_affinity": resp.CurrentAffinity,
-				"mood":             resp.Mood,
+				"type": "asr_result",
+				"text": transcribedText,
 			})
+
+			// 3. 驱动大模型回复
+			processTextMessage(transcribedText)
 
 		case "ping":
 			_ = safeWriteJSON(gin.H{"type": "pong"})

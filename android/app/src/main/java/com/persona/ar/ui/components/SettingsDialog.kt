@@ -45,12 +45,17 @@ fun SettingsDialog(
     currentLlmBaseUrl: String = "https://api.deepseek.com",
     currentLlmApiKey: String = "",
     currentLlmModel: String = "deepseek-chat",
+    currentAsrProvider: String = "mock",
+    currentAsrBaseUrl: String = "https://api.openai.com/v1",
+    currentAsrApiKey: String = "",
+    currentAsrModel: String = "whisper-1",
     onDismiss: () -> Unit,
     onToggleMode: () -> Unit,
     onSelectVoiceMode: (VoiceMode) -> Unit,
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
     onUpdateServerUrl: (String) -> Unit,
-    onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> }
+    onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
+    onUpdateAsrConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> }
 ) {
     var serverInput by remember { mutableStateOf(currentServerUrl) }
     var selectedVoiceMode by remember { mutableStateOf(currentVoiceMode) }
@@ -59,6 +64,10 @@ fun SettingsDialog(
     var llmBaseUrl by remember { mutableStateOf(currentLlmBaseUrl) }
     var llmApiKey by remember { mutableStateOf(currentLlmApiKey) }
     var llmModel by remember { mutableStateOf(currentLlmModel) }
+    var asrProvider by remember { mutableStateOf(currentAsrProvider) }
+    var asrBaseUrl by remember { mutableStateOf(currentAsrBaseUrl) }
+    var asrApiKey by remember { mutableStateOf(currentAsrApiKey) }
+    var asrModel by remember { mutableStateOf(currentAsrModel) }
 
     val borderColor = Color(0xFF281C38)
     val surfaceCream = Color(0xFFFFFDF9)
@@ -371,6 +380,101 @@ fun SettingsDialog(
                     }
                 }
 
+                // 5. 语音识别 (ASR) 引擎配置
+                SectionContainer(
+                    icon = Icons.Filled.Mic,
+                    title = "语音识别 (ASR) 引擎设置",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
+                ) {
+                    Text(
+                        text = "选择语音识别服务商，支持 OpenAI Whisper 官方、Groq 极速转写或内置离线智能降级。",
+                        fontSize = 11.sp,
+                        color = Color(0xFF6E5E80),
+                        lineHeight = 15.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GameMiniChip(
+                            title = "Whisper 官方",
+                            isSelected = asrProvider == "whisper",
+                            activeColor = Color(0xFF00B0FF),
+                            onClick = {
+                                asrProvider = "whisper"
+                                asrBaseUrl = "https://api.openai.com/v1"
+                                asrModel = "whisper-1"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GameMiniChip(
+                            title = "Groq 极速",
+                            isSelected = asrProvider == "groq",
+                            activeColor = Color(0xFFFF9100),
+                            onClick = {
+                                asrProvider = "groq"
+                                asrBaseUrl = "https://api.groq.com/openai/v1"
+                                asrModel = "whisper-large-v3"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GameMiniChip(
+                            title = "内置降级",
+                            isSelected = asrProvider == "mock",
+                            activeColor = Color(0xFF7B61FF),
+                            onClick = {
+                                asrProvider = "mock"
+                                asrBaseUrl = ""
+                                asrModel = "heuristic-mock"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (asrProvider != "mock") {
+                        OutlinedTextField(
+                            value = asrBaseUrl,
+                            onValueChange = { asrBaseUrl = it },
+                            label = { Text("ASR API Base URL", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = asrApiKey,
+                            onValueChange = { asrApiKey = it },
+                            label = { Text("ASR API Key", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = asrModel,
+                            onValueChange = { asrModel = it },
+                            label = { Text("ASR 模型标识 (Model Name)", fontSize = 10.sp) },
+                            textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
                 // 底部按钮栏
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -389,6 +493,7 @@ fun SettingsDialog(
                             onSelectBubbleMode(selectedBubbleMode)
                             onUpdateServerUrl(serverInput.trim())
                             onUpdateLlmConfig(llmProvider, llmBaseUrl.trim(), llmApiKey.trim(), llmModel.trim())
+                            onUpdateAsrConfig(asrProvider, asrBaseUrl.trim(), asrApiKey.trim(), asrModel.trim())
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(

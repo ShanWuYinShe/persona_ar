@@ -200,13 +200,80 @@ func (m *MemoryManager) GetMemories(userID, personaID string, limit int) []model
 }
 
 func (m *MemoryManager) GetContextPromptFragment(userID, personaID string) string {
-	memories := m.GetMemories(userID, personaID, 4)
+	return m.GetContextPromptFragmentWithRecall(userID, personaID, "")
+}
+
+func (m *MemoryManager) RecallRelevantMemories(userID, personaID, currentMessage string, limit int) []model.MemoryItem {
+	all := m.GetMemories(userID, personaID, 0)
+	if len(all) == 0 {
+		return nil
+	}
+
+	if strings.TrimSpace(currentMessage) == "" {
+		if limit > 0 && len(all) > limit {
+			return all[:limit]
+		}
+		return all
+	}
+
+	msgRunes := []rune(strings.ToLower(currentMessage))
+	// 常用高频虚词停用词过滤
+	stopwords := map[string]bool{
+		"今天": true, "明天": true, "现在": true, "可以": true, "如果": true,
+		"什么": true, "怎么": true, "这个": true, "那个": true, "一下": true,
+		"一杯": true, "一点": true, "真的": true, "好想": true, "想要": true,
+	}
+
+	type scoredItem struct {
+		item  model.MemoryItem
+		score int
+	}
+
+	var scored []scoredItem
+	for _, item := range all {
+		contentLower := strings.ToLower(item.Content)
+		matchCount := 0
+
+		// 检查 2-gram 语义重合
+		for i := 0; i < len(msgRunes)-1; i++ {
+			gram := string(msgRunes[i : i+2])
+			if stopwords[gram] {
+				continue
+			}
+			if strings.Contains(contentLower, gram) {
+				matchCount++
+			}
+		}
+
+		scored = append(scored, scoredItem{
+			item:  item,
+			score: matchCount*10 + item.Importance,
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	var result []model.MemoryItem
+	for _, s := range scored {
+		result = append(result, s.item)
+	}
+
+	if limit > 0 && len(result) > limit {
+		return result[:limit]
+	}
+	return result
+}
+
+func (m *MemoryManager) GetContextPromptFragmentWithRecall(userID, personaID, currentMessage string) string {
+	memories := m.RecallRelevantMemories(userID, personaID, currentMessage, 4)
 	if len(memories) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
-	sb.WriteString("你对指挥官的珍贵情感回忆：\n")
+	sb.WriteString("你对指挥官的珍贵情感回忆（请在回复中自然流露与呼应）：\n")
 	for idx, mem := range memories {
 		sb.WriteString(fmt.Sprintf("%d. %s\n", idx+1, mem.Content))
 	}

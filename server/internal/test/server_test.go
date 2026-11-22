@@ -2,7 +2,9 @@ package test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/ShanWuYinShe/persona_ar/server/internal/api"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/asr"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/persona"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/tts"
@@ -546,5 +549,195 @@ func TestChatStreamAndCyberKPersona(t *testing.T) {
 	}
 	if len(chunks) == 0 {
 		t.Errorf("expected at least 1 stream chunk emitted")
+	}
+}
+
+func TestASRProviderAndRoutes(t *testing.T) {
+	router := setupTestRouter()
+
+	// 1. 设置 ASR 模拟与外部配置
+	cfgPayload := map[string]string{
+		"provider": "whisper",
+		"base_url": "https://api.openai.com/v1",
+		"api_key":  "sk-test-mock-whisper-key-987654",
+		"model":    "whisper-1",
+		"language": "zh",
+	}
+	cfgBytes, _ := json.Marshal(cfgPayload)
+	reqCfg, _ := http.NewRequest("POST", "/api/v1/asr/config", bytes.NewBuffer(cfgBytes))
+	reqCfg.Header.Set("Content-Type", "application/json")
+	wCfg := httptest.NewRecorder()
+	router.ServeHTTP(wCfg, reqCfg)
+	if wCfg.Code != http.StatusOK {
+		t.Fatalf("set asr config failed: %d", wCfg.Code)
+	}
+
+	// 2. 查询 ASR 配置并验证 APIKey 掩码
+	reqGet, _ := http.NewRequest("GET", "/api/v1/asr/config", nil)
+	wGet := httptest.NewRecorder()
+	router.ServeHTTP(wGet, reqGet)
+	if wGet.Code != http.StatusOK {
+		t.Fatalf("get asr config failed: %d", wGet.Code)
+	}
+	var getResp map[string]interface{}
+	_ = json.Unmarshal(wGet.Body.Bytes(), &getResp)
+	if getResp["model"] != "whisper-1" {
+		t.Errorf("expected model whisper-1, got %v", getResp["model"])
+	}
+	apiKeyStr, _ := getResp["api_key"].(string)
+	if strings.Contains(apiKeyStr, "987654") && !strings.Contains(apiKeyStr, "....") {
+		t.Errorf("expected masked api key, got %v", apiKeyStr)
+	}
+
+	// 3. 测试通过 JSON base64 识别音频（自动触发启发式高可用降级）
+	dummyPCM := make([]byte, 16000) // 1 秒静音
+	base64Audio := base64.StdEncoding.EncodeToString(dummyPCM)
+	transcribePayload := map[string]string{
+		"audio_base64": base64Audio,
+		"format":       "wav",
+	}
+	tBytes, _ := json.Marshal(transcribePayload)
+	reqTrans, _ := http.NewRequest("POST", "/api/v1/asr/transcribe", bytes.NewBuffer(tBytes))
+	reqTrans.Header.Set("Content-Type", "application/json")
+	wTrans := httptest.NewRecorder()
+	router.ServeHTTP(wTrans, reqTrans)
+
+	if wTrans.Code != http.StatusOK {
+		t.Fatalf("transcribe failed: %d, body: %s", wTrans.Code, wTrans.Body.String())
+	}
+	var transResp asr.TranscribeResponse
+	_ = json.Unmarshal(wTrans.Body.Bytes(), &transResp)
+	if transResp.Text == "" {
+		t.Errorf("expected transcribed text, got empty")
+	}
+
+	// 4. 测试通过 multipart/form-data 表单上传识别音频
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	part, _ := w.CreateFormFile("file", "test_record.wav")
+	_, _ = part.Write(dummyPCM)
+	_ = w.Close()
+
+	reqForm, _ := http.NewRequest("POST", "/api/v1/asr/transcribe", &b)
+	reqForm.Header.Set("Content-Type", w.FormDataContentType())
+	wForm := httptest.NewRecorder()
+	router.ServeHTTP(wForm, reqForm)
+
+	if wForm.Code != http.StatusOK {
+		t.Fatalf("form transcribe failed: %d", wForm.Code)
+	}
+	var formResp asr.TranscribeResponse
+	_ = json.Unmarshal(wForm.Body.Bytes(), &formResp)
+	if formResp.Text == "" {
+		t.Errorf("expected form transcribed text, got empty")
+	}
+
+	// 5. 测试 ASR 连通性测试接口
+	reqTest, _ := http.NewRequest("POST", "/api/v1/asr/test", nil)
+	wTest := httptest.NewRecorder()
+	router.ServeHTTP(wTest, reqTest)
+	if wTest.Code != http.StatusOK {
+		t.Errorf("expected test asr 200, got %d", wTest.Code)
+	}
+}
+
+func TestWebSocketAudioMessagePipeline(t *testing.T) {
+	router := setupTestRouter()
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	u, _ := url.Parse(server.URL)
+	u.Scheme = "ws"
+	u.Path = "/api/v1/ws/continuous"
+	q := u.Query()
+	q.Set("user_id", "test_ws_audio_user")
+	u.RawQuery = q.Encode()
+
+	ws, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatalf("failed to dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	// 1. 读取就绪帧
+	var readyMsg map[string]interface{}
+	if err := ws.ReadJSON(&readyMsg); err != nil {
+		t.Fatalf("read ready failed: %v", err)
+	}
+	if readyMsg["type"] != "ready" {
+		t.Fatalf("expected ready message, got: %v", readyMsg)
+	}
+
+	// 2. 发送 audio_message 语音包
+	dummyPCM := make([]byte, 12000)
+	audioB64 := base64.StdEncoding.EncodeToString(dummyPCM)
+	sendAudioMsg := map[string]interface{}{
+		"type":         "audio_message",
+		"audio_base64": audioB64,
+		"audio_format": "wav",
+	}
+	if err := ws.WriteJSON(sendAudioMsg); err != nil {
+		t.Fatalf("write audio_message failed: %v", err)
+	}
+
+	// 3. 消费帧流并验证 asr_result 与 response_complete
+	var gotAsrResult bool
+	var gotComplete bool
+	var asrText string
+
+	for i := 0; i < 20; i++ {
+		var frame map[string]interface{}
+		if err := ws.ReadJSON(&frame); err != nil {
+			t.Fatalf("read frame failed: %v", err)
+		}
+		fType, _ := frame["type"].(string)
+		if fType == "asr_result" {
+			gotAsrResult = true
+			asrText, _ = frame["text"].(string)
+		} else if fType == "response_complete" {
+			gotComplete = true
+			break
+		}
+	}
+
+	if !gotAsrResult {
+		t.Errorf("expected asr_result frame from audio_message")
+	}
+	if asrText == "" {
+		t.Errorf("expected non-empty recognized text in asr_result")
+	}
+	if !gotComplete {
+		t.Errorf("expected response_complete after speech recognition")
+	}
+}
+
+func TestMemoryRecallAssociation(t *testing.T) {
+	mgr := persona.DefaultMemoryManager
+	userID := "test_recall_user_1"
+	personaID := "hoshino"
+
+	mgr.AddMemory(userID, personaID, "指挥官最喜欢喝香草热奶茶。", persona.MemoryCategoryUserFact, 4)
+	mgr.AddMemory(userID, personaID, "约定好周末一起去海边看落日与晚霞。", persona.MemoryCategoryEmotionalPromise, 5)
+	mgr.AddMemory(userID, personaID, "在工作代码写累的时候需要星野的治愈加油。", persona.MemoryCategorySharedMoment, 4)
+
+	// 1. 针对“奶茶”输入，召回相关记忆
+	recalledMilkTea := mgr.RecallRelevantMemories(userID, personaID, "今天好想喝一杯热奶茶呀", 3)
+	if len(recalledMilkTea) == 0 {
+		t.Fatalf("expected non-empty recalled memories")
+	}
+	if !strings.Contains(recalledMilkTea[0].Content, "奶茶") {
+		t.Errorf("expected milk tea memory to be prioritized at top, got: %s", recalledMilkTea[0].Content)
+	}
+
+	// 2. 针对“海边约定”输入，召回约定记忆
+	recalledPromise := mgr.RecallRelevantMemories(userID, personaID, "还记得我们之前说的去海边吗？", 3)
+	if !strings.Contains(recalledPromise[0].Content, "海边") {
+		t.Errorf("expected seaside promise memory to be prioritized at top, got: %s", recalledPromise[0].Content)
+	}
+
+	// 3. 验证 Prompt 格式输出
+	promptFrag := mgr.GetContextPromptFragmentWithRecall(userID, personaID, "今天上班工作好累呀")
+	if !strings.Contains(promptFrag, "情感回忆") {
+		t.Errorf("expected prompt fragment header, got: %s", promptFrag)
 	}
 }

@@ -24,6 +24,7 @@ class PersonaWebSocketClient {
 
     var onReady: ((String) -> Unit)? = null
     var onInterruptAck: (() -> Unit)? = null
+    var onAsrResult: ((String) -> Unit)? = null
     var onThinkingStart: (() -> Unit)? = null
     var onStreamChunk: ((String) -> Unit)? = null
     var onResponseComplete: ((text: String, emotion: EmotionType, action: ActionType, expr: String, audioBase64: String?, affinity: Int, mood: String) -> Unit)? = null
@@ -50,6 +51,12 @@ class PersonaWebSocketClient {
                         }
                         "interrupt_ack" -> {
                             onInterruptAck?.invoke()
+                        }
+                        "asr_result" -> {
+                            val asrText = obj.optString("text")
+                            if (asrText.isNotEmpty()) {
+                                onAsrResult?.invoke(asrText)
+                            }
                         }
                         "thinking_start" -> {
                             onThinkingStart?.invoke()
@@ -99,6 +106,19 @@ class PersonaWebSocketClient {
     fun sendSpeechStart() {
         val payload = JSONObject().apply {
             put("type", "speech_start")
+            put("timestamp", System.currentTimeMillis())
+        }
+        webSocket?.send(payload.toString())
+    }
+
+    /**
+     * 发送录音音频数据进行全双工 ASR 识别与连麦应答
+     */
+    fun sendAudioMessage(audioBase64: String, format: String = "wav") {
+        val payload = JSONObject().apply {
+            put("type", "audio_message")
+            put("audio_base64", audioBase64)
+            put("audio_format", format)
             put("timestamp", System.currentTimeMillis())
         }
         webSocket?.send(payload.toString())
