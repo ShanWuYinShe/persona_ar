@@ -77,9 +77,19 @@ fun PersonaMainScreen(
                 )
             }
     ) {
-        // 1. 现实摄像头画面透传层
+        // 1. 现实摄像头画面透传层 (集成环境光照感知与真实相机帧抓取)
+        var cameraFrameProvider by remember { mutableStateOf<(() -> android.graphics.Bitmap?)?>(null) }
+
         if (hasCameraPermission) {
-            CameraXView(modifier = Modifier.fillMaxSize())
+            CameraXView(
+                modifier = Modifier.fillMaxSize(),
+                onEnvironmentLightChanged = { lum, isLow ->
+                    viewModel.onEnvironmentalLightChanged(lum, isLow)
+                },
+                onFrameCaptureReady = { provider ->
+                    cameraFrameProvider = provider
+                }
+            )
         } else {
             Box(
                 modifier = Modifier
@@ -189,10 +199,12 @@ fun PersonaMainScreen(
                         coroutineScope.launch {
                             val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
                                 ?: "我就站在你的现实世界中哦~"
+                            val realCameraBitmap = cameraFrameProvider?.invoke()
                             SnapshotHelper.captureAndSavePolaroid(
                                 context = context,
                                 visualState = uiState.visualState,
-                                quote = quote.take(30)
+                                quote = quote.take(30),
+                                cameraFrameBitmap = realCameraBitmap
                             )
                         }
                     },

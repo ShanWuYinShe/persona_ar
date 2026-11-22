@@ -170,14 +170,16 @@ fun ARCoreOverlay(
                 val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
                 val shadowWidth = 165f * spatialAnchor.scaleFactor
                 val shadowHeight = 48f * spatialAnchor.scaleFactor
-                val alpha = (0.48f * spatialAnchor.lightIntensity).coerceIn(0.18f, 0.55f)
+                val envLight = spatialAnchor.lightIntensity.coerceIn(0.25f, 1.25f)
+                val alpha = (0.50f * envLight).coerceIn(0.16f, 0.58f)
+                val shadowCenterColor = if (spatialAnchor.isLowLight) Color(0x990A0414) else Color.Black.copy(alpha = alpha)
 
-                // 柔和椭圆环境光衰减阴影
+                // 柔和椭圆环境光衰减阴影 (自然融合摄像头采集的现实桌面背景纹理)
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = alpha),
-                            Color.Black.copy(alpha = alpha * 0.45f),
+                            shadowCenterColor,
+                            shadowCenterColor.copy(alpha = alpha * 0.45f),
                             Color.Transparent
                         ),
                         center = Offset(ax, ay),
@@ -187,9 +189,10 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth, shadowHeight)
                 )
 
-                // 伴侣脚下若隐若现的二游契约微光光环
+                // 伴侣脚下若隐若现的二游契约微光光环 (现实弱光下呈现明亮辉光，强光下呈现通透水晶光)
+                val ringAlpha = if (spatialAnchor.isLowLight) 0.35f else 0.18f
                 drawOval(
-                    color = Color(0x2200E5FF),
+                    color = Color(0x00E5FF).copy(alpha = ringAlpha),
                     topLeft = Offset(ax - shadowWidth * 0.45f, ay - shadowHeight * 0.45f),
                     size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
                     style = Stroke(width = 1.5f)
@@ -208,7 +211,13 @@ fun ARCoreOverlay(
                     .offset(x = offsetX, y = offsetY)
             ) {
                 CharacterCanvasRenderer(
-                    visualState = visualState.copy(scale = spatialAnchor.scaleFactor),
+                    visualState = visualState.copy(
+                        scale = spatialAnchor.scaleFactor,
+                        environmentalLighting = spatialAnchor.lightIntensity,
+                        isLowLight = spatialAnchor.isLowLight,
+                        gazeShiftX = spatialAnchor.cameraGazeOffsetX,
+                        gazeShiftY = spatialAnchor.cameraGazeOffsetY
+                    ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -249,10 +258,15 @@ fun ARCoreOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        val pillText = if (spatialAnchor.isLowLight) {
+                            "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光自适应融合"
+                        } else {
+                            "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放"
+                        }
                         ARGuidePill(
                             icon = Icons.Filled.AutoAwesome,
-                            text = "已锁定于${spatialAnchor.planeTypeDescription} (${spatialAnchor.distanceMeters}m) · 双指可旋转缩放",
-                            bgColor = Color(0xE61B5E20)
+                            text = pillText,
+                            bgColor = if (spatialAnchor.isLowLight) Color(0xE61A237E) else Color(0xE61B5E20)
                         )
                         // 一键复位按钮
                         Box(

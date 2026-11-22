@@ -134,20 +134,32 @@ fun CharacterCanvasRenderer(
             val cx = size.width / 2f
             val cy = size.height / 2f + 40f
             val s = scale
+            val envLight = visualState.environmentalLighting.coerceIn(0.25f, 1.25f)
+            val isLow = visualState.isLowLight
 
-            // 1. 脚底现实接触阴影 (卡通双重柔光椭圆)
+            // 1. 脚底现实接触阴影 (根据现实摄像头环境光自适应深浅)
+            val shadowBaseAlpha = (0.28f * envLight).coerceIn(0.12f, 0.42f)
             drawOval(
-                color = Color(0x33000000),
+                color = Color.Black.copy(alpha = shadowBaseAlpha),
                 topLeft = Offset(cx - 140f * s, cy + 240f * s),
                 size = Size(280f * s, 46f * s)
             )
             drawOval(
-                color = Color(0x661A0C2E),
+                color = if (isLow) Color(0x550D061A) else Color(0x551A0C2E),
                 topLeft = Offset(cx - 95f * s, cy + 245f * s),
                 size = Size(190f * s, 32f * s)
             )
 
-            // 2. 绘制萌系角色主体
+            // 2. 现实明亮环境时的柔和边缘光晕 (Camera Rim Light Wrap)
+            if (envLight > 0.85f) {
+                drawCircle(
+                    color = Color(0x18FFFFFF),
+                    radius = 100f * s,
+                    center = Offset(cx, cy - 8f * s)
+                )
+            }
+
+            // 3. 绘制萌系角色主体 (已融入相机环境光与视线注视)
             drawChibiBody(cx, cy, s, visualState)
             drawChibiHairBack(cx, cy, s, visualState)
             drawChibiFace(cx, cy, s, visualState)
@@ -175,6 +187,26 @@ private fun parseColorHex(hex: String?, fallback: Color): Color {
     }
 }
 
+/**
+ * 将二次元角色基色与摄像头现实物理环境光实时调和
+ * 在暗光下呈现电影级冷调遮蔽，在亮光下呈现通透高光与真实漫反射
+ */
+private fun modulateColorWithEnvLight(
+    color: Color,
+    lightIntensity: Float,
+    isLowLight: Boolean
+): Color {
+    val factor = lightIntensity.coerceIn(0.32f, 1.25f)
+    val r = (color.red * factor).coerceIn(0f, 1f)
+    val g = (color.green * factor).coerceIn(0f, 1f)
+    val b = if (isLowLight) {
+        (color.blue * factor * 1.08f).coerceIn(0f, 1f)
+    } else {
+        (color.blue * factor).coerceIn(0f, 1f)
+    }
+    return Color(red = r, green = g, blue = b, alpha = color.alpha)
+}
+
 // 绘制 Q 萌身体与水手服
 private fun DrawScope.drawChibiBody(
     cx: Float,
@@ -183,8 +215,10 @@ private fun DrawScope.drawChibiBody(
     state: CharacterVisualState
 ) {
     val model = state.model
-    val skirtColor = parseColorHex(model?.skirtColorHex, Color(0xFF384B70))
-    val ribbonColor = parseColorHex(model?.previewColorHex, Color(0xFFFF5277))
+    val rawSkirt = parseColorHex(model?.skirtColorHex, Color(0xFF384B70))
+    val skirtColor = modulateColorWithEnvLight(rawSkirt, state.environmentalLighting, state.isLowLight)
+    val rawRibbon = parseColorHex(model?.previewColorHex, Color(0xFFFF5277))
+    val ribbonColor = modulateColorWithEnvLight(rawRibbon, state.environmentalLighting, state.isLowLight)
     val strokeColor = Color(0xFF281C38) // 饱满卡通深紫黑描边
     val strokeW = 3.5f * s
 
@@ -320,7 +354,8 @@ private fun DrawScope.drawChibiHairBack(
     state: CharacterVisualState
 ) {
     val model = state.model
-    val hairColor = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
+    val rawHair = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
+    val hairColor = modulateColorWithEnvLight(rawHair, state.environmentalLighting, state.isLowLight)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 
@@ -359,7 +394,8 @@ private fun DrawScope.drawChibiFace(
     s: Float,
     state: CharacterVisualState
 ) {
-    val skinColor = Color(0xFFFFF1E8)
+    val rawSkin = Color(0xFFFFF1E8)
+    val skinColor = modulateColorWithEnvLight(rawSkin, state.environmentalLighting, state.isLowLight)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 
@@ -382,7 +418,8 @@ private fun DrawScope.drawChibiEyes(
     state: CharacterVisualState
 ) {
     val model = state.model
-    val eyeColor = parseColorHex(model?.eyeColorHex, Color(0xFF673AB7))
+    val rawEyeColor = parseColorHex(model?.eyeColorHex, Color(0xFF673AB7))
+    val eyeColor = modulateColorWithEnvLight(rawEyeColor, state.environmentalLighting, state.isLowLight)
     val strokeColor = Color(0xFF281C38)
     val eyeY = cy + 24f * s
     val leftEyeX = cx - 35f * s
@@ -403,11 +440,11 @@ private fun DrawScope.drawChibiEyes(
             }
             drawPath(blinkPathRight, strokeColor, style = Stroke(4.5f * s, cap = StrokeCap.Round))
         } else {
-            drawBigChibiEye(rightEyeX, eyeY, s, eyeColor)
+            drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
         }
     } else {
-        drawBigChibiEye(leftEyeX, eyeY, s, eyeColor)
-        drawBigChibiEye(rightEyeX, eyeY, s, eyeColor)
+        drawBigChibiEye(leftEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
+        drawBigChibiEye(rightEyeX, eyeY, s, eyeColor, state.gazeShiftX, state.gazeShiftY)
     }
 }
 
@@ -415,9 +452,13 @@ private fun DrawScope.drawBigChibiEye(
     ex: Float,
     ey: Float,
     s: Float,
-    irisColor: Color
+    irisColor: Color,
+    gazeShiftX: Float = 0f,
+    gazeShiftY: Float = 0f
 ) {
     val strokeColor = Color(0xFF281C38)
+    val gazeX = gazeShiftX.coerceIn(-1f, 1f) * 4.5f * s
+    val gazeY = gazeShiftY.coerceIn(-1f, 1f) * 3.0f * s
 
     // 眼白
     drawOval(
@@ -432,14 +473,14 @@ private fun DrawScope.drawBigChibiEye(
         style = Stroke(2.5f * s)
     )
 
-    // 瞳孔多层渐变 (动漫大眼)
+    // 瞳孔多层渐变 (融入视线追踪)
     drawOval(
         brush = Brush.verticalGradient(
             colors = listOf(irisColor, irisColor.copy(alpha = 0.6f), Color(0xFFFF80AB)),
-            startY = ey - 20f * s,
-            endY = ey + 20f * s
+            startY = ey - 20f * s + gazeY,
+            endY = ey + 20f * s + gazeY
         ),
-        topLeft = Offset(ex - 15f * s, ey - 20f * s),
+        topLeft = Offset(ex - 15f * s + gazeX, ey - 20f * s + gazeY),
         size = Size(30f * s, 40f * s)
     )
 
@@ -447,13 +488,13 @@ private fun DrawScope.drawBigChibiEye(
     drawCircle(
         color = Color.White,
         radius = 7.5f * s,
-        center = Offset(ex - 5f * s, ey - 8f * s)
+        center = Offset(ex - 5f * s + gazeX * 0.4f, ey - 8f * s + gazeY * 0.4f)
     )
     // 底部星芒/小高光
     drawCircle(
         color = Color.White,
         radius = 3.5f * s,
-        center = Offset(ex + 6f * s, ey + 7f * s)
+        center = Offset(ex + 6f * s + gazeX * 0.4f, ey + 7f * s + gazeY * 0.4f)
     )
 
     // 翘睫毛
@@ -561,7 +602,8 @@ private fun DrawScope.drawChibiHairFront(
     state: CharacterVisualState
 ) {
     val model = state.model
-    val hairColor = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
+    val rawHair = parseColorHex(model?.hairColorHex, Color(0xFF7E57C2))
+    val hairColor = modulateColorWithEnvLight(rawHair, state.environmentalLighting, state.isLowLight)
     val strokeColor = Color(0xFF281C38)
     val strokeW = 3.5f * s
 
