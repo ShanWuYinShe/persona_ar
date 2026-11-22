@@ -34,5 +34,17 @@ data class CharacterVisualState(
     /** 镜头注视视线偏移 X */
     val gazeShiftX: Float = 0f,
     /** 镜头注视视线偏移 Y */
-    val gazeShiftY: Float = 0f
+    val gazeShiftY: Float = 0f,
+    /** 真实广角镜头边缘径向色散强度 (Chromatic Aberration Radial Fringe, 0.0f ~ 1.0f) */
+    val chromaticAberrationIntensity: Float = 0f,
+    /** 镜头色散径向倾角弧度 (相对光轴原点) */
+    val chromaticAngleRad: Float = 0f,
+    /** 强光逆光环境下的镜头光渗与边缘光晕 (Atmospheric Bloom & Rim Light Bleed, 0.0f ~ 1.0f) */
+    val bloomIntensity: Float = 0f,
+    /** 镜头景深焦外弥散度 (Depth-of-Field Blur, 0.0f ~ 1.0f) */
+    val depthOfFieldBlur: Float = 0f,
+    /** 镜头微距超近特写状态 (Macro Proximity 亲密交互) */
+    val isMacroProximity: Boolean = false,
+    /** 桌面边缘深度遮挡与水平面切片比例 (Surface Horizon Edge Occlusion, 0.0f ~ 1.0f) */
+    val surfaceOcclusionBottomCutoff: Float = 0f
 )

@@ -558,9 +558,51 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private var lastMacroProximityNotifyTimestamp = 0L
+
+    private data class OpticalCalculations(
+        val chromaticAberration: Float,
+        val chromaticAngle: Float,
+        val bloomIntensity: Float,
+        val depthOfFieldBlur: Float,
+        val isMacroProximity: Boolean,
+        val bottomCutoff: Float
+    )
+
+    private fun calculateOpticalParams(
+        screenX: Float,
+        screenY: Float,
+        scaleFactor: Float,
+        bloomBleedFactor: Float
+    ): OpticalCalculations {
+        val dx = (screenX - 0.5f) * 2f
+        val dy = (screenY - 0.5f) * 2f
+        val radialDist = kotlin.math.sqrt(dx * dx + dy * dy).coerceIn(0f, 1.414f)
+        val chromaticAngle = kotlin.math.atan2(dy, dx)
+        val chromaticAberration = (radialDist * 0.72f).coerceIn(0f, 1f)
+        val isMacro = scaleFactor >= 1.50f
+        val dofBlur = (kotlin.math.abs(scaleFactor - 1.0f) * 0.38f).coerceIn(0f, 0.65f)
+        val bottomCutoff = if (screenY > 0.80f) ((screenY - 0.80f) / 0.20f).coerceIn(0f, 1f) else 0f
+
+        return OpticalCalculations(
+            chromaticAberration = chromaticAberration,
+            chromaticAngle = chromaticAngle,
+            bloomIntensity = bloomBleedFactor,
+            depthOfFieldBlur = dofBlur,
+            isMacroProximity = isMacro,
+            bottomCutoff = bottomCutoff
+        )
+    }
+
     fun onTapPlaceAnchor(screenX: Float, screenY: Float) {
         audioPlayer.updateSpatialAudio(screenX, 1.0f)
         _uiState.update { current ->
+            val optical = calculateOpticalParams(
+                screenX = screenX,
+                screenY = screenY,
+                scaleFactor = current.spatialAnchor.scaleFactor,
+                bloomBleedFactor = current.spatialAnchor.bloomIntensity
+            )
             current.copy(
                 arTrackingStatus = ARTrackingStatus.ANCHORED,
                 spatialAnchor = current.spatialAnchor.copy(
@@ -568,24 +610,87 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     screenY = screenY,
                     isAnchored = true,
                     distanceMeters = 0.65f,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    bloomIntensity = optical.bloomIntensity,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
                     planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
+                ),
+                visualState = current.visualState.copy(
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    bloomIntensity = optical.bloomIntensity,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
                 )
             )
         }
     }
 
     fun onTransformAnchor(scaleMultiplier: Float, rotationYawDelta: Float) {
+        var triggeredMacroCare = false
         _uiState.update { current ->
             val anchor = current.spatialAnchor
             val nextScale = (anchor.scaleFactor * scaleMultiplier).coerceIn(0.4f, 2.2f)
             val nextYaw = (anchor.rotationYaw + rotationYawDelta) % 360f
+            val optical = calculateOpticalParams(
+                screenX = anchor.screenX,
+                screenY = anchor.screenY,
+                scaleFactor = nextScale,
+                bloomBleedFactor = anchor.bloomIntensity
+            )
             audioPlayer.updateSpatialAudio(anchor.screenX, nextScale)
+
+            if (!anchor.isMacroProximity && optical.isMacroProximity) {
+                val now = System.currentTimeMillis()
+                if (now - lastMacroProximityNotifyTimestamp > 20_000L) {
+                    lastMacroProximityNotifyTimestamp = now
+                    triggeredMacroCare = true
+                }
+            }
+
             current.copy(
                 spatialAnchor = anchor.copy(
                     scaleFactor = nextScale,
-                    rotationYaw = nextYaw
+                    rotationYaw = nextYaw,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                ),
+                visualState = current.visualState.copy(
+                    scale = nextScale,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    emotion = if (optical.isMacroProximity) EmotionType.SHY else current.visualState.emotion
                 )
             )
+        }
+
+        if (triggeredMacroCare) {
+            val now = System.currentTimeMillis()
+            val careMessage = ChatMessage(
+                sender = MessageSender.PERSONA,
+                text = "指挥官突然靠得好近呀... 稍微有点心跳加速呢 (⁄ ⁄•⁄ω⁄•⁄ ⁄) 💕",
+                emotion = EmotionType.SHY,
+                timestamp = now
+            )
+            _uiState.update { state ->
+                state.copy(
+                    messages = state.messages + careMessage,
+                    visualState = state.visualState.copy(
+                        emotion = EmotionType.SHY,
+                        expression = "BLUSH"
+                    )
+                )
+            }
         }
     }
 
@@ -600,7 +705,19 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     rotationYaw = 0f,
                     parallaxShiftX = 0f,
                     parallaxShiftY = 0f,
+                    chromaticAberrationIntensity = 0f,
+                    bloomIntensity = 0f,
+                    depthOfFieldBlur = 0f,
+                    isMacroProximity = false,
+                    surfaceOcclusionBottomCutoff = 0f,
                     planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
+                ),
+                visualState = current.visualState.copy(
+                    chromaticAberrationIntensity = 0f,
+                    bloomIntensity = 0f,
+                    depthOfFieldBlur = 0f,
+                    isMacroProximity = false,
+                    surfaceOcclusionBottomCutoff = 0f
                 )
             )
         }
@@ -609,20 +726,34 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private var lastLightNotifyTimestamp = 0L
 
     /**
-     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益与相机高 ISO 噪点)
+     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益、强光光晕与相机高 ISO 噪点)
      */
     fun onOpticalProfileChanged(profile: com.persona.ar.ar.EnvironmentalOpticalProfile) {
         val prevLowLight = _uiState.value.spatialAnchor.isLowLight
         _uiState.update { current ->
+            val anchor = current.spatialAnchor
+            val optical = calculateOpticalParams(
+                screenX = anchor.screenX,
+                screenY = anchor.screenY,
+                scaleFactor = anchor.scaleFactor,
+                bloomBleedFactor = profile.bloomBleedFactor
+            )
+
             current.copy(
-                spatialAnchor = current.spatialAnchor.copy(
+                spatialAnchor = anchor.copy(
                     lightIntensity = profile.luminance,
                     isLowLight = profile.isLowLight,
                     ambientColorTemp = profile.colorTemp,
                     ambientTintRed = profile.tintR,
                     ambientTintGreen = profile.tintG,
                     ambientTintBlue = profile.tintB,
-                    sensorGrainIntensity = profile.sensorGrainIntensity
+                    sensorGrainIntensity = profile.sensorGrainIntensity,
+                    bloomIntensity = optical.bloomIntensity,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
                 ),
                 visualState = current.visualState.copy(
                     environmentalLighting = profile.luminance,
@@ -631,7 +762,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     ambientTintRed = profile.tintR,
                     ambientTintGreen = profile.tintG,
                     ambientTintBlue = profile.tintB,
-                    sensorGrainIntensity = profile.sensorGrainIntensity
+                    sensorGrainIntensity = profile.sensorGrainIntensity,
+                    bloomIntensity = optical.bloomIntensity,
+                    chromaticAberrationIntensity = optical.chromaticAberration,
+                    chromaticAngleRad = optical.chromaticAngle,
+                    depthOfFieldBlur = optical.depthOfFieldBlur,
+                    isMacroProximity = optical.isMacroProximity,
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
                 )
             )
         }

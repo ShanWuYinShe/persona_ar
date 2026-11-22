@@ -15,13 +15,17 @@ data class EnvironmentalOpticalProfile(
     val tintR: Float = 1.0f,
     val tintG: Float = 1.0f,
     val tintB: Float = 1.0f,
-    val sensorGrainIntensity: Float = 0.0f
+    val sensorGrainIntensity: Float = 0.0f,
+    /** 现实镜头画面高光强光源区域占比 (0.0f ~ 1.0f) */
+    val highlightRatio: Float = 0.0f,
+    /** 现实强光源边缘光晕溢出与环境光散射系数 (Bloom & Light Bleed, 0.0f ~ 1.0f) */
+    val bloomBleedFactor: Float = 0.0f
 )
 
 /**
  * 现实环境光照与色温动态分析器 (Camera Environmental Light & Scene Analyzer)
- * 基于 CameraX 的实时帧 Y/U/V 平面采样，以极低算力解算环境真实照度、色温偏向与相机噪点，
- * 将环境明暗与冷暖色调实时反馈至虚拟伴侣渲染引擎，实现虚拟模型与真实物理画面的深度光影融合。
+ * 基于 CameraX 的实时帧 Y/U/V 平面采样，以极低算力解算环境真实照度、色温偏向、高光光晕与相机噪点，
+ * 将环境明暗、冷暖色调与光渗特性实时反馈至虚拟伴侣渲染引擎，实现虚拟模型与真实物理画面的深度光影融合。
  */
 class CameraEnvironmentalAnalyzer(
     private val onLightEstimated: (luminance: Float, isLowLight: Boolean) -> Unit = { _, _ -> },
@@ -31,6 +35,7 @@ class CameraEnvironmentalAnalyzer(
     // 平滑滤波缓存，消除摄像头自动曝光测光跳跃
     private var smoothedLuminance = 0.75f
     private var smoothedColorTemp = 0.0f
+    private var smoothedBloom = 0.0f
     private var frameCounter = 0L
 
     override fun analyze(image: ImageProxy) {
@@ -48,16 +53,21 @@ class CameraEnvironmentalAnalyzer(
                 return
             }
 
-            // 1. 采样 Y 通道亮度 (0~255)
+            // 1. 采样 Y 通道亮度 (0~255) 与高光强光源区域
             val step = 32
             var totalBrightness = 0L
             var sampleCount = 0
+            var highLightCount = 0
+            val highLightThreshold = 224
 
             var i = 0
             while (i < yRemaining) {
                 val pixel = yBuffer.get(i).toInt() and 0xFF
                 totalBrightness += pixel
                 sampleCount++
+                if (pixel >= highLightThreshold) {
+                    highLightCount++
+                }
                 i += step
             }
 
@@ -66,6 +76,10 @@ class CameraEnvironmentalAnalyzer(
                 smoothedLuminance = smoothedLuminance * 0.8f + rawLuminance * 0.2f
                 val clamped = smoothedLuminance.coerceIn(0.15f, 1.25f)
                 val isLowLight = clamped < 0.32f
+
+                val highlightRatio = (highLightCount.toFloat() / sampleCount).coerceIn(0f, 1f)
+                val rawBloom = (highlightRatio * 2.8f + (clamped - 0.85f).coerceAtLeast(0f) * 1.2f).coerceIn(0f, 1f)
+                smoothedBloom = smoothedBloom * 0.85f + rawBloom * 0.15f
 
                 // 2. 采样 U/V 通道色度 (解算环境光色温与色偏)
                 var rawTemp = 0.0f
@@ -108,7 +122,9 @@ class CameraEnvironmentalAnalyzer(
                         tintR = tintR,
                         tintG = tintG,
                         tintB = tintB,
-                        sensorGrainIntensity = sensorGrain
+                        sensorGrainIntensity = sensorGrain,
+                        highlightRatio = highlightRatio,
+                        bloomBleedFactor = smoothedBloom
                     )
                 )
             }
