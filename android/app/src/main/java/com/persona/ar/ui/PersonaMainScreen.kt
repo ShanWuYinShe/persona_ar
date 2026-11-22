@@ -104,7 +104,7 @@ fun PersonaMainScreen(
             ARMode.BILLBOARD_2_5D -> {
                 CharacterCanvasRenderer(
                     visualState = uiState.visualState,
-                    onTouchPart = { part -> viewModel.onTouchPart(part) },
+                    onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -117,7 +117,7 @@ fun PersonaMainScreen(
                     onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
                     onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
                     onResetAnchor = { viewModel.onResetAnchor() },
-                    onTouchPart = { part -> viewModel.onTouchPart(part) },
+                    onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

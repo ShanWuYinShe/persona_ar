@@ -36,13 +36,33 @@ import kotlin.math.sin
 @Composable
 fun CharacterCanvasRenderer(
     visualState: CharacterVisualState,
-    onTouchPart: (TouchPart) -> Unit,
+    onTouchPart: (TouchPart, Float, Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val vibrator = remember {
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
     }
+    val scope = rememberCoroutineScope()
+
+    // 触碰即时局部形变响应 (Squeeze & Spring Bounce)
+    var activeTouchPart by remember { mutableStateOf<TouchPart?>(null) }
+
+    val headSquishScaleY by animateFloatAsState(
+        targetValue = if (activeTouchPart == TouchPart.HEAD) 0.91f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessMedium),
+        label = "headSquish"
+    )
+    val cheekSquishScaleX by animateFloatAsState(
+        targetValue = if (activeTouchPart == TouchPart.CHEEK) 1.07f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "cheekSquish"
+    )
+    val bodySquishOffset by animateFloatAsState(
+        targetValue = if (activeTouchPart == TouchPart.BODY) 10f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessMedium),
+        label = "bodySquish"
+    )
 
     // 果冻般 Q 弹的待机呼吸动画
     val infiniteTransition = rememberInfiniteTransition(label = "bouncyBreathing")
@@ -101,23 +121,29 @@ fun CharacterCanvasRenderer(
             }
             .pointerInput(Unit) {
                 detectTapGestures { tapOffset ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        vibrator?.vibrate(
-                            VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE)
-                        )
-                    } else {
-                        @Suppress("DEPRECATION")
-                        vibrator?.vibrate(35)
-                    }
-
-                    val normalizedY = tapOffset.y / size.height
+                    val normalizedX = (tapOffset.x / size.width).coerceIn(0f, 1f)
+                    val normalizedY = (tapOffset.y / size.height).coerceIn(0f, 1f)
                     val part = when {
                         normalizedY < 0.35f -> TouchPart.HEAD
                         normalizedY < 0.50f -> TouchPart.CHEEK
                         tapOffset.x < size.width * 0.25f || tapOffset.x > size.width * 0.75f -> TouchPart.HAND
                         else -> TouchPart.BODY
                     }
-                    onTouchPart(part)
+
+                    // 1. 部位专属精细触觉震动反馈
+                    triggerHapticFeedback(vibrator, part)
+
+                    // 2. 触发对应部位局部弹性缩放
+                    activeTouchPart = part
+                    scope.launch {
+                        delay(240L)
+                        if (activeTouchPart == part) {
+                            activeTouchPart = null
+                        }
+                    }
+
+                    // 3. 传出精准触碰坐标给外部粒子飘字
+                    onTouchPart(part, normalizedX, normalizedY)
                 }
             }
     ) {
@@ -127,7 +153,7 @@ fun CharacterCanvasRenderer(
                 .offset {
                     IntOffset(
                         (offsetX + visualState.tiltOffsetX).roundToInt(),
-                        (offsetY + visualState.tiltOffsetY + breathBounce + jumpAnim).roundToInt()
+                        (offsetY + visualState.tiltOffsetY + breathBounce + jumpAnim + bodySquishOffset).roundToInt()
                     )
                 }
         ) {
@@ -159,17 +185,72 @@ fun CharacterCanvasRenderer(
                 )
             }
 
-            // 3. 绘制萌系角色主体 (已融入相机环境光与视线注视)
+            // 3. 绘制萌系角色主体 (融入触摸局部形变、相机环境光与视线注视)
             drawChibiBody(cx, cy, s, visualState)
-            drawChibiHairBack(cx, cy, s, visualState)
-            drawChibiFace(cx, cy, s, visualState)
+            drawChibiHairBack(cx, cy, s * headSquishScaleY, visualState)
+            drawChibiFace(cx, cy, s * cheekSquishScaleX, visualState)
             drawChibiEyes(cx, cy, s, isBlinking, visualState)
             drawChibiBlush(cx, cy, s, visualState)
             drawChibiMouth(cx, cy, s, visualState.lipSyncAmplitude, visualState)
-            drawChibiHairFront(cx, cy, s, ahogeWiggle, visualState)
+            drawChibiHairFront(cx, cy, s * headSquishScaleY, ahogeWiggle, visualState)
             drawGameEmoteParticles(cx, cy, s, visualState)
         }
     }
+}
+
+/**
+ * 针对不同触控部位定制触觉震动波形
+ */
+private fun triggerHapticFeedback(vibrator: Vibrator?, part: TouchPart) {
+    if (vibrator == null || !vibrator.hasVibrator()) return
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            when (part) {
+                TouchPart.HEAD -> {
+                    // 摸头：轻柔双脉冲抚摸感
+                    val timings = longArrayOf(0, 15, 35, 18)
+                    val amplitudes = intArrayOf(0, 95, 0, 120)
+                    vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
+                }
+                TouchPart.CHEEK -> {
+                    // 戳脸：弹性微顿中频震动
+                    vibrator.vibrate(VibrationEffect.createOneShot(42, 170))
+                }
+                TouchPart.HAND -> {
+                    // 牵手：轻巧微点微震
+                    vibrator.vibrate(VibrationEffect.createOneShot(16, 90))
+                }
+                TouchPart.BODY -> {
+                    // 拥抱：温暖充盈长震
+                    vibrator.vibrate(VibrationEffect.createOneShot(65, 190))
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val durationMs = when (part) {
+                TouchPart.HEAD -> 25L
+                TouchPart.CHEEK -> 42L
+                TouchPart.HAND -> 16L
+                TouchPart.BODY -> 65L
+            }
+            vibrator.vibrate(durationMs)
+        }
+    } catch (e: Exception) {
+        // 忽略震动服务不可用
+    }
+}
+
+@Composable
+fun CharacterCanvasRenderer(
+    visualState: CharacterVisualState,
+    onTouchPart: (TouchPart) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CharacterCanvasRenderer(
+        visualState = visualState,
+        onTouchPart = { part, _, _ -> onTouchPart(part) },
+        modifier = modifier
+    )
 }
 
 private fun parseColorHex(hex: String?, fallback: Color): Color {
