@@ -1,6 +1,8 @@
 package com.persona.ar.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -212,6 +215,9 @@ fun PersonaMainScreen(
                     messages = uiState.messages,
                     displayMode = uiState.bubbleDisplayMode,
                     isSpeaking = uiState.isSpeaking,
+                    partnerName = uiState.visualState.name.ifBlank { "星野 Hoshino" },
+                    partnerColorHex = uiState.visualState.model?.primaryColorHex ?: "#FF5277",
+                    streamingText = uiState.streamingText,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -291,7 +297,35 @@ fun PersonaMainScreen(
             }
         }
 
-        // 9. 弹窗层
+        // 9. 触碰互动即时浮空动画粒子 (Floating Touch & Bond FX)
+        uiState.floatingTouchFx.forEach { fx ->
+            val animProgress = remember(fx.id) { Animatable(0f) }
+            LaunchedEffect(fx.id) {
+                animProgress.animateTo(1f, animationSpec = tween(1200, easing = LinearOutSlowInEasing))
+            }
+            val offsetY = -animProgress.value * 75f
+            val alpha = (1f - animProgress.value).coerceIn(0f, 1f)
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = offsetY.dp)
+                    .alpha(alpha)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFFFF5277))
+                    .border(1.8.dp, Color(0xFF281C38), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = fx.text,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+        }
+
+        // 10. 弹窗层
         if (uiState.isMemoryNotebookOpen) {
             MemoryNotebookDialog(
                 partnerName = uiState.activeModel?.name ?: uiState.personaStatus?.name ?: "星野",

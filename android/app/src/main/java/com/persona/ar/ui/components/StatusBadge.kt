@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.SentimentVerySatisfied
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -141,11 +142,29 @@ fun StatusBadge(
             }
         }
 
-        // 右侧：手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标）
+        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标）
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // AR 现实模式 / 3D 纯净桌面 快速切换快捷键
+            val isARActive = arMode == ARMode.AR_CAMERA
+            IconButton(
+                onClick = onToggleARMode,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(if (isARActive) Color(0xFFFF5277) else Color(0xE6FFFDF9))
+                    .border(1.5.dp, borderColor, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ViewInAr,
+                    contentDescription = if (isARActive) "切换至 3D 虚拟空间" else "切换至 AR 现实相机",
+                    tint = if (isARActive) Color.White else borderColor,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
             // 回忆手账快捷键
             IconButton(
                 onClick = onOpenMemoryNotebook,
