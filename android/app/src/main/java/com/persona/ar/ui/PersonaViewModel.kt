@@ -14,6 +14,7 @@ import com.persona.ar.data.api.ApiClient
 import com.persona.ar.data.api.PersonaWebSocketClient
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
+import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.TouchPart
