@@ -25,7 +25,14 @@ data class EnvironmentalOpticalProfile(
     /** 伴侣脚底所在现实桌面底色红绿蓝反射分量 (用于桌面次表面散射 Radiosity) */
     val localSurfaceTintR: Float = 1.0f,
     val localSurfaceTintG: Float = 1.0f,
-    val localSurfaceTintB: Float = 1.0f
+    val localSurfaceTintB: Float = 1.0f,
+    /** 主光源二维方向向量 (X: -1.0 左侧光源 ~ +1.0 右侧光源, Y: -1.0 上方光源 ~ +1.0 下方光源) */
+    val lightDirectionX: Float = 0.0f,
+    val lightDirectionY: Float = -0.5f,
+    /** 主光源定向强度 (0.0f 全向漫射 ~ 1.0f 强直射台灯/日光，用于地面斜拉阴影与边缘高光) */
+    val lightDirectionalStrength: Float = 0.2f,
+    /** 落脚点桌面特征纹理置信度 (0.0f ~ 1.0f, 用于端侧零 GMS 视觉稳定性与光流融合) */
+    val deskTextureConfidence: Float = 0.5f
 )
 
 /**
@@ -52,6 +59,10 @@ class CameraEnvironmentalAnalyzer(
     private var smoothedLocalTintR = 1.0f
     private var smoothedLocalTintG = 1.0f
     private var smoothedLocalTintB = 1.0f
+    private var smoothedLightDirX = 0.0f
+    private var smoothedLightDirY = -0.5f
+    private var smoothedLightStrength = 0.2f
+    private var smoothedTextureConfidence = 0.5f
     private var frameCounter = 0L
 
     override fun analyze(image: ImageProxy) {
@@ -69,12 +80,17 @@ class CameraEnvironmentalAnalyzer(
                 return
             }
 
-            // 1. 全局采样 Y 通道亮度 (0~255) 与高光强光源区域
+            // 1. 全局采样 Y 通道亮度 (0~255) 与高光强光源区域质心解算
             val step = 32
             var totalBrightness = 0L
             var sampleCount = 0
             var highLightCount = 0
             val highLightThreshold = 224
+            var sumHighLightNormX = 0f
+            var sumHighLightNormY = 0f
+
+            val imgWidth = image.width.coerceAtLeast(1)
+            val imgHeight = image.height.coerceAtLeast(1)
 
             var i = 0
             while (i < yRemaining) {
@@ -83,6 +99,11 @@ class CameraEnvironmentalAnalyzer(
                 sampleCount++
                 if (pixel >= highLightThreshold) {
                     highLightCount++
+                    // 解算该高光像素在摄像头帧中的归一化二维坐标
+                    val pixelX = ((i % imgWidth).toFloat() / imgWidth).coerceIn(0f, 1f)
+                    val pixelY = ((i / imgWidth).toFloat() / imgHeight).coerceIn(0f, 1f)
+                    sumHighLightNormX += pixelX
+                    sumHighLightNormY += pixelY
                 }
                 i += step
             }
@@ -97,7 +118,24 @@ class CameraEnvironmentalAnalyzer(
                 val rawBloom = (highlightRatio * 2.8f + (clamped - 0.85f).coerceAtLeast(0f) * 1.2f).coerceIn(0f, 1f)
                 smoothedBloom = smoothedBloom * 0.85f + rawBloom * 0.15f
 
-                // 2. 局部桌面落脚点探针采样 (Local Surface Light Probe)
+                // 主光源方位解算：若检测到明显强光源 (台灯/窗户/显示器过曝点)，解算相对伴侣的入射矢量
+                var rawLightDirX = 0.0f
+                var rawLightDirY = -0.5f
+                var rawLightStrength = 0.15f
+                if (highLightCount > 4) {
+                    val centroidX = sumHighLightNormX / highLightCount
+                    val centroidY = sumHighLightNormY / highLightCount
+                    val deltaX = (centroidX - focusNormX).coerceIn(-1.0f, 1.0f)
+                    val deltaY = (centroidY - focusNormY).coerceIn(-1.0f, 1.0f)
+                    rawLightDirX = deltaX
+                    rawLightDirY = deltaY
+                    rawLightStrength = (highlightRatio * 3.5f + 0.2f).coerceIn(0.2f, 1.0f)
+                }
+                smoothedLightDirX = smoothedLightDirX * 0.82f + rawLightDirX * 0.18f
+                smoothedLightDirY = smoothedLightDirY * 0.82f + rawLightDirY * 0.18f
+                smoothedLightStrength = smoothedLightStrength * 0.85f + rawLightStrength * 0.15f
+
+                // 2. 局部桌面落脚点探针采样 (Local Surface Light Probe & Texture Variance)
                 // 定位伴侣双足所在局部区域 (聚焦范围围绕 focusNormX, focusNormY)
                 val localTargetIndex = ((focusNormY * 0.85f + 0.15f) * yRemaining).toInt().coerceIn(0, yRemaining - 1)
                 val windowSize = 1024
@@ -105,14 +143,26 @@ class CameraEnvironmentalAnalyzer(
                 val localEnd = (localTargetIndex + windowSize / 2).coerceIn(0, yRemaining)
                 var localBrightness = 0L
                 var localSamples = 0
+                var textureGradientSum = 0L
+                var prevPixel = -1
                 var li = localStart
                 while (li < localEnd) {
-                    localBrightness += yBuffer.get(li).toInt() and 0xFF
+                    val p = yBuffer.get(li).toInt() and 0xFF
+                    localBrightness += p
+                    if (prevPixel != -1) {
+                        textureGradientSum += kotlin.math.abs(p - prevPixel)
+                    }
+                    prevPixel = p
                     localSamples++
                     li += 16
                 }
                 val rawLocalLum = if (localSamples > 0) (localBrightness.toFloat() / localSamples) / 255.0f else clamped
                 smoothedLocalLuminance = smoothedLocalLuminance * 0.75f + rawLocalLum * 0.25f
+
+                // 计算落脚点桌面纹理置信度 (梯度越大，说明木纹、桌垫边缘、书本文理越清晰，空间锁死置信度越高)
+                val avgGradient = if (localSamples > 1) textureGradientSum.toFloat() / (localSamples - 1) else 0f
+                val rawTextureConf = (avgGradient / 35f).coerceIn(0.2f, 1.0f)
+                smoothedTextureConfidence = smoothedTextureConfidence * 0.8f + rawTextureConf * 0.2f
 
                 // 3. 采样 U/V 通道色度 (全局色温与局部桌面材质底色探针)
                 var rawTemp = 0.0f
@@ -190,7 +240,11 @@ class CameraEnvironmentalAnalyzer(
                         localSurfaceLuminance = smoothedLocalLuminance.coerceIn(0.2f, 1.35f),
                         localSurfaceTintR = smoothedLocalTintR,
                         localSurfaceTintG = smoothedLocalTintG,
-                        localSurfaceTintB = smoothedLocalTintB
+                        localSurfaceTintB = smoothedLocalTintB,
+                        lightDirectionX = smoothedLightDirX,
+                        lightDirectionY = smoothedLightDirY,
+                        lightDirectionalStrength = smoothedLightStrength,
+                        deskTextureConfidence = smoothedTextureConfidence
                     )
                 )
             }

@@ -196,15 +196,38 @@ fun CharacterCanvasRenderer(
                 )
             }
 
-            // 4. 绘制萌系角色主体 (融入触摸局部形变、相机环境光、视线注视与微距亲密特写)
+            // 4. 绘制萌系角色主体 (基于 3D 空间多层视差分层、悬浮光环、立体菲涅尔边缘光与微距亲密特写)
+            val pitchRad = ((visualState.cameraPitchDegrees - 45f) * kotlin.math.PI / 180.0).toFloat()
+            val rollRad = (visualState.cameraRollDegrees * kotlin.math.PI / 180.0).toFloat()
+
+            // 3D 空间多层视差深度位移 (Multi-layer Volumetric Parallax Disparity)
+            // 1) 后发层 Z < 0 (向视角反方向视差深陷)
+            val backX = cx - kotlin.math.sin(rollRad) * 5.5f * s
+            val backY = cy - kotlin.math.sin(pitchRad) * 4.5f * s
+
+            // 2) 面部与五官层 Z > 0 (微幅向前)
+            val faceX = cx + kotlin.math.sin(rollRad) * 3f * s
+            val faceY = cy + kotlin.math.sin(pitchRad) * 2.5f * s
+
+            // 3) 前刘海与呆毛层 Z >> 0 (明显向前，形成自然发丝遮挡深度)
+            val frontX = cx + kotlin.math.sin(rollRad) * 7.5f * s
+            val frontY = cy + kotlin.math.sin(pitchRad) * 6.5f * s
+
+            // 4) 头顶契约光环 Z >>> 0 (高高悬浮在头顶上方最前层)
+            val haloX = cx + kotlin.math.sin(rollRad) * 12f * s
+            val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
+
+            // 逐层立体空间渲染 (严格遵循 3D 前后遮挡几何)
+            drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
             drawChibiBody(cx, cy, s, visualState)
-            drawChibiHairBack(cx, cy, s * headSquishScaleY, visualState)
-            drawChibiFace(cx, cy, s * cheekSquishScaleX, visualState)
-            drawChibiEyes(cx, cy, s, isBlinking, visualState)
-            drawChibiBlush(cx, cy, s, visualState)
-            drawChibiMouth(cx, cy, s, visualState.lipSyncAmplitude, visualState)
-            drawChibiHairFront(cx, cy, s * headSquishScaleY, ahogeWiggle, visualState)
-            drawGameEmoteParticles(cx, cy, s, visualState)
+            drawChibiFace(faceX, faceY, s * cheekSquishScaleX, visualState)
+            drawChibiEyes(faceX, faceY, s, isBlinking, visualState)
+            drawChibiBlush(faceX, faceY, s, visualState)
+            drawChibiMouth(faceX, faceY, s, visualState.lipSyncAmplitude, visualState)
+            drawChibiHairFront(frontX, frontY, s * headSquishScaleY, ahogeWiggle, visualState)
+            drawFloatingHalo(haloX, haloY, s, visualState)
+            drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
+            drawGameEmoteParticles(frontX, frontY, s, visualState)
 
             // 5. 桌面边缘深度遮挡与水平面切片 (Surface Horizon Edge Occlusion，防止脚底悬空穿模)
             if (visualState.surfaceOcclusionBottomCutoff > 0.04f) {
@@ -1006,4 +1029,118 @@ private fun DrawScope.drawSurfaceEdgeOcclusion(
         topLeft = Offset(cx - occlusionWidth * 0.5f, footBaseY - occlusionHeight),
         size = Size(occlusionWidth, occlusionHeight + 12f * s)
     )
+}
+
+/**
+ * 二游专属头顶立体悬浮契约光环 (Floating Halo)
+ * 具有最高 Z 轴视差位移，随视角在头顶前后呈现真实的 3D 浮动错位
+ */
+private fun DrawScope.drawFloatingHalo(
+    hx: Float,
+    hy: Float,
+    s: Float,
+    state: CharacterVisualState
+) {
+    val haloY = hy - 138f * s
+    val haloWidth = 92f * s
+    val haloHeight = 24f * s
+    val haloColor = Color(0xFF00E5FF)
+    val haloGlowAlpha = if (state.isLowLight) 0.65f else 0.35f
+
+    // 1) 悬浮光环发光微光晕
+    drawOval(
+        color = haloColor.copy(alpha = haloGlowAlpha * 0.45f),
+        topLeft = Offset(hx - haloWidth * 0.6f, haloY - haloHeight * 0.6f),
+        size = Size(haloWidth * 1.2f, haloHeight * 1.2f)
+    )
+
+    // 2) 契约光环椭圆外环
+    drawOval(
+        color = haloColor.copy(alpha = haloGlowAlpha),
+        topLeft = Offset(hx - haloWidth * 0.5f, haloY - haloHeight * 0.5f),
+        size = Size(haloWidth, haloHeight),
+        style = Stroke(3.5f * s)
+    )
+
+    // 3) 内圈高亮星芒核心点
+    drawCircle(
+        color = Color.White.copy(alpha = 0.85f),
+        radius = 2.5f * s,
+        center = Offset(hx - haloWidth * 0.4f, haloY)
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.85f),
+        radius = 2.5f * s,
+        center = Offset(hx + haloWidth * 0.4f, haloY)
+    )
+}
+
+/**
+ * 立体菲涅尔边缘轮廓光与主光源定向漫反射 (Volumetric Directional Fresnel Rim Light)
+ * 根据 CameraX 帧分析解算出的真实主光源 (台灯/显示器/窗户) 入射矢量与强度，
+ * 在伴侣迎光一侧渲染晶莹剔透的高光轮廓，背光一侧叠加微妙景深阴影，产生概念图级别的立体真实感。
+ */
+private fun DrawScope.drawVolumetricDirectionalRimLight(
+    cx: Float,
+    cy: Float,
+    s: Float,
+    state: CharacterVisualState
+) {
+    val lightStrength = state.lightDirectionalStrength.coerceIn(0.1f, 1.0f)
+    val lightDirX = state.lightDirectionX
+
+    // 迎光轮廓光颜色：吸收环境色温 (暖光偏金黄，冷光偏冰蓝，暗光带微弱夜景冷光)
+    val rimBaseColor = when {
+        state.ambientColorTemp > 0.2f -> Color(0xFFFFD54F) // 暖色台灯金光
+        state.ambientColorTemp < -0.2f -> Color(0xFF80D8FF) // 冷色屏幕蓝光
+        state.isLowLight -> Color(0xFFB388FF) // 暗光夜景微光
+        else -> Color.White
+    }
+
+    val rimAlpha = (0.28f * lightStrength * (if (state.isLowLight) 0.65f else 1.0f)).coerceIn(0.06f, 0.45f)
+    val rimWidth = (6.0f * s * lightStrength).coerceIn(2.5f * s, 10f * s)
+
+    // 若光源来自左侧 (lightDirX < -0.15f)，则左侧为迎光面
+    if (lightDirX < -0.15f) {
+        val leftArcPath = Path().apply {
+            moveTo(cx - 84f * s, cy - 80f * s)
+            cubicTo(
+                cx - 96f * s, cy - 10f * s,
+                cx - 92f * s, cy + 60f * s,
+                cx - 68f * s, cy + 120f * s
+            )
+        }
+        drawPath(
+            path = leftArcPath,
+            color = rimBaseColor.copy(alpha = rimAlpha),
+            style = Stroke(width = rimWidth, cap = StrokeCap.Round)
+        )
+        // 发丝边缘高光细线
+        drawPath(
+            path = leftArcPath,
+            color = Color.White.copy(alpha = rimAlpha * 0.8f),
+            style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
+        )
+    } else if (lightDirX > 0.15f) {
+        // 若光源来自右侧 (lightDirX > 0.15f)，则右侧为迎光面
+        val rightArcPath = Path().apply {
+            moveTo(cx + 84f * s, cy - 80f * s)
+            cubicTo(
+                cx + 96f * s, cy - 10f * s,
+                cx + 92f * s, cy + 60f * s,
+                cx + 68f * s, cy + 120f * s
+            )
+        }
+        drawPath(
+            path = rightArcPath,
+            color = rimBaseColor.copy(alpha = rimAlpha),
+            style = Stroke(width = rimWidth, cap = StrokeCap.Round)
+        )
+        // 发丝边缘高光细线
+        drawPath(
+            path = rightArcPath,
+            color = Color.White.copy(alpha = rimAlpha * 0.8f),
+            style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
+        )
+    }
 }

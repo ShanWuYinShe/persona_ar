@@ -215,7 +215,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         tiltOffsetX = shiftX,
                         tiltOffsetY = shiftY,
                         gazeShiftX = gazeX,
-                        gazeShiftY = gazeY
+                        gazeShiftY = gazeY,
+                        cameraPitchDegrees = pitchDeg,
+                        cameraRollDegrees = rollDeg
                     )
                 )
             }
@@ -818,7 +820,11 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     localSurfaceTintRed = profile.localSurfaceTintR,
                     localSurfaceTintGreen = profile.localSurfaceTintG,
                     localSurfaceTintBlue = profile.localSurfaceTintB,
-                    localSurfaceLuminance = profile.localSurfaceLuminance
+                    localSurfaceLuminance = profile.localSurfaceLuminance,
+                    lightDirectionX = profile.lightDirectionX,
+                    lightDirectionY = profile.lightDirectionY,
+                    lightDirectionalStrength = profile.lightDirectionalStrength,
+                    deskTextureConfidence = profile.deskTextureConfidence
                 ),
                 visualState = current.visualState.copy(
                     environmentalLighting = effectiveLighting,
@@ -833,7 +839,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     chromaticAngleRad = optical.chromaticAngle,
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    lightDirectionX = profile.lightDirectionX,
+                    lightDirectionY = profile.lightDirectionY,
+                    lightDirectionalStrength = profile.lightDirectionalStrength,
+                    cameraPitchDegrees = anchor.cameraPitchDegrees,
+                    cameraRollDegrees = anchor.cameraRollDegrees
                 )
             )
         }
