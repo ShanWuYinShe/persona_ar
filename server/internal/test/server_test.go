@@ -741,3 +741,42 @@ func TestMemoryRecallAssociation(t *testing.T) {
 		t.Errorf("expected prompt fragment header, got: %s", promptFrag)
 	}
 }
+
+func TestVisionInteractAndFallback(t *testing.T) {
+	router := gin.Default()
+	api.RegisterRoutes(router)
+
+	// 1. 模拟轻量相机实时帧 Base64
+	mockImageBase64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+	visionPayload := model.VisionInteractRequest{
+		UserID:      "test_vision_user",
+		Message:     "星野，看看我手里的这个是什么？",
+		ImageBase64: mockImageBase64,
+	}
+	bodyBytes, _ := json.Marshal(visionPayload)
+
+	req, _ := http.NewRequest("POST", "/api/v1/vision/interact", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 ok for vision interact, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp model.ChatResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal vision response failed: %v", err)
+	}
+
+	if resp.Text == "" {
+		t.Errorf("expected non-empty vision reply text")
+	}
+	if resp.AudioBase64 == nil {
+		t.Errorf("expected synthesized audio in vision response")
+	}
+	if resp.CurrentAffinity <= 0 {
+		t.Errorf("expected increased affinity from vision interact, got %d", resp.CurrentAffinity)
+	}
+}

@@ -12,6 +12,7 @@ import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
+import com.persona.ar.data.model.VisionInteractRequest
 import com.persona.ar.data.model.VoiceInteractRequest
 import okhttp3.MultipartBody
 import retrofit2.Response
@@ -34,6 +35,11 @@ interface PersonaApiService {
     @POST("api/v1/voice/interact")
     suspend fun voiceInteract(
         @Body request: VoiceInteractRequest
+    ): Response<ChatResponse>
+
+    @POST("api/v1/vision/interact")
+    suspend fun visionInteract(
+        @Body request: VisionInteractRequest
     ): Response<ChatResponse>
 
     @POST("api/v1/persona/touch")

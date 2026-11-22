@@ -38,6 +38,9 @@ func RegisterRoutes(r *gin.Engine) {
 
 		// 6. 重置当前角色记忆与好感
 		apiV1.POST("/persona/reset", handlePersonaReset)
+
+		// 7. 实景多模态视觉交互 (摄像头物理画面交融)
+		apiV1.POST("/vision/interact", handleVisionInteract)
 	}
 
 	// 注册商城工坊、大模型配置、语音识别 (ASR) 与全双工 WebSocket
@@ -173,4 +176,25 @@ func handlePersonaReset(c *gin.Context) {
 		"status":  "ok",
 		"message": "已重置好感度与对话记忆",
 	})
+}
+
+func handleVisionInteract(c *gin.Context) {
+	var req model.VisionInteractRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
+		return
+	}
+
+	userID := req.UserID
+	if userID == "" {
+		userID = "user_default"
+	}
+
+	resp, err := persona.DefaultEngine.VisionChat(userID, req.Message, req.ImageBase64)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

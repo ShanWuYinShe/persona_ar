@@ -1,6 +1,8 @@
 package com.persona.ar.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.persona.ar.ar.ARMode
@@ -20,12 +22,15 @@ import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 
 class PersonaViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -286,6 +291,79 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     audioPlayer.speakTextFallback(resp.text)
                 }
                 addBondExp(3)
+            }
+        }
+    }
+
+    /**
+     * 实景多模态视野交互 (Vision AI)
+     * 将物理摄像头采集的当前画面帧传输至视觉大脑，让二次元伴侣看懂指挥官面前的现实世界并给出治愈反馈。
+     */
+    fun onVisionInteract(cameraBitmap: Bitmap?, prompt: String = "") {
+        if (cameraBitmap == null || cameraBitmap.isRecycled) {
+            sendMessage(prompt.ifBlank { "星野，看看我们眼前的现实世界~" })
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val displayPrompt = prompt.ifBlank { "✦ 视野交互：看看眼前 ✦" }
+            val userMessage = ChatMessage(
+                sender = MessageSender.USER,
+                text = displayPrompt,
+                timestamp = System.currentTimeMillis()
+            )
+            _uiState.update { it.copy(messages = it.messages + userMessage) }
+
+            val base64 = withContext(Dispatchers.IO) {
+                val maxDim = maxOf(cameraBitmap.width, cameraBitmap.height)
+                val scale = if (maxDim > 720) 720f / maxDim else 1.0f
+                val targetW = (cameraBitmap.width * scale).toInt()
+                val targetH = (cameraBitmap.height * scale).toInt()
+                val scaled = if (scale < 1.0f) {
+                    Bitmap.createScaledBitmap(cameraBitmap, targetW, targetH, true)
+                } else {
+                    cameraBitmap
+                }
+                val stream = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                val bytes = stream.toByteArray()
+                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            }
+
+            val result = repository.sendVisionInteract(base64, prompt)
+            result.onSuccess { resp ->
+                val personaMessage = ChatMessage(
+                    sender = MessageSender.PERSONA,
+                    text = resp.text,
+                    emotion = resp.emotion,
+                    timestamp = System.currentTimeMillis()
+                )
+
+                _uiState.update { current ->
+                    current.copy(
+                        messages = current.messages + personaMessage,
+                        isLoading = false,
+                        visualState = current.visualState.copy(
+                            emotion = resp.emotion,
+                            action = resp.action,
+                            expression = resp.expression
+                        ),
+                        personaStatus = current.personaStatus?.copy(
+                            affinity = resp.currentAffinity,
+                            mood = resp.mood
+                        )
+                    )
+                }
+
+                if (!resp.audioBase64.isNullOrEmpty()) {
+                    audioPlayer.playAudioBase64(resp.audioBase64)
+                } else {
+                    audioPlayer.speakTextFallback(resp.text)
+                }
+                addBondExp(4)
+            }.onFailure {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }

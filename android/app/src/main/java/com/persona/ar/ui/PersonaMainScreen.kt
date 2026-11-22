@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -177,7 +178,7 @@ fun PersonaMainScreen(
             )
         }
 
-        // 5. 右侧悬浮功能纽扣：纯净 AR 快照合影 (满足日常合影发圈需求)
+        // 5. 右侧悬浮功能组：实景视野感知 (Vision AI) 与纯净 AR 合影
         AnimatedVisibility(
             visible = isUiVisible,
             enter = fadeIn(),
@@ -186,36 +187,63 @@ fun PersonaMainScreen(
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xE6FFFDF9))
-                    .border(1.8.dp, Color(0xFF281C38), CircleShape)
-                    .clickable {
-                        // 触发快门闪光动画并执行真实拍立得合成保存
-                        isShutterFlashing = true
-                        showSnapshotToast = true
-                        coroutineScope.launch {
-                            val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
-                                ?: "我就站在你的现实世界中哦~"
-                            val realCameraBitmap = cameraFrameProvider?.invoke()
-                            SnapshotHelper.captureAndSavePolaroid(
-                                context = context,
-                                visualState = uiState.visualState,
-                                quote = quote.take(30),
-                                cameraFrameBitmap = realCameraBitmap
-                            )
-                        }
-                    },
-                contentAlignment = Alignment.Center
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Filled.CameraAlt,
-                    contentDescription = "纯净 AR 合影拍摄",
-                    tint = Color(0xFF281C38),
-                    modifier = Modifier.size(22.dp)
-                )
+                // A. 实景视野多模态交互纽扣 (让二次元伴侣看懂眼前真实的桌面与物体)
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xE6FFFDF9))
+                        .border(1.8.dp, Color(0xFF00E5FF), CircleShape)
+                        .clickable {
+                            val realCameraBitmap = cameraFrameProvider?.invoke()
+                            viewModel.onVisionInteract(realCameraBitmap)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Visibility,
+                        contentDescription = "实景视野感知",
+                        tint = Color(0xFF0091EA),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                // B. 纯净 AR 快照合影纽扣
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xE6FFFDF9))
+                        .border(1.8.dp, Color(0xFF281C38), CircleShape)
+                        .clickable {
+                            // 触发快门闪光动画并执行真实拍立得合成保存
+                            isShutterFlashing = true
+                            showSnapshotToast = true
+                            coroutineScope.launch {
+                                val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
+                                    ?: "我就站在你的现实世界中哦~"
+                                val realCameraBitmap = cameraFrameProvider?.invoke()
+                                SnapshotHelper.captureAndSavePolaroid(
+                                    context = context,
+                                    visualState = uiState.visualState,
+                                    quote = quote.take(30),
+                                    cameraFrameBitmap = realCameraBitmap
+                                )
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CameraAlt,
+                        contentDescription = "纯净 AR 合影拍摄",
+                        tint = Color(0xFF281C38),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
 

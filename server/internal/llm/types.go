@@ -11,8 +11,9 @@ const (
 )
 
 type Message struct {
-	Role    Role   `json:"role"`
-	Content string `json:"content"`
+	Role     Role   `json:"role"`
+	Content  string `json:"content"`
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 type ChatOptions struct {

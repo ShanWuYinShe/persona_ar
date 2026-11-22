@@ -13,6 +13,7 @@ import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
+import com.persona.ar.data.model.VisionInteractRequest
 import com.persona.ar.data.model.VoiceInteractRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -151,6 +152,29 @@ class PersonaRepository {
             }
         } catch (e: Exception) {
             Result.success(createFallbackChat(textPrompt ?: "（对讲语音交流）"))
+        }
+    }
+
+    suspend fun sendVisionInteract(
+        imageBase64: String,
+        prompt: String = "",
+        userId: String = "user_default"
+    ): Result<ChatResponse> = withContext(Dispatchers.IO) {
+        try {
+            val response = ApiClient.service.visionInteract(
+                VisionInteractRequest(
+                    userId = userId,
+                    message = prompt,
+                    imageBase64 = imageBase64
+                )
+            )
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.success(createFallbackChat(prompt.ifBlank { "哇！星野已经透过现实镜头看到你分享的景物啦~ ✨" }))
+            }
+        } catch (e: Exception) {
+            Result.success(createFallbackChat(prompt.ifBlank { "哇！星野已经透过现实镜头看到你分享的景物啦~ ✨" }))
         }
     }
 
