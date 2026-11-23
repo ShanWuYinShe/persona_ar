@@ -63,5 +63,14 @@ data class CharacterVisualState(
     /** 物理相机是否正在自动对焦中 */
     val isCameraFocusing: Boolean = false,
     /** 是否启用高精度二次元角色全模渲染 (彻底替代简易几何 Chibi，达到商业级精细画质) */
-    val useHighResolutionModel: Boolean = true
+    val useHighResolutionModel: Boolean = true,
+    /** 镜头注视微偏移 (视线跟踪 Eye Contact，基于相机与角色的空间几何相对夹角) */
+    val gazeTrackingEyeX: Float = 0f,
+    val gazeTrackingEyeY: Float = 0f,
+    /** 物理重力与拖拽惯性摆角 (Spring-Damper Inertial Sway，度数 -15° ~ +15°) */
+    val inertialSwayAngle: Float = 0f,
+    /** 物理惯性纵向弹性系数 */
+    val inertialSquishY: Float = 1.0f,
+    /** 桌面/键盘前景遮挡切片比例 (0.0f 无遮挡 ~ 0.35f 键盘前景真实遮挡双脚) */
+    val foregroundOcclusionRatio: Float = 0f
 )

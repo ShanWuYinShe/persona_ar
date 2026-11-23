@@ -390,7 +390,18 @@ fun ARCoreOverlay(
                         bloomIntensity = spatialAnchor.bloomIntensity,
                         depthOfFieldBlur = spatialAnchor.depthOfFieldBlur,
                         isMacroProximity = spatialAnchor.isMacroProximity,
-                        surfaceOcclusionBottomCutoff = spatialAnchor.surfaceOcclusionBottomCutoff
+                        surfaceOcclusionBottomCutoff = spatialAnchor.surfaceOcclusionBottomCutoff,
+                        cameraPitchDegrees = pitchDegrees,
+                        cameraRollDegrees = rollDegrees,
+                        visualFlowOffsetX = spatialAnchor.visualFlowOffsetX,
+                        visualFlowOffsetY = spatialAnchor.visualFlowOffsetY,
+                        lensVignetteFactor = spatialAnchor.lensVignetteFactor,
+                        isCameraFocusing = spatialAnchor.isCameraFocusing,
+                        gazeTrackingEyeX = spatialAnchor.gazeTrackingEyeX,
+                        gazeTrackingEyeY = spatialAnchor.gazeTrackingEyeY,
+                        inertialSwayAngle = spatialAnchor.inertialSwayAngle,
+                        inertialSquishY = spatialAnchor.inertialSquishY,
+                        foregroundOcclusionRatio = spatialAnchor.foregroundOcclusionRatio
                     ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
