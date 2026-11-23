@@ -1,11 +1,13 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.persona.ar"
-    compileSdk = 34
+    // Filament 1.81.0 的 AAR 声明 minCompileSdk=37（见其 aar-metadata.properties）；compileSdk 只影响编译期可见 API，
+    // 与 targetSdk（运行时行为）和 minSdk（可安装机型）解耦，故仅提升 compileSdk
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.persona.ar"
@@ -33,14 +35,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    // AGP 9 内置 Kotlin：Kotlin jvmTarget 默认跟随上方 compileOptions.targetCompatibility (17)，无需再设；
+    // Compose 编译器由 org.jetbrains.kotlin.plugin.compose 提供，不再使用 kotlinCompilerExtensionVersion
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+    androidResources {
+        // GLB 与 .filamat 已是压缩友好的二进制，禁用 AAPT 压缩以便零解压直接读入直接缓冲
+        noCompress += listOf("glb", "filamat")
     }
     packaging {
         resources {
@@ -73,6 +75,14 @@ dependencies {
 
     // Google ARCore (用于 3D 真实平面检测与空间锚定)
     implementation("com.google.ar:core:1.44.0")
+
+    // Google Filament 真 3D 渲染引擎：离线 PBR 着色、方向光阴影贴图、SSAO、透明 SwapChain 叠加相机画面（纯端侧，零 GMS）
+    // 1.81.0 依赖 kotlin-stdlib 2.4.0，与本项目 Kotlin 2.4.21 的 metadata 版本兼容（1.76 之前的版本为纯 Java 绑定）
+    // gltfio：glTF/GLB 资产加载（UbershaderProvider 内置 PBR 材质）；utils：Utils.init() 原生库初始化、IBL 预滤波工具
+    val filamentVersion = "1.81.0"
+    implementation("com.google.android.filament:filament-android:$filamentVersion")
+    implementation("com.google.android.filament:gltfio-android:$filamentVersion")
+    implementation("com.google.android.filament:filament-utils-android:$filamentVersion")
 
     // 网络与 API 交互 (对接专属情感后端)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
