@@ -26,6 +26,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.persona.ar.character.skeleton.MultiViewProfile
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
@@ -1281,9 +1283,16 @@ private fun DrawScope.drawHighResolutionHoshino(
 
     val totalPoseAngle = visualState.inertialSwayAngle + drowsyNodAngle + poutSwayAngle + smugTiltAngle
 
+    val sitP = visualState.sitProgress.coerceIn(0f, 1f)
+    val sitDropY = charH * 0.165f * sitP
+    val effectiveTopY = topY + sitDropY
+    val effectiveLeftX = cx - charW / 2f
+
     // 3. 惯性物理摆动、重力下垂与悬空微摇 (以地面足底接触线或身体重心为旋转原点)
     val pivotPoint = if (visualState.isDanglingOverCliff) {
-        Offset(cx, topY + charH * 0.45f) // 悬空状态以躯干重心为轴心钟摆下垂
+        Offset(cx, effectiveTopY + charH * 0.45f) // 悬空状态以躯干重心为轴心钟摆下垂
+    } else if (sitP > 0.4f) {
+        Offset(cx, effectiveTopY + charH * 0.65f) // 坐姿以臀部坐下支撑点为轴心
     } else {
         Offset(cx, footY) // 踏地状态以足底接触点为轴心
     }
@@ -1294,29 +1303,81 @@ private fun DrawScope.drawHighResolutionHoshino(
         visualState.inertialSquishY.coerceIn(0.92f, 1.08f)
     }
 
+    val scaleX = (1.0f / dangleDroopStretchY).coerceIn(0.90f, 1.08f) * visualState.cylinderContractionX
+
+    // 4. 坐姿下的桌面接触 AO 阴影
+    if (sitP > 0.05f) {
+        val sitDeskY = effectiveTopY + charH * 0.64f
+        drawOval(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.Black.copy(alpha = 0.55f * sitP * (1.0f - visualState.dangleAirDistance)),
+                    Color.Black.copy(alpha = 0.22f * sitP * (1.0f - visualState.dangleAirDistance)),
+                    Color.Transparent
+                ),
+                center = Offset(cx, sitDeskY),
+                radius = 38f * s
+            ),
+            topLeft = Offset(cx - 38f * s, sitDeskY - 8f * s),
+            size = Size(76f * s, 16f * s)
+        )
+    }
+
     withTransform({
         rotate(
             degrees = totalPoseAngle,
             pivot = pivotPoint
         )
         scale(
-            scaleX = (1.0f / dangleDroopStretchY).coerceIn(0.90f, 1.08f),
+            scaleX = scaleX,
             scaleY = dangleDroopStretchY,
             pivot = pivotPoint
         )
     }) {
-        // 绘制高精度角色图像
-        drawImage(
-            image = bitmap,
-            dstOffset = IntOffset(leftX.roundToInt(), topY.roundToInt()),
-            dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
-            colorFilter = colorFilter
-        )
+        // 如果是背面回眸视角，绘制后背长发底垫
+        if (visualState.backProfileProgress > 0.35f) {
+            draw3DBackLookBackPose(
+                cx = cx,
+                topY = effectiveTopY,
+                charW = charW,
+                charH = charH,
+                s = s,
+                backProgress = visualState.backProfileProgress,
+                visualState = visualState
+            )
+        }
 
-        // 4. 多套官方高精微表情与面部差分渲染 (眨眼追焦 / 困倦半闭 / 害羞红晕 / 傲娇鼓颊 / 得意微笑)
+        // 绘制高精度角色图像
+        if (sitP > 0.15f) {
+            // 坐姿时：绘制坐姿上半身 (裁剪下肢并融合坐姿折叠双腿)
+            drawHighResSittingCharacter(
+                bitmap = bitmap,
+                leftX = effectiveLeftX,
+                topY = effectiveTopY,
+                charW = charW,
+                charH = charH,
+                cx = cx,
+                s = s,
+                sitP = sitP,
+                colorFilter = colorFilter,
+                drowsyCycle = drowsyCycle,
+                visualState = visualState
+            )
+        } else {
+            // 站立姿态全模
+            drawImage(
+                image = bitmap,
+                dstOffset = IntOffset(effectiveLeftX.roundToInt(), effectiveTopY.roundToInt()),
+                dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
+                colorFilter = colorFilter
+            )
+        }
+
+        // 5. 3D 多视角面部视差位移与微表情差分渲染
+        val faceDisparity = visualState.depthDisparityFace * s
         drawHighResFacialExpressions(
-            cx = cx,
-            topY = topY,
+            cx = cx + faceDisparity,
+            topY = effectiveTopY,
             charW = charW,
             charH = charH,
             s = s,
@@ -1328,17 +1389,37 @@ private fun DrawScope.drawHighResolutionHoshino(
             emotePulse = emotePulse,
             sparkleAngle = sparkleAngle
         )
+
+        // 6. 3D 二次元卡通明暗着色阶梯 (Cel-Shading Shadow Ramp) 与头发天使光环高光 (Anisotropic Specular)
+        drawToonCelShadingAndHairAnisotropy(
+            cx = cx,
+            topY = effectiveTopY,
+            charW = charW,
+            charH = charH,
+            s = s,
+            visualState = visualState
+        )
+
+        // 7. 双马尾柔体弹簧物理骨骼 (Spring-Bone Pigtails)
+        draw3DSpringPigtails(
+            cx = cx,
+            topY = effectiveTopY,
+            charW = charW,
+            s = s,
+            visualState = visualState,
+            drowsyCycle = drowsyCycle
+        )
     }
 
-    // 5. 头顶独立发光星穹光环 (带三维视差、呼吸辉光、情绪色彩共振与星芒爆发)
+    // 8. 头顶独立发光星穹光环 (随体态高度下移与三维视差浮动)
     drawFloatingHalo(
-        hx = haloX + totalPoseAngle * 1.5f,
-        hy = topY + 138f * s,
+        hx = haloX + totalPoseAngle * 1.5f + visualState.depthDisparityHead * s * 0.5f,
+        hy = effectiveTopY + 138f * s,
         s = s * 0.95f,
         state = visualState
     )
 
-    // 6. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
+    // 9. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
     drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
 
     // 7. 前景物理遮挡保护 (例如被近处机械键盘键帽遮挡脚部，避免逆向穿模)
@@ -1413,6 +1494,370 @@ private fun DrawScope.drawHighResGazeFocus(
         color = Color.White.copy(alpha = 0.9f),
         radius = 1.6f * s,
         center = Offset(rightEyeCenter.x - 1f * s, rightEyeCenter.y - 1f * s)
+    )
+}
+
+/**
+ * 绘制坐姿下半身与桌面垂腿下肢物理 (Folded Seated Legs & Dangling Calves)
+ */
+private fun DrawScope.drawHighResSittingCharacter(
+    bitmap: ImageBitmap,
+    leftX: Float,
+    topY: Float,
+    charW: Float,
+    charH: Float,
+    cx: Float,
+    s: Float,
+    sitP: Float,
+    colorFilter: ColorFilter,
+    drowsyCycle: Float,
+    visualState: CharacterVisualState
+) {
+    // 1. 坐姿躯干与水手服 (绘制上半身并平滑收束在桌面水平线)
+    val hipsDeskY = topY + charH * 0.63f
+    val cutoffBottom = charH * 0.37f * sitP
+
+    drawImage(
+        image = bitmap,
+        dstOffset = IntOffset(leftX.roundToInt(), topY.roundToInt()),
+        dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
+        colorFilter = colorFilter
+    )
+
+    // 遮罩消除原立绘直立腿部，无缝替换为折叠坐姿双腿
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.98f)),
+            startY = hipsDeskY - 5f * s,
+            endY = hipsDeskY + 18f * s
+        ),
+        topLeft = Offset(leftX - 10f * s, hipsDeskY),
+        size = Size(charW + 20f * s, cutoffBottom + 80f * s),
+        blendMode = BlendMode.DstOut
+    )
+
+    // 2. 坐姿折叠百褶裙摆 (铺展在桌面，形成自然坐姿压折与层次感)
+    val skirtColor = Color(0xFF1E2842)
+    val skirtShadowColor = Color(0xFF141A2E)
+    val skirtHemY = hipsDeskY
+    val skirtWidth = 72f * s
+
+    drawOval(
+        color = skirtShadowColor,
+        topLeft = Offset(cx - skirtWidth * 0.55f, skirtHemY - 4f * s),
+        size = Size(skirtWidth * 1.1f, 22f * s)
+    )
+    drawOval(
+        color = skirtColor,
+        topLeft = Offset(cx - skirtWidth * 0.5f, skirtHemY - 8f * s),
+        size = Size(skirtWidth, 18f * s)
+    )
+
+    // 3. 坐姿向前延伸的水平大腿 (Thighs on desk surface)
+    val legSpread = 16f * s
+    val thighLength = 26f * s
+    val sockColor = Color(0xFF1A1A24) // 经典过膝黑丝袜
+    val sockHighlight = Color(0xFF2C2C3D)
+
+    for (dir in listOf(-1f, 1f)) {
+        val legCenterX = cx + dir * legSpread
+        // 水平大腿
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(sockHighlight, sockColor),
+                startY = skirtHemY - 4f * s,
+                endY = skirtHemY + thighLength
+            ),
+            topLeft = Offset(legCenterX - 9f * s, skirtHemY - 2f * s),
+            size = Size(18f * s, thighLength),
+            cornerRadius = CornerRadius(6f * s, 6f * s)
+        )
+
+        // 4. 桌沿垂直悬垂小腿与足尖 (Calves dangling past desk edge)
+        val danglingKneeY = skirtHemY + thighLength - 4f * s
+        val calfLength = 52f * s
+        val swingDeg = kotlin.math.sin(drowsyCycle * 1.5f + dir * 0.5f) * 4.2f * sitP
+
+        withTransform({
+            rotate(
+                degrees = swingDeg,
+                pivot = Offset(legCenterX, danglingKneeY)
+            )
+        }) {
+            // 圆润膝关节
+            drawCircle(
+                color = sockHighlight,
+                radius = 9.5f * s,
+                center = Offset(legCenterX, danglingKneeY)
+            )
+
+            // 悬垂小腿 (带自然二次元腿型收束)
+            val calfPath = Path().apply {
+                moveTo(legCenterX - 8.5f * s, danglingKneeY)
+                lineTo(legCenterX - 6.5f * s, danglingKneeY + calfLength)
+                lineTo(legCenterX + 6.5f * s, danglingKneeY + calfLength)
+                lineTo(legCenterX + 8.5f * s, danglingKneeY)
+                close()
+            }
+            drawPath(
+                path = calfPath,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(sockColor, sockHighlight, sockColor),
+                    startX = legCenterX - 9f * s,
+                    endX = legCenterX + 9f * s
+                )
+            )
+
+            // 5. 悬空脚踝与黑色乐福校服皮鞋 (School Loafers)
+            val ankleY = danglingKneeY + calfLength
+            val shoeColor = Color(0xFF0F0F14)
+            val shoeHighlight = Color(0xFF424254)
+
+            // 白色袜口边线 (萌点细节)
+            drawLine(
+                color = Color.White.copy(alpha = 0.9f),
+                start = Offset(legCenterX - 6.5f * s, ankleY - 2f * s),
+                end = Offset(legCenterX + 6.5f * s, ankleY - 2f * s),
+                strokeWidth = 1.5f * s
+            )
+
+            // 黑色小皮鞋
+            val shoePath = Path().apply {
+                moveTo(legCenterX - 7f * s, ankleY)
+                cubicTo(
+                    legCenterX - 7f * s, ankleY + 12f * s,
+                    legCenterX + dir * 3f * s, ankleY + 16f * s,
+                    legCenterX + dir * 4f * s, ankleY + 18f * s
+                )
+                lineTo(legCenterX + dir * 1f * s, ankleY + 18f * s)
+                cubicTo(
+                    legCenterX - 4f * s, ankleY + 14f * s,
+                    legCenterX - 7.5f * s, ankleY + 8f * s,
+                    legCenterX - 7f * s, ankleY
+                )
+                close()
+            }
+            drawPath(path = shoePath, color = shoeColor)
+            // 皮鞋反光高光点
+            drawCircle(
+                color = shoeHighlight,
+                radius = 2.2f * s,
+                center = Offset(legCenterX + dir * 2f * s, ankleY + 12f * s)
+            )
+        }
+    }
+
+    // 6. 扶桌双手 (Hands resting beside hips on desk)
+    val handDeskY = skirtHemY + 2f * s
+    for (dir in listOf(-1f, 1f)) {
+        val handX = cx + dir * (skirtWidth * 0.48f)
+        // 水手服白袖口
+        drawRoundRect(
+            color = Color.White,
+            topLeft = Offset(handX - 6f * s, handDeskY - 14f * s),
+            size = Size(12f * s, 12f * s),
+            cornerRadius = CornerRadius(3f * s, 3f * s)
+        )
+        // 蓝色袖口条纹
+        drawLine(
+            color = Color(0xFF0288D1),
+            start = Offset(handX - 5.5f * s, handDeskY - 4f * s),
+            end = Offset(handX + 5.5f * s, handDeskY - 4f * s),
+            strokeWidth = 1.8f * s
+        )
+        // 纤巧萌系小手
+        drawOval(
+            color = Color(0xFFFFE0D0),
+            topLeft = Offset(handX - 5f * s, handDeskY - 2f * s),
+            size = Size(10f * s, 8f * s)
+        )
+    }
+}
+
+/**
+ * 绘制头发天使光环各向异性高光与二次元阶梯阴影 (Toon Cel-Shading & Hair Anisotropy)
+ */
+private fun DrawScope.drawToonCelShadingAndHairAnisotropy(
+    cx: Float,
+    topY: Float,
+    charW: Float,
+    charH: Float,
+    s: Float,
+    visualState: CharacterVisualState
+) {
+    // 1. 头发天使光环各向异性高光 (Anisotropic Angel Ring Specular)
+    val hairCrownY = topY + charH * 0.145f
+    val ringWidth = 75f * s
+    val ringHeight = 16f * s
+    val lightAngle = visualState.lightDirectionX * 18f * s
+
+    drawOval(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.75f),
+                Color(0xFFFFE4EC).copy(alpha = 0.45f),
+                Color.Transparent
+            ),
+            center = Offset(cx + lightAngle, hairCrownY),
+            radius = ringWidth * 0.45f
+        ),
+        topLeft = Offset(cx + lightAngle - ringWidth * 0.45f, hairCrownY - ringHeight * 0.5f),
+        size = Size(ringWidth * 0.9f, ringHeight)
+    )
+
+    // 2. 二次元阶梯 Cel-Shading 侧向漫反射阴影 (Toon Shadow Ramp)
+    if (visualState.threeQuarterProfileProgress > 0.08f) {
+        val shadowProgress = visualState.threeQuarterProfileProgress
+        val isLeftFacing = visualState.depthDisparityFace > 0
+        val shadowSideX = if (isLeftFacing) cx + charW * 0.12f else cx - charW * 0.38f
+        val shadowW = charW * 0.28f * shadowProgress
+
+        drawRect(
+            brush = Brush.horizontalGradient(
+                colors = if (isLeftFacing) {
+                    listOf(Color.Transparent, Color(0x221B1432), Color(0x38120C24))
+                } else {
+                    listOf(Color(0x38120C24), Color(0x221B1432), Color.Transparent)
+                },
+                startX = shadowSideX,
+                endX = shadowSideX + shadowW
+            ),
+            topLeft = Offset(shadowSideX, topY + charH * 0.15f),
+            size = Size(shadowW, charH * 0.65f),
+            blendMode = BlendMode.SrcOver
+        )
+    }
+}
+
+/**
+ * 绘制星野标志性双马尾柔体弹簧物理骨骼 (Spring-Bone Pigtails)
+ */
+private fun DrawScope.draw3DSpringPigtails(
+    cx: Float,
+    topY: Float,
+    charW: Float,
+    s: Float,
+    visualState: CharacterVisualState,
+    drowsyCycle: Float
+) {
+    val pigtailBaseY = topY + 85f * s
+    val swayAngle = visualState.inertialSwayAngle + kotlin.math.sin(drowsyCycle * 1.2f) * 3.5f
+
+    val pinkBase = Color(0xFFFFB6C8)
+    val pinkTip = Color(0xFFFF8DA1)
+    val ribbonColor = Color(0xFF1E2842)
+
+    for (dir in listOf(-1f, 1f)) {
+        val baseX = cx + dir * 38f * s
+        val pigtailSway = swayAngle * dir * 0.6f + (if (dir < 0) visualState.pigtailSwayAngleLeft else visualState.pigtailSwayAngleRight)
+
+        withTransform({
+            rotate(
+                degrees = pigtailSway,
+                pivot = Offset(baseX, pigtailBaseY)
+            )
+        }) {
+            // 蝴蝶结发饰
+            drawOval(
+                color = ribbonColor,
+                topLeft = Offset(baseX - 6f * s, pigtailBaseY - 4f * s),
+                size = Size(12f * s, 8f * s)
+            )
+
+            // 马尾发流贝塞尔曲线
+            val hairPath = Path().apply {
+                moveTo(baseX, pigtailBaseY)
+                cubicTo(
+                    baseX + dir * 22f * s, pigtailBaseY + 45f * s,
+                    baseX + dir * 18f * s, pigtailBaseY + 95f * s,
+                    baseX + dir * 12f * s, pigtailBaseY + 130f * s
+                )
+                cubicTo(
+                    baseX + dir * 6f * s, pigtailBaseY + 105f * s,
+                    baseX + dir * 8f * s, pigtailBaseY + 55f * s,
+                    baseX, pigtailBaseY
+                )
+                close()
+            }
+            drawPath(
+                path = hairPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(pinkBase, pinkTip),
+                    startY = pigtailBaseY,
+                    endY = pigtailBaseY + 130f * s
+                )
+            )
+            // 发丝柔和轮廓细线
+            drawPath(
+                path = hairPath,
+                color = Color(0xFFE88A9E).copy(alpha = 0.7f),
+                style = Stroke(width = 1.0f * s)
+            )
+        }
+    }
+}
+
+/**
+ * 绘制 3D 背面回眸姿态底垫 (Back Look-Back Pose)
+ */
+private fun DrawScope.draw3DBackLookBackPose(
+    cx: Float,
+    topY: Float,
+    charW: Float,
+    charH: Float,
+    s: Float,
+    backProgress: Float,
+    visualState: CharacterVisualState
+) {
+    val alpha = (backProgress * 0.95f).coerceIn(0f, 0.95f)
+    val hairBackY = topY + charH * 0.18f
+    val hairW = 105f * s
+    val hairH = 145f * s
+
+    // 1. 唯美柔顺粉色后背长发流线
+    val backHairPath = Path().apply {
+        moveTo(cx - hairW * 0.42f, hairBackY)
+        cubicTo(
+            cx - hairW * 0.55f, hairBackY + hairH * 0.4f,
+            cx - hairW * 0.35f, hairBackY + hairH * 0.85f,
+            cx, hairBackY + hairH
+        )
+        cubicTo(
+            cx + hairW * 0.35f, hairBackY + hairH * 0.85f,
+            cx + hairW * 0.55f, hairBackY + hairH * 0.4f,
+            cx + hairW * 0.42f, hairBackY
+        )
+        close()
+    }
+    drawPath(
+        path = backHairPath,
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFFFFC0D0).copy(alpha = alpha),
+                Color(0xFFFF9EB5).copy(alpha = alpha)
+            ),
+            startY = hairBackY,
+            endY = hairBackY + hairH
+        )
+    )
+
+    // 2. 水手服后背披肩 (Sailor Collar Back Flap)
+    val flapY = topY + charH * 0.34f
+    val flapW = 54f * s
+    val flapH = 34f * s
+    drawRoundRect(
+        color = Color(0xFF1E2842).copy(alpha = alpha),
+        topLeft = Offset(cx - flapW * 0.5f, flapY),
+        size = Size(flapW, flapH),
+        cornerRadius = CornerRadius(4f * s, 4f * s)
+    )
+    // 水手服双道经典青蓝细边
+    drawRoundRect(
+        color = Color(0xFF00E5FF).copy(alpha = alpha * 0.8f),
+        topLeft = Offset(cx - flapW * 0.44f, flapY + 3f * s),
+        size = Size(flapW * 0.88f, flapH - 6f * s),
+        style = Stroke(width = 1.6f * s),
+        cornerRadius = CornerRadius(3f * s, 3f * s)
     )
 }
 

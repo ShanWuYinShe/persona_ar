@@ -28,6 +28,7 @@ const (
 	ActionYawn      ActionType = "YAWN"
 	ActionSleep     ActionType = "SLEEP"
 	ActionSmug      ActionType = "SMUG"
+	ActionSit       ActionType = "SIT"
 )
 
 type TouchPart string

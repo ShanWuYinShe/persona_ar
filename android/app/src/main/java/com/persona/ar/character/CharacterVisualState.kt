@@ -1,5 +1,7 @@
 package com.persona.ar.character
 
+import com.persona.ar.character.skeleton.MultiViewProfile
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelManifest
@@ -96,5 +98,26 @@ data class CharacterVisualState(
     /** 自信得意挺胸角度 (度数 -5° ~ +5°) */
     val smugTiltDegrees: Float = 0f,
     /** 星穹光环高亮闪烁星芒爆发系数 (0.0f ~ 1.0f) */
-    val haloSparkleIntensity: Float = 0f
+    val haloSparkleIntensity: Float = 0f,
+    /** 全身 3D 骨骼体态 (STANDING 站姿 / SITTING 桌沿悬垂坐姿 / TABLE_LEAN 趴桌托腮) */
+    val skeletonStance: SkeletonStance = SkeletonStance.STANDING,
+    /** 桌面边缘折腿坐姿过渡平滑系数 (0.0f 站立 ~ 1.0f 垂腿坐下) */
+    val sitProgress: Float = 0f,
+    /** 当前 360 度视角剖面 (正面 / 3/4 侧身 / 正侧面 / 背面回眸) */
+    val multiViewProfile: MultiViewProfile = MultiViewProfile.FRONT,
+    /** 3/4 侧身多视角过渡进度 (0.0f ~ 1.0f) */
+    val threeQuarterProfileProgress: Float = 0f,
+    /** 背面回眸多视角过渡进度 (0.0f ~ 1.0f) */
+    val backProfileProgress: Float = 0f,
+    /** 3D 圆柱体横向空间压缩比 (保持真实立体厚度，避免纯 2D 平面旋转时露馅成纸片) */
+    val cylinderContractionX: Float = 1.0f,
+    /** 头部与五官多层空间视差位移 (像素) */
+    val depthDisparityHead: Float = 0f,
+    /** 后发层反向立体纵深视差位移 (像素) */
+    val depthDisparityHairBack: Float = 0f,
+    /** 面部五官视差位移 (像素) */
+    val depthDisparityFace: Float = 0f,
+    /** 双马尾柔体弹簧骨骼摆动角 (左/右度数) */
+    val pigtailSwayAngleLeft: Float = 0f,
+    val pigtailSwayAngleRight: Float = 0f
 )

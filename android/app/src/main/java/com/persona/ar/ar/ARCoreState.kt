@@ -1,5 +1,8 @@
 package com.persona.ar.ar
 
+import com.persona.ar.character.skeleton.MultiViewProfile
+import com.persona.ar.character.skeleton.SkeletonStance
+
 /**
  * AR 空间追踪器底层驱动类型
  */
@@ -140,6 +143,18 @@ data class ARSpatialAnchor(
     val poutIntensity: Float = 0f,
     val smugTiltDegrees: Float = 0f,
     val haloSparkleIntensity: Float = 0f,
+    /** 全身 3D 骨骼体态 */
+    val skeletonStance: SkeletonStance = SkeletonStance.STANDING,
+    /** 桌面边缘折腿坐姿过渡平滑系数 (0.0f 站立 ~ 1.0f 垂腿坐下) */
+    val sitProgress: Float = 0f,
+    /** 当前 360 度视角剖面 (正面 / 3/4 侧身 / 正侧面 / 背面回眸) */
+    val multiViewProfile: MultiViewProfile = MultiViewProfile.FRONT,
+    val threeQuarterProfileProgress: Float = 0f,
+    val backProfileProgress: Float = 0f,
+    val cylinderContractionX: Float = 1.0f,
+    val depthDisparityHead: Float = 0f,
+    val depthDisparityHairBack: Float = 0f,
+    val depthDisparityFace: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

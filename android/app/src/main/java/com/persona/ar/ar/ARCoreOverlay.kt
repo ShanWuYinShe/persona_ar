@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.AirlineSeatReclineNormal
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.NearMe
@@ -36,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.character.CharacterVisualState
+import com.persona.ar.character.skeleton.MultiViewProfile
+import com.persona.ar.character.skeleton.Skeleton3DEngine
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
 import kotlin.math.cos
@@ -57,6 +62,7 @@ fun ARCoreOverlay(
     onDragStateChanged: (isDragging: Boolean) -> Unit = {},
     onResetAnchor: () -> Unit,
     onTouchPart: (TouchPart, Float, Float) -> Unit,
+    onToggleStance: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "arPulse")
@@ -386,6 +392,19 @@ fun ARCoreOverlay(
             // 3) 用户在平面上手势旋转的偏航角 (Yaw)
             val yawRotation = spatialAnchor.rotationYaw
 
+            // 4) 3D 骨骼逆运动学与 360 度圆柱视差求解引擎
+            val skeletonEngine = remember { Skeleton3DEngine() }
+            val multiViewProj = remember(yawRotation, pitchTilt) {
+                skeletonEngine.calculateMultiViewPerspective(yawRotation, pitchTilt)
+            }
+
+            // 5) 坐姿平滑过渡弹簧动画 (当处于坐姿模式或拖拽至桌沿悬崖边缘自动自平衡坐下)
+            val animatedSitProgress by animateFloatAsState(
+                targetValue = if (spatialAnchor.skeletonStance == SkeletonStance.SITTING || (spatialAnchor.isNearCliffEdge && spatialAnchor.screenY > 0.76f)) 1.0f else 0.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                label = "sitProgress"
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -395,8 +414,8 @@ fun ARCoreOverlay(
                         transformOrigin = TransformOrigin(0.5f, 0.94f)
                         // 3D 俯仰透视收缩 (根据单反广角真实物理焦距)
                         rotationX = -pitchTilt
-                        // 3D 偏航旋转 (伴侣在桌面上可以 360 度转身面朝不同方向)
-                        rotationY = yawRotation
+                        // 3D 偏航朝向 (结合 360 度多视角投影，硬件层保持柔和自然倾角，避免纯 2D 平面旋转时露馅切成薄片)
+                        rotationY = (multiViewProj.normalizedYaw * 0.38f).coerceIn(-28f, 28f)
                         // 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直站立)
                         rotationZ = gravityRoll
                         // 物理相机光学透视视距
@@ -443,7 +462,18 @@ fun ARCoreOverlay(
                         sleepinessFactor = visualState.sleepinessFactor,
                         poutIntensity = visualState.poutIntensity,
                         smugTiltDegrees = visualState.smugTiltDegrees,
-                        haloSparkleIntensity = visualState.haloSparkleIntensity
+                        haloSparkleIntensity = visualState.haloSparkleIntensity,
+                        skeletonStance = if (animatedSitProgress > 0.5f) SkeletonStance.SITTING else spatialAnchor.skeletonStance,
+                        sitProgress = animatedSitProgress,
+                        multiViewProfile = multiViewProj.profile,
+                        threeQuarterProfileProgress = multiViewProj.threeQuarterProgress,
+                        backProfileProgress = multiViewProj.backProgress,
+                        cylinderContractionX = multiViewProj.cylinderContractionX,
+                        depthDisparityHead = multiViewProj.depthDisparityHead,
+                        depthDisparityHairBack = multiViewProj.depthDisparityHairBack,
+                        depthDisparityFace = multiViewProj.depthDisparityFace,
+                        pigtailSwayAngleLeft = -spatialAnchor.inertialSwayAngle * 0.5f,
+                        pigtailSwayAngleRight = spatialAnchor.inertialSwayAngle * 0.5f
                     ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
@@ -486,6 +516,14 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val pillText = when {
+                            spatialAnchor.skeletonStance == SkeletonStance.SITTING || animatedSitProgress > 0.6f ->
+                                "🪑 桌面边缘垂腿坐姿 · 3D 骨骼下肢折叠与双足悬垂物理 ✨"
+                            multiViewProj.profile == MultiViewProfile.BACK_LOOK_BACK ->
+                                "🌸 3D 背面回眸视角 (${multiViewProj.normalizedYaw.toInt()}°) · 柔顺长发与回首注视 ✨"
+                            multiViewProj.profile == MultiViewProfile.THREE_QUARTER_LEFT || multiViewProj.profile == MultiViewProfile.THREE_QUARTER_RIGHT ->
+                                "✨ 3D 侧身视角 (${multiViewProj.normalizedYaw.toInt()}°) · 多层空间视差与立体着色 ✨"
+                            multiViewProj.profile == MultiViewProfile.PROFILE_LEFT || multiViewProj.profile == MultiViewProfile.PROFILE_RIGHT ->
+                                "💫 3D 正侧面剖面 (${multiViewProj.normalizedYaw.toInt()}°) · 侧颜与柔体马尾弹簧链 ✨"
                             visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" ->
                                 "💤 星野正在打瞌睡打哈欠... (大叔休眠模式，轻触唤醒) ✨"
                             visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" ->
@@ -517,9 +555,12 @@ fun ARCoreOverlay(
                             spatialAnchor.isLowLight ->
                                 "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光与 CMOS 噪点调和 🌙"
                             else ->
-                                "已锁定于${spatialAnchor.planeTypeDescription} · 轻触桌面任意处重选位置 / 单指拖拽滑行"
+                                "已锁定于${spatialAnchor.planeTypeDescription} · 3D 骨骼透视与姿态引擎激活"
                         }
                         val pillBgColor = when {
+                            spatialAnchor.skeletonStance == SkeletonStance.SITTING || animatedSitProgress > 0.6f -> Color(0xE6E65100)
+                            multiViewProj.profile == MultiViewProfile.BACK_LOOK_BACK -> Color(0xE66A1B9A)
+                            multiViewProj.profile == MultiViewProfile.THREE_QUARTER_LEFT || multiViewProj.profile == MultiViewProfile.THREE_QUARTER_RIGHT -> Color(0xE600838F)
                             visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" -> Color(0xE6283593) // 深夜幽蓝
                             visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" -> Color(0xE6AD1457) // 害羞绯红
                             visualState.poutIntensity > 0.4f || visualState.highResPose == "POUT" -> Color(0xE6C2185B) // 傲娇玫红
@@ -539,6 +580,37 @@ fun ARCoreOverlay(
                             text = pillText,
                             bgColor = pillBgColor
                         )
+                        // 3D 体态快速切换胶囊 (站立 / 桌沿坐姿)
+                        Box(
+                            modifier = Modifier
+                                .height(30.dp)
+                                .clip(RoundedCornerShape(15.dp))
+                                .background(
+                                    if (animatedSitProgress > 0.5f) Color(0xE6E65100) else Color(0xE6281C38)
+                                )
+                                .border(1.2.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(15.dp))
+                                .clickable { onToggleStance() }
+                                .padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (animatedSitProgress > 0.5f) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
+                                    contentDescription = "切换站立/坐姿",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (animatedSitProgress > 0.5f) "坐姿" else "站姿",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                         // 一键复位按钮
                         Box(
                             modifier = Modifier
