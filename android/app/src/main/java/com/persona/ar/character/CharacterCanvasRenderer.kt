@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -1202,25 +1203,108 @@ private fun DrawScope.drawHighResolutionHoshino(
         add = if (visualState.isLowLight) Color(0x15101A) else Color.Transparent
     )
 
-    // 2. 绘制高精度角色图像
-    drawImage(
-        image = bitmap,
-        dstOffset = IntOffset(leftX.roundToInt(), topY.roundToInt()),
-        dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
-        colorFilter = colorFilter
-    )
+    // 2. 惯性物理摆动与弹性形变 (以地面足底接触线为旋转原点)
+    withTransform({
+        rotate(
+            degrees = visualState.inertialSwayAngle,
+            pivot = Offset(cx, footY)
+        )
+        scale(
+            scaleX = (1.0f / visualState.inertialSquishY).coerceIn(0.92f, 1.08f),
+            scaleY = visualState.inertialSquishY.coerceIn(0.92f, 1.08f),
+            pivot = Offset(cx, footY)
+        )
+    }) {
+        // 绘制高精度角色图像
+        drawImage(
+            image = bitmap,
+            dstOffset = IntOffset(leftX.roundToInt(), topY.roundToInt()),
+            dstSize = IntSize(charW.roundToInt(), charH.roundToInt()),
+            colorFilter = colorFilter
+        )
 
-    // 3. 头顶独立发光星穹光环 (带三维视差与呼吸辉光)
+        // 3. 动态视线追踪焦点 (Eye Contact Gaze Tracking)
+        // 异色双瞳 (左蓝右金) 随手机姿态与镜头相对位置微幅转动，产生灵动的眼神注视交流
+        drawHighResGazeFocus(
+            cx = cx,
+            topY = topY,
+            charW = charW,
+            charH = charH,
+            s = s,
+            visualState = visualState
+        )
+    }
+
+    // 4. 头顶独立发光星穹光环 (带三维视差、呼吸辉光与惯性延迟)
     drawFloatingHalo(
-        hx = haloX,
+        hx = haloX + visualState.inertialSwayAngle * 1.5f,
         hy = topY + 138f * s,
         s = s * 0.95f,
         state = visualState
     )
 
-    // 4. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
+    // 5. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
     drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
 
-    // 5. 情感微粒子
+    // 6. 前景物理遮挡保护 (例如被近处机械键盘键帽遮挡脚部，避免逆向穿模)
+    if (visualState.foregroundOcclusionRatio > 0.02f) {
+        val cutoffH = charH * visualState.foregroundOcclusionRatio
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                startY = footY - cutoffH,
+                endY = footY
+            ),
+            topLeft = Offset(leftX - 10f * s, footY - cutoffH),
+            size = Size(charW + 20f * s, cutoffH),
+            blendMode = BlendMode.DstOut
+        )
+    }
+
+    // 7. 情感微粒子
     drawGameEmoteParticles(cx, topY + 60f * s, s, visualState)
+}
+
+/**
+ * 绘制高精模型异色双瞳视线追焦 (Eye Contact Gaze Focus)
+ */
+private fun DrawScope.drawHighResGazeFocus(
+    cx: Float,
+    topY: Float,
+    charW: Float,
+    charH: Float,
+    s: Float,
+    visualState: CharacterVisualState
+) {
+    // 眼睛在星野高精立绘中的基准坐标 (面部中心 y 约在顶部 22% 处)
+    val eyeBaseY = topY + charH * 0.225f
+    val eyeDist = 18f * s
+    val eyeGazeX = visualState.gazeTrackingEyeX * s * 0.5f
+    val eyeGazeY = visualState.gazeTrackingEyeY * s * 0.4f
+
+    // 1) 左眼 (澄澈湖蓝色) 瞳孔微动反光焦点
+    val leftEyeCenter = Offset(cx - eyeDist + eyeGazeX, eyeBaseY + eyeGazeY)
+    drawCircle(
+        color = Color(0x6638BDF8),
+        radius = 3.5f * s,
+        center = leftEyeCenter
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.9f),
+        radius = 1.6f * s,
+        center = Offset(leftEyeCenter.x - 1f * s, leftEyeCenter.y - 1f * s)
+    )
+
+    // 2) 右眼 (暖金琥珀色) 瞳孔微动反光焦点
+    val rightEyeCenter = Offset(cx + eyeDist + eyeGazeX, eyeBaseY + eyeGazeY)
+    drawCircle(
+        color = Color(0x66F59E0B),
+        radius = 3.5f * s,
+        center = rightEyeCenter
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.9f),
+        radius = 1.6f * s,
+        center = Offset(rightEyeCenter.x - 1f * s, rightEyeCenter.y - 1f * s)
+    )
 }

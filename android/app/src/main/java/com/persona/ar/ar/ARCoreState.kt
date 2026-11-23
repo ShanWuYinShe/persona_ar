@@ -110,6 +110,14 @@ data class ARSpatialAnchor(
     val cameraFocusTimestamp: Long = 0L,
     /** 用户是否正在地面自由拖拽伴侣滑行中 */
     val isDragging: Boolean = false,
+    /** 镜头注视微偏移 (视线跟踪 Eye Contact) */
+    val gazeTrackingEyeX: Float = 0f,
+    val gazeTrackingEyeY: Float = 0f,
+    /** 物理拖拽与重力加速度惯性摆角 */
+    val inertialSwayAngle: Float = 0f,
+    val inertialSquishY: Float = 1.0f,
+    /** 前景键盘/桌面切片遮挡比例 (0.0f ~ 0.45f) */
+    val foregroundOcclusionRatio: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

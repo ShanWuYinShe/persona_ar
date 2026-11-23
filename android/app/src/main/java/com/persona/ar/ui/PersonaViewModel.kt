@@ -755,6 +755,17 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             )
             audioPlayer.updateSpatialAudio(nextX, currentScale)
 
+            // 物理质量-弹簧惯性摆动阻尼解算 (Mass-Spring-Damper Sway)
+            val swayAngle = (-deltaNormX * 220f).coerceIn(-16f, 16f)
+            val squishY = (1.0f - deltaNormY * 0.9f).coerceIn(0.92f, 1.08f)
+
+            // 动态视线追踪 (Eye Gaze Tracking): 眼睛聚焦注视相机镜头中心 (0.5, 0.42)
+            val gazeX = ((0.5f - nextX) * 14f).coerceIn(-8f, 8f)
+            val gazeY = ((0.42f - nextY) * 10f).coerceIn(-6f, 6f)
+
+            // 前景键盘遮挡切片比例 (当伴侣接近或穿过键盘后沿 Y > 0.60f 时产生物理遮挡)
+            val fgOcclusion = if (nextY > 0.60f) ((nextY - 0.60f) / 0.22f).coerceIn(0f, 0.45f) else 0f
+
             current.copy(
                 spatialAnchor = anchor.copy(
                     screenX = nextX,
@@ -765,14 +776,24 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     chromaticAngleRad = optical.chromaticAngle,
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    inertialSwayAngle = swayAngle,
+                    inertialSquishY = squishY,
+                    gazeTrackingEyeX = gazeX,
+                    gazeTrackingEyeY = gazeY,
+                    foregroundOcclusionRatio = fgOcclusion
                 ),
                 visualState = current.visualState.copy(
                     chromaticAberrationIntensity = optical.chromaticAberration,
                     chromaticAngleRad = optical.chromaticAngle,
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
+                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
+                    inertialSwayAngle = swayAngle,
+                    inertialSquishY = squishY,
+                    gazeTrackingEyeX = gazeX,
+                    gazeTrackingEyeY = gazeY,
+                    foregroundOcclusionRatio = fgOcclusion
                 )
             )
         }
@@ -784,10 +805,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 spatialAnchor = current.spatialAnchor.copy(
                     isDragging = isDragging,
                     isCameraFocusing = !isDragging,
-                    cameraFocusTimestamp = if (!isDragging) System.currentTimeMillis() else current.spatialAnchor.cameraFocusTimestamp
+                    cameraFocusTimestamp = if (!isDragging) System.currentTimeMillis() else current.spatialAnchor.cameraFocusTimestamp,
+                    inertialSwayAngle = if (!isDragging) 0f else current.spatialAnchor.inertialSwayAngle,
+                    inertialSquishY = if (!isDragging) 1.0f else current.spatialAnchor.inertialSquishY
                 ),
                 visualState = current.visualState.copy(
-                    isCameraFocusing = !isDragging
+                    isCameraFocusing = !isDragging,
+                    inertialSwayAngle = if (!isDragging) 0f else current.visualState.inertialSwayAngle,
+                    inertialSquishY = if (!isDragging) 1.0f else current.visualState.inertialSquishY
                 )
             )
         }
