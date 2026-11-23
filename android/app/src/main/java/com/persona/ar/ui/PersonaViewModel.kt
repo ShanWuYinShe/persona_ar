@@ -21,6 +21,7 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
+import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
@@ -60,8 +61,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             modelManager.activeModel.collect { active ->
                 _uiState.update { current ->
+                    // 拥 3D 手办资产的人格默认进入真 3D 模式：启动即渲染 Filament 手办，而不是先闪一下 2.5D 贴图。
+                    // 仅当用户尚未手动切换过模式 (arModeExplicitlySet=false) 时才跟随人格能力自动切换。
+                    val has3D = active.modelType == PersonaModelType.GLTF_3D && active.modelAsset != null
+                    val nextMode = when {
+                        current.arModeExplicitlySet -> current.arMode
+                        has3D -> ARMode.ARCORE_3D
+                        else -> ARMode.BILLBOARD_2_5D
+                    }
                     current.copy(
                         activeModel = active,
+                        arMode = nextMode,
+                        arTrackingStatus = if (nextMode == ARMode.ARCORE_3D && !current.spatialAnchor.isAnchored) {
+                            ARTrackingStatus.PLANE_DETECTED
+                        } else {
+                            current.arTrackingStatus
+                        },
                         visualState = current.visualState.copy(
                             name = active.name,
                             model = active
@@ -658,6 +673,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val nextMode = if (it.arMode == ARMode.BILLBOARD_2_5D) ARMode.ARCORE_3D else ARMode.BILLBOARD_2_5D
             it.copy(
                 arMode = nextMode,
+                // 用户显式切换过模式后，切换人格不再自动改写模式
+                arModeExplicitlySet = true,
                 arTrackingStatus = if (nextMode == ARMode.ARCORE_3D) {
                     if (it.spatialAnchor.isAnchored) ARTrackingStatus.ANCHORED else ARTrackingStatus.PLANE_DETECTED
                 } else {

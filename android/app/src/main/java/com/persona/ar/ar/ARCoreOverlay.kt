@@ -326,7 +326,9 @@ fun ARCoreOverlay(
                         lightDirectionY = spatialAnchor.lightDirectionY,
                         lightDirectionalStrength = spatialAnchor.lightDirectionalStrength,
                         surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
-                        dangleAirDistance = spatialAnchor.dangleAirDistance
+                        dangleAirDistance = spatialAnchor.dangleAirDistance,
+                        action = visualState.action,
+                        lipSyncAmplitude = visualState.lipSyncAmplitude
                     ),
                     modelAssetPath = activeModel.modelAsset,
                     onTapPart = onTouchPart,

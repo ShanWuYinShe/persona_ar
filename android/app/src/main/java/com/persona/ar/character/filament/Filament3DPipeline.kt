@@ -1,6 +1,7 @@
 package com.persona.ar.character.filament
 
 import androidx.compose.ui.graphics.Color
+import com.persona.ar.data.model.ActionType
 import com.google.android.filament.Engine
 import android.util.Log
 import com.google.android.filament.utils.Utils
@@ -80,7 +81,11 @@ data class FigureFrameState(
     /** 桌面支撑置信度 (1 坚实桌面 ~ 0 悬空) 与悬空离地比例，影响接触阴影强度 */
     val surfaceSupportConfidence: Float = 1f,
     val dangleAirDistance: Float = 0f,
-    /** 帧时间 (纳秒)，驱动呼吸 / 待机骨骼动画 */
+    /** 当前动作（IDLE / WAVE / NOD / BOW / JUMP / SLEEP 等），驱动程序化骨骼动画 */
+    val action: ActionType = ActionType.IDLE,
+    /** 说话口型幅度 (0..1)，驱动下颌与头部微动 */
+    val lipSyncAmplitude: Float = 0f,
+    /** 帧时间 (纳秒)，驱动呼吸 / 待机 / 动作骨骼动画 */
     val timeNanos: Long = 0L
 )
 

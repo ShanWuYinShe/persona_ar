@@ -51,12 +51,39 @@ fun CharacterCanvasRenderer(
     }
     val scope = rememberCoroutineScope()
 
-    // 加载高精度官方级角色贴图资产 (若存在则优先使用高精度真实模型，彻底告别粗糙简笔人)
+    // 高精度立绘：真 3D 手办由 Filament 渲染，此立绘是 2.5D 回退路径的角色贴图。
+    // 加载后统一做一次「白底自动抠除」——即使素材本身是不带透明通道的白底图（JPEG/纯白 PNG），
+    // 也能在运行时转成干净人物，避免把背景方块贴到相机画面上。
     val hoshinoBitmap = remember(context) {
         try {
-            BitmapFactory.decodeResource(context.resources, com.persona.ar.R.drawable.hoshino_high_res)?.asImageBitmap()
+            val raw = BitmapFactory.decodeResource(context.resources, com.persona.ar.R.drawable.hoshino_high_res)
+            raw?.let { CutoutHelper.applyWhiteBackgroundCutout(it)?.asImageBitmap() }
         } catch (e: Throwable) {
             null
+        }
+    }
+
+    // 逐帧精灵动画：动作有预渲染序列帧时优先播放（真抬手/真弯腰），否则回退静态立绘
+    val animator = remember { FrameAnimator(context.applicationContext) }
+    val actionClip = remember(visualState.action) { animator.clipFor(visualState.action) }
+    // 动作开始时间戳：动作变化时重置，用于计算当前帧
+    var actionStartNanos by remember(visualState.action) { mutableLongStateOf(0L) }
+    var nowNanos by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(visualState.action) {
+        actionStartNanos = System.nanoTime()
+    }
+    // 用无限动画驱动重绘，保证帧刷新
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowNanos = System.nanoTime()
+            kotlinx.coroutines.delay(16L)
+        }
+    }
+    // 当前帧序号：整张精灵表不切分，绘制时按网格取第 index 格
+    val currentFrameIndex = remember(actionClip, nowNanos) {
+        actionClip?.let { clip ->
+            val elapsed = (nowNanos - actionStartNanos) / 1_000_000_000f
+            animator.frameIndexAt(clip, elapsed)
         }
     }
 
@@ -265,8 +292,18 @@ fun CharacterCanvasRenderer(
             val haloX = cx + kotlin.math.sin(rollRad) * 12f * s
             val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
 
-            // 逐层立体空间渲染 (优先使用高保真动漫模型，保持多层视差与真实物理光影)
-            if (visualState.useHighResolutionModel && hoshinoBitmap != null) {
+            // 优先级：动作精灵表 > 静态立绘 > 矢量兜底
+            if (actionClip != null && currentFrameIndex != null) {
+                drawAnimatedFrame(
+                    clip = actionClip,
+                    frameIndex = currentFrameIndex,
+                    cx = cx,
+                    cy = cy,
+                    s = s,
+                    visualState = visualState,
+                    envLight = envLight
+                )
+            } else if (visualState.useHighResolutionModel && hoshinoBitmap != null) {
                 drawHighResolutionHoshino(
                     bitmap = hoshinoBitmap,
                     cx = cx,
@@ -2194,4 +2231,51 @@ private fun DrawScope.drawHighResFacialExpressions(
             visualState = visualState
         )
     }
+}
+
+/**
+ * 绘制动作序列中的某一帧。与静态立绘共用同一套环境光调和与呼吸/倾斜变换，
+ * 保证动画帧与静态立绘在视觉上无缝衔接。
+ */
+/**
+ * 绘制精灵表中的某一帧。
+ *
+ * 不做离线切片：整张精灵表按 [FrameAnimator.Clip.frameCount] 横向等分，
+ * 这里用 srcOffset/srcSize 直接取第 [frameIndex] 格（每格尺寸恒为 frameWidth × frameHeight），
+ * 因此所有帧的源矩形完全相同 —— 身高基准、脚底位置、画面占比在帧间天然一致，无需任何对齐补丁。
+ */
+private fun DrawScope.drawAnimatedFrame(
+    clip: FrameAnimator.Clip,
+    frameIndex: Int,
+    cx: Float,
+    cy: Float,
+    s: Float,
+    visualState: CharacterVisualState,
+    envLight: Float
+) {
+    // 尺寸基准与静态立绘对齐：立绘宽 185dp、脚底在 cy + 245dp。
+    // 精灵表单帧宽高比决定实际高度，所有帧共用同一比例，所以帧间不会跳动。
+    val charW = 185f * s
+    val charH = charW * (clip.frameHeight.toFloat() / clip.frameWidth.toFloat())
+    val footY = cy + 245f * s
+    val topY = footY - charH
+    val leftX = cx - charW / 2f
+
+    // 环境光调和：与静态立绘相同的 tint 与亮度因子
+    val tint = ColorFilter.lighting(
+        multiply = Color(
+            red = (visualState.ambientTintRed * envLight).coerceIn(0.25f, 1.35f),
+            green = (visualState.ambientTintGreen * envLight).coerceIn(0.25f, 1.35f),
+            blue = (visualState.ambientTintBlue * envLight).coerceIn(0.25f, 1.35f)
+        ),
+        add = Color(0f, 0f, 0f, 0f)
+    )
+    drawImage(
+        image = clip.sheet,
+        srcOffset = IntOffset(frameIndex * clip.frameWidth, 0),
+        srcSize = IntSize(clip.frameWidth, clip.frameHeight),
+        dstOffset = IntOffset(leftX.toInt(), topY.toInt()),
+        dstSize = IntSize(charW.toInt(), charH.toInt()),
+        colorFilter = tint
+    )
 }
