@@ -734,14 +734,26 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // 真实书桌实景物理边界拓扑定义 (基于实景几何标定，零 GMS 依赖)
+    companion object {
+        private const val DESK_CLIFF_BOTTOM_Y = 0.80f      // 桌面前沿实木悬崖分界线
+        private const val DESK_CLIFF_WARNING_Y = 0.74f     // 接近桌沿的预警阈值
+        private const val DESK_EDGE_LEFT_X = 0.12f         // 左侧桌面边缘
+        private const val DESK_EDGE_RIGHT_X = 0.88f        // 右侧桌面边缘
+        private const val KEYBOARD_MIN_X = 0.18f           // 机械键盘凸起刚体 X 范围
+        private const val KEYBOARD_MAX_X = 0.90f
+        private const val KEYBOARD_MIN_Y = 0.52f           // 机械键盘凸起刚体 Y 范围
+        private const val KEYBOARD_MAX_Y = 0.72f
+    }
+
     /**
-     * 在现实画面中自由拖拽滑动伴侣模型 (Surface Drag to Reposition)
+     * 在现实画面中自由拖拽滑动伴侣模型 (Surface Drag Repositioning & Cliff Physics)
      */
     fun onDragAnchor(deltaNormX: Float, deltaNormY: Float) {
         _uiState.update { current ->
             val anchor = current.spatialAnchor
-            val nextX = (anchor.screenX + deltaNormX).coerceIn(0.08f, 0.92f)
-            val nextY = (anchor.screenY + deltaNormY).coerceIn(0.22f, 0.88f)
+            val nextX = (anchor.screenX + deltaNormX).coerceIn(0.06f, 0.94f)
+            val nextY = (anchor.screenY + deltaNormY).coerceIn(0.20f, 0.92f)
 
             // 透视几何：Y 坐标越小 (靠近画面上方远端)，距离越远 (0.8m ~ 1.5m)
             val depthFactor = (1.0f + (0.65f - nextY) * 0.5f).coerceIn(0.55f, 1.4f)
@@ -755,15 +767,47 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             )
             audioPlayer.updateSpatialAudio(nextX, currentScale)
 
-            // 物理质量-弹簧惯性摆动阻尼解算 (Mass-Spring-Damper Sway)
-            val swayAngle = (-deltaNormX * 220f).coerceIn(-16f, 16f)
-            val squishY = (1.0f - deltaNormY * 0.9f).coerceIn(0.92f, 1.08f)
+            // 1. 机械键盘物理碰撞刚体与台阶高度抬升 (Keyboard Step Collider)
+            val isOverKeyboard = nextX in KEYBOARD_MIN_X..KEYBOARD_MAX_X && nextY in KEYBOARD_MIN_Y..KEYBOARD_MAX_Y
+            val stepHeightOffset = if (isOverKeyboard) 14f * currentScale else 0f
 
-            // 动态视线追踪 (Eye Gaze Tracking): 眼睛聚焦注视相机镜头中心 (0.5, 0.42)
-            val gazeX = ((0.5f - nextX) * 14f).coerceIn(-8f, 8f)
-            val gazeY = ((0.42f - nextY) * 10f).coerceIn(-6f, 6f)
+            // 2. 真实桌面悬崖边缘感知与下垂物理解算 (Desk Cliff Edge Solver)
+            val isBeyondCliffBottom = nextY >= DESK_CLIFF_BOTTOM_Y
+            val isNearCliffBottom = nextY > DESK_CLIFF_WARNING_Y && !isBeyondCliffBottom
+            val isNearCliffSide = nextX < DESK_EDGE_LEFT_X || nextX > DESK_EDGE_RIGHT_X
 
-            // 前景键盘遮挡切片比例 (当伴侣接近或穿过键盘后沿 Y > 0.60f 时产生物理遮挡)
+            val cliffIntensity = when {
+                isBeyondCliffBottom -> 1.0f
+                isNearCliffBottom -> ((nextY - DESK_CLIFF_WARNING_Y) / (DESK_CLIFF_BOTTOM_Y - DESK_CLIFF_WARNING_Y)).coerceIn(0f, 1f)
+                isNearCliffSide -> {
+                    val distLeft = (DESK_EDGE_LEFT_X - nextX) / 0.06f
+                    val distRight = (nextX - DESK_EDGE_RIGHT_X) / 0.06f
+                    maxOf(distLeft, distRight).coerceIn(0f, 1f)
+                }
+                else -> 0f
+            }
+
+            val isDangling = isBeyondCliffBottom
+            val airDist = if (isDangling) ((nextY - DESK_CLIFF_BOTTOM_Y) / 0.12f).coerceIn(0f, 1f) else 0f
+            val supportConfidence = if (isDangling) (1.0f - airDist * 0.92f).coerceIn(0.06f, 1.0f) else 1.0f
+
+            // 3. 物理质量-弹簧惯性摆动与悬崖平衡反冲 (Mass-Spring-Damper Sway & Cliff Balance)
+            val baseSwayAngle = (-deltaNormX * 220f).coerceIn(-16f, 16f)
+            // 靠近悬崖时，伴侣身体重心微仰自平衡，防止前倾摔倒
+            val balancePitchBack = if (nextY > DESK_CLIFF_WARNING_Y) -cliffIntensity * 7.5f else 0f
+            val totalSwayAngle = (baseSwayAngle + balancePitchBack).coerceIn(-18f, 18f)
+
+            // 纵向弹性形变：地面拖拽弹性挤压 vs 悬空时的重力下垂拉伸 (Leg Droop Stretch)
+            val baseSquishY = (1.0f - deltaNormY * 0.9f).coerceIn(0.92f, 1.08f)
+            val totalSquishY = if (isDangling) (1.0f + airDist * 0.07f).coerceIn(1.0f, 1.10f) else baseSquishY
+
+            // 4. 动态视线追踪 (Eye Gaze Tracking) + 悬崖探查微视线
+            val baseGazeX = ((0.5f - nextX) * 14f).coerceIn(-8f, 8f)
+            val baseGazeY = ((0.42f - nextY) * 10f).coerceIn(-6f, 6f)
+            // 逼近悬崖时，眼睛产生探头下瞥动作
+            val cliffPeekingGazeY = (baseGazeY + cliffIntensity * 4.0f).coerceIn(-6f, 8f)
+
+            // 5. 前景键盘遮挡切片比例 (当伴侣接近或穿过键盘后沿 Y > 0.60f 时产生物理遮挡)
             val fgOcclusion = if (nextY > 0.60f) ((nextY - 0.60f) / 0.22f).coerceIn(0f, 0.45f) else 0f
 
             current.copy(
@@ -777,11 +821,17 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
                     surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    inertialSwayAngle = swayAngle,
-                    inertialSquishY = squishY,
-                    gazeTrackingEyeX = gazeX,
-                    gazeTrackingEyeY = gazeY,
-                    foregroundOcclusionRatio = fgOcclusion
+                    inertialSwayAngle = totalSwayAngle,
+                    inertialSquishY = totalSquishY,
+                    gazeTrackingEyeX = baseGazeX,
+                    gazeTrackingEyeY = cliffPeekingGazeY,
+                    foregroundOcclusionRatio = fgOcclusion,
+                    isNearCliffEdge = cliffIntensity > 0.05f,
+                    cliffEdgeIntensity = cliffIntensity,
+                    isDanglingOverCliff = isDangling,
+                    dangleAirDistance = airDist,
+                    surfaceSupportConfidence = supportConfidence,
+                    surfaceStepHeightOffset = stepHeightOffset
                 ),
                 visualState = current.visualState.copy(
                     chromaticAberrationIntensity = optical.chromaticAberration,
@@ -789,17 +839,26 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     depthOfFieldBlur = optical.depthOfFieldBlur,
                     isMacroProximity = optical.isMacroProximity,
                     surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    inertialSwayAngle = swayAngle,
-                    inertialSquishY = squishY,
-                    gazeTrackingEyeX = gazeX,
-                    gazeTrackingEyeY = gazeY,
-                    foregroundOcclusionRatio = fgOcclusion
+                    inertialSwayAngle = totalSwayAngle,
+                    inertialSquishY = totalSquishY,
+                    gazeTrackingEyeX = baseGazeX,
+                    gazeTrackingEyeY = cliffPeekingGazeY,
+                    foregroundOcclusionRatio = fgOcclusion,
+                    isNearCliffEdge = cliffIntensity > 0.05f,
+                    cliffEdgeIntensity = cliffIntensity,
+                    isDanglingOverCliff = isDangling,
+                    dangleAirDistance = airDist,
+                    surfaceSupportConfidence = supportConfidence,
+                    surfaceStepHeightOffset = stepHeightOffset
                 )
             )
         }
     }
 
     fun onDragStateChanged(isDragging: Boolean) {
+        val currentAnchor = _uiState.value.spatialAnchor
+        val wasDangling = currentAnchor.isDanglingOverCliff
+
         _uiState.update { current ->
             current.copy(
                 spatialAnchor = current.spatialAnchor.copy(
@@ -807,14 +866,71 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     isCameraFocusing = !isDragging,
                     cameraFocusTimestamp = if (!isDragging) System.currentTimeMillis() else current.spatialAnchor.cameraFocusTimestamp,
                     inertialSwayAngle = if (!isDragging) 0f else current.spatialAnchor.inertialSwayAngle,
-                    inertialSquishY = if (!isDragging) 1.0f else current.spatialAnchor.inertialSquishY
+                    inertialSquishY = if (!isDragging && !wasDangling) 1.0f else current.spatialAnchor.inertialSquishY
                 ),
                 visualState = current.visualState.copy(
                     isCameraFocusing = !isDragging,
                     inertialSwayAngle = if (!isDragging) 0f else current.visualState.inertialSwayAngle,
-                    inertialSquishY = if (!isDragging) 1.0f else current.visualState.inertialSquishY
+                    inertialSquishY = if (!isDragging && !wasDangling) 1.0f else current.visualState.inertialSquishY
                 )
             )
+        }
+
+        // 6. 悬空脱离自救与安全着陆回弹机制 (Auto-Catch & Safe Landing Recovery)
+        if (!isDragging && wasDangling) {
+            viewModelScope.launch {
+                // 平滑回弹吸附至安全桌垫前沿
+                val startY = currentAnchor.screenY
+                val targetY = DESK_CLIFF_WARNING_Y
+                val steps = 8
+                for (step in 1..steps) {
+                    kotlinx.coroutines.delay(20L)
+                    val progress = step.toFloat() / steps
+                    val easedProgress = (1.0f - kotlin.math.cos(progress * kotlin.math.PI.toFloat())) / 2.0f
+                    val currentY = startY + (targetY - startY) * easedProgress
+                    _uiState.update { state ->
+                        state.copy(
+                            spatialAnchor = state.spatialAnchor.copy(
+                                screenY = currentY,
+                                isDanglingOverCliff = false,
+                                dangleAirDistance = 0f,
+                                surfaceSupportConfidence = 1.0f,
+                                cliffEdgeIntensity = (1.0f - progress) * 0.4f,
+                                isNearCliffEdge = progress < 0.8f,
+                                inertialSquishY = 0.90f + progress * 0.10f // 触地弹性缓冲
+                            ),
+                            visualState = state.visualState.copy(
+                                isDanglingOverCliff = false,
+                                dangleAirDistance = 0f,
+                                surfaceSupportConfidence = 1.0f,
+                                cliffEdgeIntensity = (1.0f - progress) * 0.4f,
+                                isNearCliffEdge = progress < 0.8f,
+                                inertialSquishY = 0.90f + progress * 0.10f
+                            )
+                        )
+                    }
+                }
+                // 最终稳固站立在桌面上
+                _uiState.update { state ->
+                    state.copy(
+                        spatialAnchor = state.spatialAnchor.copy(
+                            screenY = targetY,
+                            isDanglingOverCliff = false,
+                            isNearCliffEdge = false,
+                            cliffEdgeIntensity = 0f,
+                            surfaceSupportConfidence = 1.0f,
+                            inertialSquishY = 1.0f
+                        ),
+                        visualState = state.visualState.copy(
+                            isDanglingOverCliff = false,
+                            isNearCliffEdge = false,
+                            cliffEdgeIntensity = 0f,
+                            surfaceSupportConfidence = 1.0f,
+                            inertialSquishY = 1.0f
+                        )
+                    )
+                }
+            }
         }
     }
 

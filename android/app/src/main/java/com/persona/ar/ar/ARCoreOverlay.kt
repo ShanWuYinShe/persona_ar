@@ -231,13 +231,16 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * 1.1f, shadowHeight * 1.1f)
                 )
 
-                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减与焦外弥散扩展
-                val penumbraSpread = 1.0f + (spatialAnchor.depthOfFieldBlur * 0.30f)
+                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减、焦外弥散与悬空离地虚化扩展
+                val dangleSpread = 1.0f + (spatialAnchor.dangleAirDistance * 0.72f)
+                val dangleAlphaFactor = (1.0f - spatialAnchor.dangleAirDistance * 0.62f).coerceIn(0.15f, 1.0f)
+                val penumbraSpread = (1.0f + (spatialAnchor.depthOfFieldBlur * 0.30f)) * dangleSpread
+                val actualPenumbraAlpha = alpha * dangleAlphaFactor
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            shadowCenterColor,
-                            shadowCenterColor.copy(alpha = alpha * 0.38f),
+                            shadowCenterColor.copy(alpha = actualPenumbraAlpha),
+                            shadowCenterColor.copy(alpha = actualPenumbraAlpha * 0.38f),
                             Color.Transparent
                         ),
                         center = Offset(shadowCenterX, shadowCenterY),
@@ -247,25 +250,52 @@ fun ARCoreOverlay(
                     size = Size(shadowWidth * penumbraSpread, shadowHeight * penumbraSpread)
                 )
 
-                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底切面的深色物理贴合缝隙 (杜绝脚底脱节)
-                val aoWidth = baseShadowWidth * 0.54f
-                val aoHeight = baseShadowHeight * 0.30f
-                val aoAlpha = (0.78f * envLight).coerceIn(0.42f, 0.90f)
+                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底切面的深色物理贴合缝隙 (悬空脱离时平滑消散)
+                val aoConfidence = spatialAnchor.surfaceSupportConfidence.coerceIn(0f, 1f)
+                val aoWidth = baseShadowWidth * 0.54f * (0.35f + 0.65f * aoConfidence)
+                val aoHeight = baseShadowHeight * 0.30f * (0.35f + 0.65f * aoConfidence)
+                val aoAlpha = (0.78f * envLight * aoConfidence).coerceIn(0.0f, 0.90f)
                 val aoCenterX = footContactX + dirShadowShiftX * 0.2f
                 val aoCenterY = footContactY + 1.5f + dirShadowShiftY * 0.2f
-                drawOval(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = aoAlpha),
-                            Color.Black.copy(alpha = aoAlpha * 0.45f),
-                            Color.Transparent
+                if (aoAlpha > 0.04f) {
+                    drawOval(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = aoAlpha),
+                                Color.Black.copy(alpha = aoAlpha * 0.45f),
+                                Color.Transparent
+                            ),
+                            center = Offset(aoCenterX, aoCenterY),
+                            radius = aoWidth * 0.65f
                         ),
-                        center = Offset(aoCenterX, aoCenterY),
-                        radius = aoWidth * 0.65f
-                    ),
-                    topLeft = Offset(aoCenterX - aoWidth * 0.5f, aoCenterY - aoHeight * 0.5f),
-                    size = Size(aoWidth, aoHeight)
-                )
+                        topLeft = Offset(aoCenterX - aoWidth * 0.5f, aoCenterY - aoHeight * 0.5f),
+                        size = Size(aoWidth, aoHeight)
+                    )
+                }
+
+                // 4) 真实桌面悬崖边缘微光脉冲警戒线 (Desk Cliff Edge Warning Arc)
+                if (spatialAnchor.isNearCliffEdge || spatialAnchor.cliffEdgeIntensity > 0.04f) {
+                    val cliffAlpha = (spatialAnchor.cliffEdgeIntensity * 0.85f).coerceIn(0.15f, 0.90f)
+                    val edgeWidth = shadowWidth * 1.55f
+                    val edgeY = footContactY + 22f * spatialAnchor.scaleFactor
+                    // 警示地平线弧度
+                    drawArc(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color(0xFFFFA726).copy(alpha = cliffAlpha),
+                                Color(0xFFFF7043).copy(alpha = cliffAlpha * 0.9f),
+                                Color.Transparent
+                            )
+                        ),
+                        startAngle = 10f,
+                        sweepAngle = 160f,
+                        useCenter = false,
+                        topLeft = Offset(footContactX - edgeWidth * 0.5f, edgeY - 14f * spatialAnchor.scaleFactor),
+                        size = Size(edgeWidth, 28f * spatialAnchor.scaleFactor),
+                        style = Stroke(width = 2.5f)
+                    )
+                }
 
                 // 伴侣脚下若隐若现的二游契约微光光环 (现实弱光下呈现明亮辉光，强光下呈现通透水晶光)
                 val ringAlpha = if (spatialAnchor.isLowLight) 0.35f else 0.18f
@@ -344,10 +374,10 @@ fun ARCoreOverlay(
             }
         }
 
-        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视 + 视觉光流锁死)
+        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视 + 台阶高度抬升)
         if (spatialAnchor.isAnchored) {
             val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
-            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY).dp
+            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
 
             // 1) 3D 俯仰透视收缩 (相机俯仰看桌面时，角色头部前倾近大远小，下肢透视缩短)
             val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
@@ -401,7 +431,13 @@ fun ARCoreOverlay(
                         gazeTrackingEyeY = spatialAnchor.gazeTrackingEyeY,
                         inertialSwayAngle = spatialAnchor.inertialSwayAngle,
                         inertialSquishY = spatialAnchor.inertialSquishY,
-                        foregroundOcclusionRatio = spatialAnchor.foregroundOcclusionRatio
+                        foregroundOcclusionRatio = spatialAnchor.foregroundOcclusionRatio,
+                        isNearCliffEdge = spatialAnchor.isNearCliffEdge,
+                        cliffEdgeIntensity = spatialAnchor.cliffEdgeIntensity,
+                        isDanglingOverCliff = spatialAnchor.isDanglingOverCliff,
+                        dangleAirDistance = spatialAnchor.dangleAirDistance,
+                        surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
+                        surfaceStepHeightOffset = spatialAnchor.surfaceStepHeightOffset
                     ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
@@ -444,6 +480,12 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val pillText = when {
+                            spatialAnchor.isDanglingOverCliff ->
+                                "🎈 桌面边缘悬空脱离 · 重力悬摆与虚化半影物理已激活 ✨"
+                            spatialAnchor.isNearCliffEdge ->
+                                "⚠️ 逼近桌面边缘悬崖 · 重心后仰自平衡与警觉立起 ✨"
+                            spatialAnchor.surfaceStepHeightOffset > 1.0f ->
+                                "⌨️ 踏上机械键盘阶梯 · 物理碰撞台阶抬升 (+14mm) ✨"
                             spatialAnchor.isCameraFocusing ->
                                 "🎯 物理镜头硬件对焦中 · 桌面局部曝光测光与微纹理锁死 ✨"
                             spatialAnchor.isDragging ->
@@ -464,6 +506,9 @@ fun ARCoreOverlay(
                                 "已锁定于${spatialAnchor.planeTypeDescription} · 轻触桌面任意处重选位置 / 单指拖拽滑行"
                         }
                         val pillBgColor = when {
+                            spatialAnchor.isDanglingOverCliff -> Color(0xE67B1FA2)
+                            spatialAnchor.isNearCliffEdge -> Color(0xE6E65100)
+                            spatialAnchor.surfaceStepHeightOffset > 1.0f -> Color(0xE600897B)
                             spatialAnchor.isDragging -> Color(0xE60288D1)
                             spatialAnchor.isMacroProximity -> Color(0xE6D81B60)
                             spatialAnchor.bloomIntensity > 0.35f -> Color(0xE6E65100)
