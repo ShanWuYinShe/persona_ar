@@ -9,7 +9,9 @@ enum class EmotionType {
     SAD,
     SURPRISED,
     THINKING,
-    ANGRY
+    ANGRY,
+    SLEEPY,
+    CONFIDENT
 }
 
 enum class ActionType {
@@ -20,7 +22,10 @@ enum class ActionType {
     SHAKE_HEAD,
     POUT,
     BOW,
-    JUMP
+    JUMP,
+    YAWN,
+    SLEEP,
+    SMUG
 }
 
 enum class TouchPart {

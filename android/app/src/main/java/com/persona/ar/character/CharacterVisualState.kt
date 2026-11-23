@@ -84,5 +84,17 @@ data class CharacterVisualState(
     /** 桌面物理支撑度 (1.0f 坚实桌面 ~ 0.0f 完全脱离悬空) */
     val surfaceSupportConfidence: Float = 1.0f,
     /** 机械键盘等立体障碍物台阶垂直抬升量 (0.0f ~ 18f dp) */
-    val surfaceStepHeightOffset: Float = 0f
+    val surfaceStepHeightOffset: Float = 0f,
+    /** 高精动作姿态与微表情枚举 (DEFAULT / SLEEPY / SHY / POUT / SMUG / SURPRISED) */
+    val highResPose: String = "DEFAULT",
+    /** 害羞腮红强度 (0.0f ~ 1.0f) */
+    val blushIntensity: Float = 0f,
+    /** 打瞌睡困倦程度 (0.0f 清醒 ~ 1.0f 深度困倦点头) */
+    val sleepinessFactor: Float = 0f,
+    /** 鼓嘴傲娇程度 (0.0f ~ 1.0f) */
+    val poutIntensity: Float = 0f,
+    /** 自信得意挺胸角度 (度数 -5° ~ +5°) */
+    val smugTiltDegrees: Float = 0f,
+    /** 星穹光环高亮闪烁星芒爆发系数 (0.0f ~ 1.0f) */
+    val haloSparkleIntensity: Float = 0f
 )

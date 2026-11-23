@@ -163,6 +163,19 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     text = respText,
                     emotion = emotion
                 )
+                val pose = when (emotion) {
+                    EmotionType.SHY -> "SHY"
+                    EmotionType.ANGRY -> "POUT"
+                    EmotionType.SLEEPY -> "SLEEPY"
+                    EmotionType.CONFIDENT -> "SMUG"
+                    else -> when (action) {
+                        ActionType.BLUSH -> "SHY"
+                        ActionType.POUT -> "POUT"
+                        ActionType.SLEEP, ActionType.YAWN -> "SLEEPY"
+                        ActionType.SMUG -> "SMUG"
+                        else -> "DEFAULT"
+                    }
+                }
                 current.copy(
                     isLoading = false,
                     streamingText = null,
@@ -170,7 +183,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     visualState = current.visualState.copy(
                         emotion = emotion,
                         action = action,
-                        expression = expr
+                        expression = expr,
+                        highResPose = pose,
+                        blushIntensity = if (pose == "SHY") 0.85f else 0f,
+                        poutIntensity = if (pose == "POUT") 0.90f else 0f,
+                        sleepinessFactor = if (pose == "SLEEPY") 0.90f else 0f,
+                        smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f
                     ),
                     personaStatus = current.personaStatus?.copy(
                         affinity = affinity,
@@ -350,13 +368,31 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 _uiState.update { current ->
+                    val pose = when (resp.emotion) {
+                        EmotionType.SHY -> "SHY"
+                        EmotionType.ANGRY -> "POUT"
+                        EmotionType.SLEEPY -> "SLEEPY"
+                        EmotionType.CONFIDENT -> "SMUG"
+                        else -> when (resp.action) {
+                            ActionType.BLUSH -> "SHY"
+                            ActionType.POUT -> "POUT"
+                            ActionType.SLEEP, ActionType.YAWN -> "SLEEPY"
+                            ActionType.SMUG -> "SMUG"
+                            else -> "DEFAULT"
+                        }
+                    }
                     current.copy(
                         messages = current.messages + personaMessage,
                         isLoading = false,
                         visualState = current.visualState.copy(
                             emotion = resp.emotion,
                             action = resp.action,
-                            expression = resp.expression
+                            expression = resp.expression,
+                            highResPose = pose,
+                            blushIntensity = if (pose == "SHY") 0.85f else 0f,
+                            poutIntensity = if (pose == "POUT") 0.90f else 0f,
+                            sleepinessFactor = if (pose == "SLEEPY") 0.90f else 0f,
+                            smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f
                         ),
                         personaStatus = current.personaStatus?.copy(
                             affinity = resp.currentAffinity,
@@ -378,6 +414,45 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             TouchPart.CHEEK -> Pair(2, "+2 羁绊 戳戳脸 ✨")
             TouchPart.HAND -> Pair(4, "+4 羁绊 牵小手 🤝")
             TouchPart.BODY -> Pair(5, "+5 羁绊 拥抱 💕")
+        }
+
+        // 1. 端侧即时高精微表情与姿态反馈 (Zero GMS 毫秒级零延迟触发)
+        val reaction = when (part) {
+            TouchPart.HEAD -> TouchReaction(pose = "SHY", blush = 0.90f, pout = 0f, smug = 0f)
+            TouchPart.CHEEK -> TouchReaction(pose = "POUT", blush = 0f, pout = 0.95f, smug = 0f)
+            TouchPart.HAND -> TouchReaction(pose = "DEFAULT", blush = 0f, pout = 0f, smug = 0f)
+            TouchPart.BODY -> TouchReaction(pose = "SMUG", blush = 0f, pout = 0f, smug = 4.5f)
+        }
+
+        _uiState.update { current ->
+            current.copy(
+                visualState = current.visualState.copy(
+                    highResPose = reaction.pose,
+                    blushIntensity = reaction.blush,
+                    poutIntensity = reaction.pout,
+                    smugTiltDegrees = reaction.smug,
+                    sleepinessFactor = 0f // 触摸唤醒
+                )
+            )
+        }
+
+        // 3.5 秒后表情平滑自然恢复
+        viewModelScope.launch {
+            delay(3500L)
+            _uiState.update { current ->
+                if (current.visualState.highResPose == reaction.pose) {
+                    current.copy(
+                        visualState = current.visualState.copy(
+                            highResPose = "DEFAULT",
+                            blushIntensity = 0f,
+                            poutIntensity = 0f,
+                            smugTiltDegrees = 0f
+                        )
+                    )
+                } else {
+                    current
+                }
+            }
         }
 
         // 触发即时浮空动画粒子
@@ -406,12 +481,20 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 _uiState.update { current ->
+                    val pose = when (resp.emotion) {
+                        EmotionType.SHY -> "SHY"
+                        EmotionType.ANGRY -> "POUT"
+                        EmotionType.SLEEPY -> "SLEEPY"
+                        EmotionType.CONFIDENT -> "SMUG"
+                        else -> reaction.pose
+                    }
                     current.copy(
                         messages = current.messages + personaMessage,
                         visualState = current.visualState.copy(
                             emotion = resp.emotion,
                             action = resp.action,
-                            expression = resp.expression
+                            expression = resp.expression,
+                            highResPose = pose
                         ),
                         personaStatus = current.personaStatus?.copy(
                             affinity = resp.currentAffinity
@@ -421,6 +504,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 playPersonaVoice(resp.audioBase64, resp.text)
                 addBondExp(expGain)
             }
+        }
+    }
+
+    /**
+     * 手动触发星野慵懒大叔打瞌睡休眠姿态 (Sleepy Nap Mode)
+     */
+    fun triggerSleepyNap() {
+        _uiState.update { current ->
+            current.copy(
+                visualState = current.visualState.copy(
+                    highResPose = "SLEEPY",
+                    sleepinessFactor = 0.92f,
+                    emotion = EmotionType.SLEEPY,
+                    action = ActionType.SLEEP
+                )
+            )
         }
     }
 
@@ -1214,3 +1313,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         sensorTiltHelper.stop()
     }
 }
+
+private data class TouchReaction(
+    val pose: String,
+    val blush: Float,
+    val pout: Float,
+    val smug: Float
+)

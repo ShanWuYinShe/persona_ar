@@ -100,6 +100,39 @@ fun CharacterCanvasRenderer(
         label = "wiggle"
     )
 
+    // 打瞌睡困倦呼吸与点头周期 (周期 3.6 秒平滑循环)
+    val drowsyCycle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * Math.PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(3600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "drowsyCycle"
+    )
+
+    // 害羞面颊微脉冲与傲娇心跳
+    val emotePulse by infiniteTransition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "emotePulse"
+    )
+
+    // 得意星芒闪耀旋转动画
+    val sparkleAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "sparkleAngle"
+    )
+
     // 周期性自然眨眼
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -241,7 +274,10 @@ fun CharacterCanvasRenderer(
                     haloX = haloX,
                     haloY = haloY,
                     visualState = visualState,
-                    envLight = envLight
+                    envLight = envLight,
+                    drowsyCycle = drowsyCycle,
+                    emotePulse = emotePulse,
+                    sparkleAngle = sparkleAngle
                 )
             } else {
                 drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
@@ -1071,14 +1107,29 @@ private fun DrawScope.drawFloatingHalo(
     val haloY = hy - 138f * s
     val haloWidth = 92f * s
     val haloHeight = 24f * s
-    val haloColor = Color(0xFF00E5FF)
-    val haloGlowAlpha = if (state.isLowLight) 0.65f else 0.35f
+
+    val isSleepy = state.sleepinessFactor > 0.05f || state.emotion == EmotionType.SLEEPY || state.action == ActionType.SLEEP || state.highResPose == "SLEEPY"
+    val isShy = state.blushIntensity > 0.05f || state.emotion == EmotionType.SHY || state.action == ActionType.BLUSH || state.highResPose == "SHY"
+    val isAngry = state.poutIntensity > 0.05f || state.emotion == EmotionType.ANGRY || state.action == ActionType.POUT || state.highResPose == "POUT"
+    val isSmug = state.smugTiltDegrees > 0.5f || state.emotion == EmotionType.CONFIDENT || state.action == ActionType.SMUG || state.highResPose == "SMUG"
+
+    val (haloColor, haloAlphaMult) = when {
+        isSleepy -> Pair(Color(0xFF80DEEA), 0.35f) // 瞌睡暗蓝
+        isShy -> Pair(Color(0xFFFF80AB), 0.85f)    // 害羞樱粉
+        isAngry -> Pair(Color(0xFFFF5252), 0.90f)  // 傲娇赤红
+        isSmug -> Pair(Color(0xFFFFD54F), 1.25f)   // 得意耀金
+        else -> Pair(Color(0xFF00E5FF), 1.0f)      // 经典青蓝
+    }
+
+    val baseGlowAlpha = if (state.isLowLight) 0.65f else 0.35f
+    val haloGlowAlpha = (baseGlowAlpha * haloAlphaMult).coerceIn(0.12f, 0.95f)
+    val glowSpread = if (isSmug) 1.35f else 1.15f
 
     // 1) 悬浮光环发光微光晕
     drawOval(
         color = haloColor.copy(alpha = haloGlowAlpha * 0.45f),
-        topLeft = Offset(hx - haloWidth * 0.6f, haloY - haloHeight * 0.6f),
-        size = Size(haloWidth * 1.2f, haloHeight * 1.2f)
+        topLeft = Offset(hx - haloWidth * 0.5f * glowSpread, haloY - haloHeight * 0.5f * glowSpread),
+        size = Size(haloWidth * glowSpread, haloHeight * glowSpread)
     )
 
     // 2) 契约光环椭圆外环
@@ -1086,18 +1137,19 @@ private fun DrawScope.drawFloatingHalo(
         color = haloColor.copy(alpha = haloGlowAlpha),
         topLeft = Offset(hx - haloWidth * 0.5f, haloY - haloHeight * 0.5f),
         size = Size(haloWidth, haloHeight),
-        style = Stroke(3.5f * s)
+        style = Stroke((if (isSmug) 4.2f else 3.5f) * s)
     )
 
     // 3) 内圈高亮星芒核心点
+    val coreColor = if (isSmug) Color(0xFFFFF9C4) else Color.White
     drawCircle(
-        color = Color.White.copy(alpha = 0.85f),
-        radius = 2.5f * s,
+        color = coreColor.copy(alpha = (0.85f * haloAlphaMult).coerceIn(0.2f, 1.0f)),
+        radius = (if (isSmug) 3.2f else 2.5f) * s,
         center = Offset(hx - haloWidth * 0.4f, haloY)
     )
     drawCircle(
-        color = Color.White.copy(alpha = 0.85f),
-        radius = 2.5f * s,
+        color = coreColor.copy(alpha = (0.85f * haloAlphaMult).coerceIn(0.2f, 1.0f)),
+        radius = (if (isSmug) 3.2f else 2.5f) * s,
         center = Offset(hx + haloWidth * 0.4f, haloY)
     )
 }
@@ -1185,7 +1237,10 @@ private fun DrawScope.drawHighResolutionHoshino(
     haloX: Float,
     haloY: Float,
     visualState: CharacterVisualState,
-    envLight: Float
+    envLight: Float,
+    drowsyCycle: Float,
+    emotePulse: Float,
+    sparkleAngle: Float
 ) {
     val charW = 185f * s
     val charH = charW * (bitmap.height.toFloat() / bitmap.width.toFloat())
@@ -1203,7 +1258,30 @@ private fun DrawScope.drawHighResolutionHoshino(
         add = if (visualState.isLowLight) Color(0x15101A) else Color.Transparent
     )
 
-    // 2. 惯性物理摆动、重力下垂与悬空微摇 (以地面足底接触线或身体重心为旋转原点)
+    // 2. 姿态动作姿态角解算 (打瞌睡慢点头、傲娇轻扭头、得意挺胸与惯性摆角融合)
+    val isSleepyMode = visualState.sleepinessFactor > 0.05f ||
+            visualState.emotion == EmotionType.SLEEPY ||
+            visualState.action == ActionType.SLEEP ||
+            visualState.highResPose == "SLEEPY"
+    val sleepIntensity = if (isSleepyMode) maxOf(visualState.sleepinessFactor, 0.85f) else 0f
+    val drowsyNodAngle = if (isSleepyMode) kotlin.math.sin(drowsyCycle) * 3.6f * sleepIntensity else 0f
+
+    val isPoutMode = visualState.poutIntensity > 0.05f ||
+            visualState.emotion == EmotionType.ANGRY ||
+            visualState.action == ActionType.POUT ||
+            visualState.highResPose == "POUT"
+    val poutIntensity = if (isPoutMode) maxOf(visualState.poutIntensity, 0.85f) else 0f
+    val poutSwayAngle = if (isPoutMode) -poutIntensity * 4.5f else 0f
+
+    val isSmugMode = visualState.smugTiltDegrees > 0.5f ||
+            visualState.emotion == EmotionType.CONFIDENT ||
+            visualState.action == ActionType.SMUG ||
+            visualState.highResPose == "SMUG"
+    val smugTiltAngle = if (isSmugMode) -maxOf(visualState.smugTiltDegrees, 4.0f) * 0.8f else 0f
+
+    val totalPoseAngle = visualState.inertialSwayAngle + drowsyNodAngle + poutSwayAngle + smugTiltAngle
+
+    // 3. 惯性物理摆动、重力下垂与悬空微摇 (以地面足底接触线或身体重心为旋转原点)
     val pivotPoint = if (visualState.isDanglingOverCliff) {
         Offset(cx, topY + charH * 0.45f) // 悬空状态以躯干重心为轴心钟摆下垂
     } else {
@@ -1218,7 +1296,7 @@ private fun DrawScope.drawHighResolutionHoshino(
 
     withTransform({
         rotate(
-            degrees = visualState.inertialSwayAngle,
+            degrees = totalPoseAngle,
             pivot = pivotPoint
         )
         scale(
@@ -1235,30 +1313,35 @@ private fun DrawScope.drawHighResolutionHoshino(
             colorFilter = colorFilter
         )
 
-        // 3. 动态视线追踪焦点 (Eye Contact Gaze Tracking)
-        // 异色双瞳 (左蓝右金) 随手机姿态与镜头相对位置微幅转动，产生灵动的眼神注视交流
-        drawHighResGazeFocus(
+        // 4. 多套官方高精微表情与面部差分渲染 (眨眼追焦 / 困倦半闭 / 害羞红晕 / 傲娇鼓颊 / 得意微笑)
+        drawHighResFacialExpressions(
             cx = cx,
             topY = topY,
             charW = charW,
             charH = charH,
             s = s,
-            visualState = visualState
+            visualState = visualState,
+            sleepIntensity = sleepIntensity,
+            poutIntensity = poutIntensity,
+            isSmugMode = isSmugMode,
+            drowsyCycle = drowsyCycle,
+            emotePulse = emotePulse,
+            sparkleAngle = sparkleAngle
         )
     }
 
-    // 4. 头顶独立发光星穹光环 (带三维视差、呼吸辉光与惯性延迟)
+    // 5. 头顶独立发光星穹光环 (带三维视差、呼吸辉光、情绪色彩共振与星芒爆发)
     drawFloatingHalo(
-        hx = haloX + visualState.inertialSwayAngle * 1.5f,
+        hx = haloX + totalPoseAngle * 1.5f,
         hy = topY + 138f * s,
         s = s * 0.95f,
         state = visualState
     )
 
-    // 5. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
+    // 6. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
     drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
 
-    // 6. 前景物理遮挡保护 (例如被近处机械键盘键帽遮挡脚部，避免逆向穿模)
+    // 7. 前景物理遮挡保护 (例如被近处机械键盘键帽遮挡脚部，避免逆向穿模)
     if (visualState.foregroundOcclusionRatio > 0.02f) {
         val cutoffH = charH * visualState.foregroundOcclusionRatio
         drawRect(
@@ -1273,11 +1356,11 @@ private fun DrawScope.drawHighResolutionHoshino(
         )
     }
 
-    // 7. 悬崖边缘警惕与悬空微表情 (Cliff Edge Alert Emotes: 💦 萌系警惕微汗珠)
+    // 8. 悬崖边缘警惕与悬空微表情 (Cliff Edge Alert Emotes: 💦 萌系警惕微汗珠)
     if (visualState.isDanglingOverCliff || visualState.cliffEdgeIntensity > 0.35f) {
         val alertIntensity = if (visualState.isDanglingOverCliff) 1.0f else visualState.cliffEdgeIntensity
         drawCliffAlertEmote(
-            cx = cx + 38f * s + visualState.inertialSwayAngle * 1.2f,
+            cx = cx + 38f * s + totalPoseAngle * 1.2f,
             topY = topY + 68f * s,
             s = s,
             intensity = alertIntensity,
@@ -1285,7 +1368,7 @@ private fun DrawScope.drawHighResolutionHoshino(
         )
     }
 
-    // 8. 情感微粒子
+    // 9. 情感微粒子
     drawGameEmoteParticles(cx, topY + 60f * s, s, visualState)
 }
 
@@ -1376,4 +1459,294 @@ private fun DrawScope.drawCliffAlertEmote(
         radius = 1.8f * s,
         center = Offset(cx - 2f * s, topY + sweatH * 0.65f)
     )
+}
+
+/**
+ * 绘制官方高精全模微表情覆盖系统 (Facial Expressions & Anime Micro-Emotes)
+ * 涵盖：打瞌睡半闭眼与打哈欠/Zzz气泡、害羞双颊红晕与手绘斜线、傲娇鼓颊小噘嘴与青筋、得意眨眼星芒闪耀
+ */
+private fun DrawScope.drawHighResFacialExpressions(
+    cx: Float,
+    topY: Float,
+    charW: Float,
+    charH: Float,
+    s: Float,
+    visualState: CharacterVisualState,
+    sleepIntensity: Float,
+    poutIntensity: Float,
+    isSmugMode: Boolean,
+    drowsyCycle: Float,
+    emotePulse: Float,
+    sparkleAngle: Float
+) {
+    val eyeBaseY = topY + charH * 0.225f
+    val eyeDist = 18f * s
+    val leftEyeX = cx - eyeDist
+    val rightEyeX = cx + eyeDist
+    val cheekY = eyeBaseY + 12f * s
+    val mouthY = eyeBaseY + 28f * s
+
+    val isShyMode = visualState.blushIntensity > 0.05f ||
+            visualState.emotion == EmotionType.SHY ||
+            visualState.action == ActionType.BLUSH ||
+            visualState.highResPose == "SHY"
+    val blushIntensity = if (isShyMode) maxOf(visualState.blushIntensity, 0.85f) else 0f
+
+    // 1. 害羞双颊红晕与二次元斜线 (Anime Radiant Blush)
+    if (blushIntensity > 0.05f) {
+        val blushAlpha = (0.75f * blushIntensity * emotePulse).coerceIn(0.2f, 0.95f)
+        val blushRadius = 16f * s
+        // 左面颊红晕
+        drawOval(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFFF4081).copy(alpha = blushAlpha * 0.7f),
+                    Color(0xFFFF80AB).copy(alpha = blushAlpha * 0.35f),
+                    Color.Transparent
+                ),
+                center = Offset(cx - 25f * s, cheekY),
+                radius = blushRadius
+            ),
+            topLeft = Offset(cx - 25f * s - blushRadius, cheekY - blushRadius * 0.55f),
+            size = Size(blushRadius * 2f, blushRadius * 1.1f)
+        )
+        // 右面颊红晕
+        drawOval(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFFF4081).copy(alpha = blushAlpha * 0.7f),
+                    Color(0xFFFF80AB).copy(alpha = blushAlpha * 0.35f),
+                    Color.Transparent
+                ),
+                center = Offset(cx + 25f * s, cheekY),
+                radius = blushRadius
+            ),
+            topLeft = Offset(cx + 25f * s - blushRadius, cheekY - blushRadius * 0.55f),
+            size = Size(blushRadius * 2f, blushRadius * 1.1f)
+        )
+
+        // 双颊经典 45° 萌系三斜线
+        for (i in -1..1) {
+            val ox = i * 4.5f * s
+            drawLine(
+                color = Color(0xFFF50057).copy(alpha = blushAlpha * 0.8f),
+                start = Offset(cx - 25f * s + ox - 3f * s, cheekY - 3.5f * s),
+                end = Offset(cx - 25f * s + ox + 3f * s, cheekY + 3.5f * s),
+                strokeWidth = 1.3f * s,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = Color(0xFFF50057).copy(alpha = blushAlpha * 0.8f),
+                start = Offset(cx + 25f * s + ox - 3f * s, cheekY - 3.5f * s),
+                end = Offset(cx + 25f * s + ox + 3f * s, cheekY + 3.5f * s),
+                strokeWidth = 1.3f * s,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+
+    // 2. 傲娇鼓颊与额头生气青筋 (Pouty Cheek Puff & 💢 Anger Mark)
+    if (poutIntensity > 0.05f) {
+        val poutAlpha = (0.85f * poutIntensity).coerceIn(0.2f, 0.95f)
+        // 鼓颊软肉微光
+        drawCircle(
+            color = Color(0xFFFF80AB).copy(alpha = poutAlpha * 0.45f),
+            radius = 10f * s,
+            center = Offset(cx - 30f * s, cheekY + 2f * s)
+        )
+        drawCircle(
+            color = Color(0xFFFF80AB).copy(alpha = poutAlpha * 0.45f),
+            radius = 10f * s,
+            center = Offset(cx + 30f * s, cheekY + 2f * s)
+        )
+        // 傲娇小噘嘴 (圆嘟嘟小口)
+        drawOval(
+            color = Color(0xFFE91E63).copy(alpha = poutAlpha * 0.9f),
+            topLeft = Offset(cx - 3.5f * s, mouthY - 2.5f * s),
+            size = Size(7f * s, 5f * s)
+        )
+
+        // 额角二次元 💢 十字青筋符文 (带心跳轻微缩放)
+        val angerMarkX = cx + 38f * s
+        val angerMarkY = topY + 95f * s
+        val markSize = 7f * s * emotePulse
+        val veinColor = Color(0xFFFF1744).copy(alpha = poutAlpha)
+        // 横向弧
+        drawLine(veinColor, Offset(angerMarkX - markSize, angerMarkY - markSize * 0.4f), Offset(angerMarkX + markSize, angerMarkY - markSize * 0.4f), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
+        drawLine(veinColor, Offset(angerMarkX - markSize, angerMarkY + markSize * 0.4f), Offset(angerMarkX + markSize, angerMarkY + markSize * 0.4f), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
+        // 纵向弧
+        drawLine(veinColor, Offset(angerMarkX - markSize * 0.4f, angerMarkY - markSize), Offset(angerMarkX - markSize * 0.4f, angerMarkY + markSize), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
+        drawLine(veinColor, Offset(angerMarkX + markSize * 0.4f, angerMarkY - markSize), Offset(angerMarkX + markSize * 0.4f, angerMarkY + markSize), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
+    }
+
+    // 3. 打瞌睡与打哈欠 (Sleepy Half-closed Eyes & Yawn Mouth & Zzz Bubbles)
+    if (sleepIntensity > 0.05f) {
+        val sleepAlpha = (0.90f * sleepIntensity).coerceIn(0.2f, 0.98f)
+        val skinToneColor = Color(0xFFFFF2EB)
+
+        // 1) 困倦上眼睑半闭遮罩 (遮住上半部分瞳孔，呈现朦胧半醒的慵懒大叔态)
+        drawArc(
+            color = skinToneColor.copy(alpha = sleepAlpha * 0.92f),
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(leftEyeX - 10f * s, eyeBaseY - 11f * s),
+            size = Size(20f * s, 14f * s)
+        )
+        drawArc(
+            color = skinToneColor.copy(alpha = sleepAlpha * 0.92f),
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(rightEyeX - 10f * s, eyeBaseY - 11f * s),
+            size = Size(20f * s, 14f * s)
+        )
+
+        // 柔和微垂的眼睫毛曲线描边
+        drawArc(
+            color = Color(0xFF5D4037).copy(alpha = sleepAlpha),
+            startAngle = 190f,
+            sweepAngle = 160f,
+            useCenter = false,
+            topLeft = Offset(leftEyeX - 10f * s, eyeBaseY - 8f * s),
+            size = Size(20f * s, 12f * s),
+            style = Stroke(width = 1.8f * s, cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = Color(0xFF5D4037).copy(alpha = sleepAlpha),
+            startAngle = 190f,
+            sweepAngle = 160f,
+            useCenter = false,
+            topLeft = Offset(rightEyeX - 10f * s, eyeBaseY - 8f * s),
+            size = Size(20f * s, 12f * s),
+            style = Stroke(width = 1.8f * s, cap = StrokeCap.Round)
+        )
+
+        // 眼角一抹困倦小晶莹微泪滴
+        drawCircle(
+            color = Color(0xCC64B5F6),
+            radius = 1.6f * s,
+            center = Offset(leftEyeX + 9f * s, eyeBaseY + 3f * s)
+        )
+        drawCircle(
+            color = Color(0xCC64B5F6),
+            radius = 1.6f * s,
+            center = Offset(rightEyeX + 9f * s, eyeBaseY + 3f * s)
+        )
+
+        // 2) 打哈欠软萌小张口 (随呼吸周期张合)
+        val yawnStretch = (0.7f + 0.3f * kotlin.math.sin(drowsyCycle)).coerceIn(0.5f, 1.0f)
+        val mouthW = 8f * s * yawnStretch
+        val mouthH = 9f * s * yawnStretch
+        drawOval(
+            color = Color(0xFFE57373).copy(alpha = sleepAlpha * 0.95f),
+            topLeft = Offset(cx - mouthW * 0.5f, mouthY - mouthH * 0.5f),
+            size = Size(mouthW, mouthH)
+        )
+        drawOval(
+            color = Color(0xFFEF9A9A).copy(alpha = sleepAlpha * 0.85f),
+            topLeft = Offset(cx - mouthW * 0.35f, mouthY - mouthH * 0.3f),
+            size = Size(mouthW * 0.7f, mouthH * 0.6f)
+        )
+
+        // 3) 梦幻漂浮 Zzz 睡眠气泡 (向上缓动渐隐)
+        val bubbleBaseX = cx + 46f * s
+        val bubbleBaseY = topY + 48f * s
+        for (k in 0..2) {
+            val phase = (drowsyCycle + k * 1.8f) % (2 * Math.PI.toFloat())
+            val progress = phase / (2 * Math.PI.toFloat())
+            val by = bubbleBaseY - progress * 42f * s
+            val bx = bubbleBaseX + kotlin.math.sin(progress * 5f) * 6f * s
+            val bRadius = (3.5f + k * 2.2f) * s * (0.8f + progress * 0.4f)
+            val bAlpha = ((1.0f - progress) * 0.75f * sleepAlpha).coerceIn(0f, 0.85f)
+
+            if (bAlpha > 0.05f) {
+                drawCircle(
+                    color = Color(0xFF00E5FF).copy(alpha = bAlpha * 0.25f),
+                    radius = bRadius,
+                    center = Offset(bx, by)
+                )
+                drawCircle(
+                    color = Color(0xFF00E5FF).copy(alpha = bAlpha * 0.7f),
+                    radius = bRadius,
+                    center = Offset(bx, by),
+                    style = Stroke(width = 1.0f * s)
+                )
+                // 气泡高光
+                drawCircle(
+                    color = Color.White.copy(alpha = bAlpha * 0.85f),
+                    radius = bRadius * 0.3f,
+                    center = Offset(bx - bRadius * 0.35f, by - bRadius * 0.35f)
+                )
+            }
+        }
+    } else if (isSmugMode) {
+        // 4. 得意自信叉腰与眨眼微笑 (Smug Winking & Golden Sparkles ✨)
+        // 左眼眨成上扬的俏皮弯月弧线 ^
+        drawArc(
+            color = Color(0xFF4A148C),
+            startAngle = 200f,
+            sweepAngle = 140f,
+            useCenter = false,
+            topLeft = Offset(leftEyeX - 9f * s, eyeBaseY - 6f * s),
+            size = Size(18f * s, 10f * s),
+            style = Stroke(width = 2.2f * s, cap = StrokeCap.Round)
+        )
+        // 右眼大放异彩
+        drawHighResGazeFocus(
+            cx = cx,
+            topY = topY,
+            charW = charW,
+            charH = charH,
+            s = s,
+            visualState = visualState
+        )
+        // 微微挑起的前辈得意嘴角
+        drawArc(
+            color = Color(0xFFD81B60),
+            startAngle = 10f,
+            sweepAngle = 160f,
+            useCenter = false,
+            topLeft = Offset(cx - 5f * s, mouthY - 3f * s),
+            size = Size(10f * s, 6f * s),
+            style = Stroke(width = 1.8f * s, cap = StrokeCap.Round)
+        )
+
+        // 4 颗围绕闪耀的四角星芒粒子 (Sparkle Stars)
+        val starPositions = listOf(
+            Offset(cx - 55f * s, topY + 80f * s),
+            Offset(cx + 52f * s, topY + 75f * s),
+            Offset(cx - 48f * s, topY + 160f * s),
+            Offset(cx + 50f * s, topY + 155f * s)
+        )
+        for ((idx, pos) in starPositions.withIndex()) {
+            val rot = sparkleAngle + idx * 45f
+            val starRadius = (5f + (idx % 2) * 2.5f) * s
+            withTransform({
+                rotate(degrees = rot, pivot = pos)
+            }) {
+                // 绘制四角星
+                val starPath = Path().apply {
+                    moveTo(pos.x, pos.y - starRadius)
+                    cubicTo(pos.x, pos.y, pos.x, pos.y, pos.x + starRadius, pos.y)
+                    cubicTo(pos.x, pos.y, pos.x, pos.y, pos.x, pos.y + starRadius)
+                    cubicTo(pos.x, pos.y, pos.x, pos.y, pos.x - starRadius, pos.y)
+                    cubicTo(pos.x, pos.y, pos.x, pos.y, pos.x, pos.y - starRadius)
+                    close()
+                }
+                drawPath(starPath, Color(0xFFFFD54F).copy(alpha = 0.90f))
+                drawPath(starPath, Color.White.copy(alpha = 0.95f), style = Stroke(width = 1.0f * s))
+            }
+        }
+    } else {
+        // 5. 默认状态：澄澈双瞳视线追踪 (Eye Contact Tracking)
+        drawHighResGazeFocus(
+            cx = cx,
+            topY = topY,
+            charW = charW,
+            charH = charH,
+            s = s,
+            visualState = visualState
+        )
+    }
 }
