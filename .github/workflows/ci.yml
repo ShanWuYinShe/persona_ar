@@ -65,6 +65,15 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required SDK platform
+        run: |
+          # Filament 1.81 要求 compileSdk 37；SDK 仓库以次版本包名发布 API 37（platforms;android-37.0）
+          sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0"
+          yes | sdkmanager --licenses > /dev/null
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
