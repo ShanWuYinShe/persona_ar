@@ -93,13 +93,20 @@ python run.py
 
 > **提示**：服务内置了高拟真二次元情感大脑与离线规则库，即使不配置外部 API Key 也能开箱畅快体验！如需接入真实外部大语言模型，只需在 `docker-compose.yml` 或环境变量中填入 `LLM_API_KEY`（支持 DeepSeek / OpenAI 等）。
 
-### 2. 构建与运行 Android 客户端
+### 2. 下载预编译 APK（推荐）
+
+项目的 [GitHub Releases](../../releases) 提供每个正式版本（`v*` tag）的 Release APK：
+下载 `persona-ar-vX.Y.Z.apk` 直接安装即可（默认使用 Android 调试密钥签名，可正常安装；
+如需正式分发密钥请联系维护者）。
+
+### 3. 本地构建与运行 Android 客户端
 
 1. 打开 Android Studio，选择 **Open** 并导入 `android` 目录。
 2. 确保已连接真机或启动 Android 模拟器（推荐 API 26+）。
 3. 运行构建：
    - 如果使用 Android 模拟器，App 默认自动连接宿主机 `http://10.0.2.2:8000/`。
    - 如果使用真机运行，请确保手机与电脑处于同一局域网 Wi-Fi，在 App 顶部齿轮【设置】中将服务器地址修改为 `http://<电脑局域网IP>:8000/`。
+4. 构建 Release APK：`cd android && ./gradlew assembleRelease`，产物在 `app/build/outputs/apk/release/app-release.apk`。
 
 ---
 
