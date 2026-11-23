@@ -86,6 +86,11 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Run Android JVM Unit Tests（骨骼动画/表情数学/姿态解算）
+        working-directory: ./android
+        run: |
+          ./gradlew testDebugUnitTest --no-daemon --max-workers=2 --stacktrace
+
       - name: Build Android Release（验证签名配置）
         working-directory: ./android
         run: |

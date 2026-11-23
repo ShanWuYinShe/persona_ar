@@ -107,6 +107,10 @@ data class Quaternion3D(
     companion object {
         val IDENTITY = Quaternion3D(0f, 0f, 0f, 1f)
 
+        /**
+         * 欧拉角（度）→ 四元数，采用本项目的 **Y-up** 约定：
+         * pitch 绕 X（点头）、yaw 绕 Y（左右转头）、roll 绕 Z（侧倾），组合顺序 yaw → pitch → roll。
+         */
         fun fromEulerDegrees(pitch: Float, yaw: Float, roll: Float): Quaternion3D {
             val p = (pitch * PI / 360f).toFloat()
             val y = (yaw * PI / 360f).toFloat()
@@ -114,12 +118,10 @@ data class Quaternion3D(
             val cp = cos(p); val sp = sin(p)
             val cy = cos(y); val sy = sin(y)
             val cr = cos(r); val sr = sin(r)
-            return Quaternion3D(
-                w = cr * cp * cy + sr * sp * sy,
-                x = sr * cp * cy - cr * sp * sy,
-                y = cr * sp * cy + sr * cp * sy,
-                z = cr * cp * sy - sr * sp * cy
-            )
+            val qYaw = Quaternion3D(0f, sy, 0f, cy)
+            val qPitch = Quaternion3D(sp, 0f, 0f, cp)
+            val qRoll = Quaternion3D(0f, 0f, sr, cr)
+            return qRoll * qPitch * qYaw
         }
     }
 }

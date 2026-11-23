@@ -72,12 +72,12 @@ fun FilamentFigureView(
     // 模型加载：IO 线程读取 assets 字节，主线程安装到 Filament
     LaunchedEffect(scene, modelAssetPath) {
         val path = modelAssetPath ?: return@LaunchedEffect
-        val buffer = withContext(Dispatchers.IO) {
-            runCatching { scene.readAssetBuffer(path) }
-                .onFailure { Log.e(TAG, "读取模型失败: $path", it) }
+        val model = withContext(Dispatchers.IO) {
+            runCatching { scene.loadModelAsset(path) }
+                .onFailure { Log.e(TAG, "读取/解析模型失败: $path", it) }
                 .getOrNull()
         }
-        buffer?.let { scene.installAsset(it) }
+        model?.let { scene.installAsset(it) }
     }
 
     AndroidView(

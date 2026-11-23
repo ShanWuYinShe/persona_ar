@@ -1,7 +1,10 @@
 package com.persona.ar.character.filament
 
 import androidx.compose.ui.graphics.Color
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
+import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.model.TouchPart
 import com.google.android.filament.Engine
 import android.util.Log
 import com.google.android.filament.utils.Utils
@@ -81,9 +84,25 @@ data class FigureFrameState(
     /** 桌面支撑置信度 (1 坚实桌面 ~ 0 悬空) 与悬空离地比例，影响接触阴影强度 */
     val surfaceSupportConfidence: Float = 1f,
     val dangleAirDistance: Float = 0f,
-    /** 当前动作（IDLE / WAVE / NOD / BOW / JUMP / SLEEP 等），驱动程序化骨骼动画 */
+    /** 当前动作（IDLE / WAVE / NOD / BOW / JUMP / SLEEP 等），驱动全身骨骼动画 */
     val action: ActionType = ActionType.IDLE,
-    /** 说话口型幅度 (0..1)，驱动下颌与头部微动 */
+    /** 动作开始时刻（System.nanoTime，与 timeNanos 同源；0 表示无动作） */
+    val actionStartedAtNanos: Long = 0L,
+    /** 当前情绪：驱动体态（害羞低头 / 难过垂肩 / 得意挺胸等）与面部表情 */
+    val emotion: EmotionType = EmotionType.NEUTRAL,
+    /** 服务端下发的表情名（SMILE / WINK / BLUSH_FACE / CRY / CURIOUS / POUT / SURPRISED） */
+    val expression: String = "SMILE",
+    /** 当前体态（站立 / 桌面边缘垂腿坐姿） */
+    val stance: SkeletonStance = SkeletonStance.STANDING,
+    /** 视线注视微偏移 (-1..1)，来自相机与角色的相对方位 */
+    val gazeX: Float = 0f,
+    val gazeY: Float = 0f,
+    /** 拖拽/旋转惯性摆角（度），驱动身体侧倾与头发甩动 */
+    val inertialSwayAngle: Float = 0f,
+    /** 触摸反应部位与开始时刻（摸头/戳脸/牵手/拥抱），驱动专属全身反应动作 */
+    val touchReaction: TouchPart? = null,
+    val touchReactionStartedAtNanos: Long = 0L,
+    /** 说话口型幅度 (0..1，来自真实音频振幅)，驱动口型 morph 与头部微动 */
     val lipSyncAmplitude: Float = 0f,
     /** 帧时间 (纳秒)，驱动呼吸 / 待机 / 动作骨骼动画 */
     val timeNanos: Long = 0L

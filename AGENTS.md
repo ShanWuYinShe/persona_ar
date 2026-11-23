@@ -20,6 +20,17 @@
 - 3D 资产：`assets/models/<persona>/figure.glb`，由 `android/tools/prepare_model.py` 从 VRM 转换（剥离 `KHR_materials_unlit` 走 PBR 受光，眼睛材质保留 unlit；删 VRM 扩展与孤儿贴图）。模型清单用 `PersonaModelManifest.modelAsset` 声明；无 3D 资产的人格自动回退 2.5D Canvas 渲染。
 - 模型入库前必须核实并记录许可证（见 `assets/models/hoshino/README.md`）；禁止提交未核实许可证的模型。
 - 骨骼姿态修正：Filament `TransformManager` 矩阵是相对父节点的完整 4×4，旋转必须按 `T · R` 重组（不能 `R · restMatrix`，否则绕原点旋转把骨骼甩飞）。
+- 骨骼动画（`com.persona.ar.character.animation`）：`GltfRigParser` 从 GLB 读取节点层级 / skins / inverseBindMatrices；`FigureAnimator` 叠加体态（站姿 / 桌沿垂腿坐）、待机呼吸、情绪体态、全部 `ActionType`（WAVE/NOD/SHAKE_HEAD/BOW/JUMP/POUT/BLUSH/YAWN/SLEEP/SMUG/SIT）、4 种触摸反应与面部表情；`PoseSolver` 做 FK 并按 gltfio 同款公式算蒙皮矩阵。
+- **gltfio 1.81 起蒙皮矩阵不再从 TransformManager 自动推导**：必须每帧 `RenderableManager.setBonesAsMatrices(rci, bones)` 显式上传 `inverse(renderableWorld) · jointWorld · inverseBindMatrix`，否则模型永远停在 T-pose（表现就是「手臂放不下来 / 动作不生效」）。
+- 表情与口型：Face 网格带 VRM morph（`ALL_/BRW_/EYE_/MTH_*`），用 `RenderableManager.setMorphWeights` 驱动表情预设、随机眨眼与 `MTH_A` 口型；口型振幅来自 `AudioPlayer` 的 `Visualizer` 真实音频 RMS，失败时回退模拟波形。
+- 动作时序：时长统一定义在 `ActionTiming`；`PersonaViewModel` 以 `System.nanoTime()` 记录动作开始时刻，`FigureScene` 用 Choreographer 帧时间计算进度，动作播完自动回落 IDLE。设置页「3D 动作演出预览」是所有动作的真机回归入口。
+- 3D 蒙皮/表情/动作相关改动必须在 JVM 单测（`android/app/src/test/.../animation`）覆盖纯数学与动画曲线，`./gradlew :app:testDebugUnitTest` 全绿；CI 已加入该任务。
+
+## 语音合成（TTS）
+- 默认 `TTS_PROVIDER=edge`：使用微软 Edge 在线神经网络语音（免费、无需 key），Go 依赖 `github.com/wujunwei928/edge-tts-go` 固定在包含 Sec-MS-GEC v2 修复的主分支提交（旧 tag 的 v1 令牌会被服务端 403 拒绝，升级前先跑一次真实网络冒烟）。
+- 情绪韵律（rate/pitch/volume）与好感度微调集中在 `server/internal/tts/prosody.go`；合成前文本清洗在 `text_clean.go`（只影响语音，不改动返回给客户端的显示文本）。
+- 缓存目录 `server/data/tts_cache/v2/<provider>/<format>/`，key 含 voice/emotion/rate/pitch/volume/清洗后文本；命中前校验文件大小与音频头，损坏或旧版假缓存自动清理。合成失败必须返回 `nil` 让客户端回退端侧 TTS，**禁止返回占位假音频**。
+- 可选 `TTS_PROVIDER=openai` + `TTS_BASE_URL/TTS_API_KEY/TTS_MODEL/TTS_OPENAI_VOICE` 接入 OpenAI 兼容 `/audio/speech`；未配置 key 自动回退 edge。容器需出网访问 `speech.platform.bing.com`，受限网络用 `TTS_PROXY` 注入代理。
 
 ## 验证分工与秒级检查
 - 重任务（全量构建、打包、E2E、Docker 镜像构建）由 GitHub Actions 执行，不在本地执行。

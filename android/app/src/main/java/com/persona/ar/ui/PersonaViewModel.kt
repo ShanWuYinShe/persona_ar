@@ -11,6 +11,7 @@ import com.persona.ar.ar.ARTrackingStatus
 import com.persona.ar.ar.SensorTiltHelper
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
+import com.persona.ar.character.animation.ActionTiming
 import com.persona.ar.character.loader.PersonaModelManager
 import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.api.ApiClient
@@ -21,6 +22,7 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
+import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
@@ -60,12 +62,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             modelManager.activeModel.collect { active ->
                 _uiState.update { current ->
-                    // 拥 3D 手办资产的人格默认进入真 3D 模式：启动即渲染 Filament 手办，而不是先闪一下 2.5D 贴图。
+                    // 拥有真 3D 手办资产的人格默认进入 3D 模式：Filament PBR 手办 + 全动作骨骼动画 + VRM 表情/口型，
+                    // 立体光影与肢体动作都优于 2.5D 立绘旋转；没有 3D 资产的人格自动回退 2.5D 逐帧立绘。
                     // 仅当用户尚未手动切换过模式 (arModeExplicitlySet=false) 时才跟随人格能力自动切换。
-                    // 默认走 2.5D：预渲染的逐帧动作精灵表（idle/wave/bow/yawn/shy/nod/sit）只在此模式生效，
-                    // 动作质量远优于 3D 骨骼的程序化模拟。拥有 3D 手办资产的人格仍可手动切到 ARCORE_3D 看立体版。
+                    val hasTrue3D = active.modelType == PersonaModelType.GLTF_3D && !active.modelAsset.isNullOrBlank()
                     val nextMode = when {
                         current.arModeExplicitlySet -> current.arMode
+                        hasTrue3D -> ARMode.ARCORE_3D
                         else -> ARMode.BILLBOARD_2_5D
                     }
                     current.copy(
@@ -96,17 +99,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun playPersonaVoice(audioBase64: String?, fallbackText: String) {
+    private fun playPersonaVoice(audioBase64: String?, fallbackText: String, emotion: EmotionType = EmotionType.NEUTRAL) {
         val anchor = _uiState.value.spatialAnchor
         audioPlayer.updateSpatialAudio(anchor.screenX, anchor.scaleFactor)
         if (!audioBase64.isNullOrEmpty()) {
-            audioPlayer.playAudioBase64(audioBase64)
+            // 服务端真人神经网络语音；音频损坏/播放失败时 AudioPlayer 自动用 fallbackText 回退端侧 TTS
+            audioPlayer.playAudioBase64(audioBase64, emotion.name, fallbackText)
         } else {
-            audioPlayer.speakTextFallback(fallbackText)
+            audioPlayer.speakTextFallback(fallbackText, emotion.name)
         }
     }
 
     private fun setupAudioPlayer() {
+        // 服务端语音播放失败（网络返回损坏音频/解码失败）时，AudioPlayer 已自动回退端侧 TTS，这里只记录
+        audioPlayer.onPlaybackError = { reason ->
+            android.util.Log.w("PersonaViewModel", "服务端语音播放失败，已回退端侧 TTS: " + reason)
+        }
         audioPlayer.onAmplitudeUpdate = { amplitude ->
             _uiState.update { current ->
                 current.copy(
@@ -173,6 +181,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         wsClient.onResponseComplete = { respText, emotion, action, expr, audioBase64, affinity, mood ->
+            val actionStartNanos = System.nanoTime()
             _uiState.update { current ->
                 val personaMsg = ChatMessage(
                     sender = MessageSender.PERSONA,
@@ -199,6 +208,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     visualState = current.visualState.copy(
                         emotion = emotion,
                         action = action,
+                        actionStartedAtNanos = actionStartNanos,
                         expression = expr,
                         highResPose = pose,
                         blushIntensity = if (pose == "SHY") 0.85f else 0f,
@@ -212,9 +222,115 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
-            playPersonaVoice(audioBase64, respText)
+            playPersonaVoice(audioBase64, respText, emotion)
+            scheduleActionReset(action, actionStartNanos)
             addBondExp(3)
         }
+    }
+
+    /** 动作对应的 2.5D 高精微表情差分姿态（3D 表情由 VRM morph 独立驱动） */
+    private fun poseForAction(action: ActionType): String = when (action) {
+        ActionType.BLUSH -> "SHY"
+        ActionType.POUT -> "POUT"
+        ActionType.SLEEP, ActionType.YAWN -> "SLEEPY"
+        ActionType.SMUG -> "SMUG"
+        else -> "DEFAULT"
+    }
+
+    /** 动作对应的情绪（让 3D 体态/表情在动作期间同步，而不是只动肢体） */
+    private fun emotionForAction(action: ActionType): EmotionType? = when (action) {
+        ActionType.WAVE, ActionType.JUMP, ActionType.SMUG -> EmotionType.JOY
+        ActionType.BLUSH -> EmotionType.SHY
+        ActionType.POUT, ActionType.SHAKE_HEAD -> EmotionType.ANGRY
+        ActionType.BOW -> EmotionType.SHY
+        ActionType.YAWN, ActionType.SLEEP -> EmotionType.SLEEPY
+        ActionType.NOD -> EmotionType.JOY
+        else -> null
+    }
+
+    /**
+     * 动作自然结束后的回落：把 action 复位到 IDLE 并清掉 2.5D 微表情差分。
+     * 以「动作开始时间戳」作为令牌，避免连续触发动作时旧协程把新动作清掉。
+     */
+    private fun scheduleActionReset(action: ActionType, startedAtNanos: Long) {
+        val duration = ActionTiming.durationOf(action)
+        if (duration <= 0f) return
+        viewModelScope.launch {
+            delay((duration * 1000f).toLong() + 120L)
+            _uiState.update { current ->
+                if (current.visualState.actionStartedAtNanos != startedAtNanos) {
+                    current
+                } else {
+                    current.copy(
+                        visualState = current.visualState.copy(
+                            action = ActionType.IDLE,
+                            actionStartedAtNanos = 0L,
+                            highResPose = "DEFAULT",
+                            blushIntensity = 0f,
+                            poutIntensity = 0f,
+                            sleepinessFactor = 0f,
+                            smugTiltDegrees = 0f
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 手动触发一次动作演出：设置页「3D 动作预览」与对话/触摸共用。
+     * 既方便用户直接欣赏 3D 手办的全部动作，也作为真机动作回归验证入口。
+     */
+    fun previewAction(action: ActionType) {
+        if (action == ActionType.SIT) {
+            setSkeletonStance(SkeletonStance.SITTING)
+            return
+        }
+        if (action == ActionType.IDLE) {
+            // 待机复位：清空动作、触摸反应与 2.5D 微表情差分，回到自然呼吸状态
+            _uiState.update { current ->
+                current.copy(
+                    visualState = current.visualState.copy(
+                        action = ActionType.IDLE,
+                        actionStartedAtNanos = 0L,
+                        highResPose = "DEFAULT",
+                        blushIntensity = 0f,
+                        poutIntensity = 0f,
+                        sleepinessFactor = 0f,
+                        smugTiltDegrees = 0f,
+                        emotion = EmotionType.NEUTRAL,
+                        expression = "SMILE",
+                        touchReaction = null,
+                        touchReactionStartedAtNanos = 0L
+                    )
+                )
+            }
+            return
+        }
+        val startedAt = System.nanoTime()
+        val pose = poseForAction(action)
+        _uiState.update { current ->
+            current.copy(
+                visualState = current.visualState.copy(
+                    action = action,
+                    actionStartedAtNanos = startedAt,
+                    highResPose = pose,
+                    blushIntensity = if (pose == "SHY") 0.85f else 0f,
+                    poutIntensity = if (pose == "POUT") 0.9f else 0f,
+                    sleepinessFactor = if (pose == "SLEEPY") 0.88f else 0f,
+                    smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f,
+                    emotion = emotionForAction(action) ?: current.visualState.emotion,
+                    expression = when (action) {
+                        ActionType.WAVE, ActionType.NOD, ActionType.JUMP, ActionType.BOW -> "SMILE"
+                        ActionType.BLUSH, ActionType.SMUG -> "BLUSH_FACE"
+                        ActionType.POUT, ActionType.SHAKE_HEAD -> "POUT"
+                        ActionType.YAWN, ActionType.SLEEP -> "SLEEPY"
+                        else -> current.visualState.expression
+                    }
+                )
+            )
+        }
+        scheduleActionReset(action, startedAt)
     }
 
     private fun setupSensors() {
@@ -312,6 +428,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(isLoading = false) }
 
             result.onSuccess { resp ->
+                val actionStartNanos = System.nanoTime()
                 val personaMessage = ChatMessage(
                     sender = MessageSender.PERSONA,
                     text = resp.text,
@@ -324,6 +441,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         visualState = current.visualState.copy(
                             emotion = resp.emotion,
                             action = resp.action,
+                            actionStartedAtNanos = actionStartNanos,
                             expression = resp.expression
                         ),
                         personaStatus = current.personaStatus?.copy(
@@ -332,7 +450,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-                playPersonaVoice(resp.audioBase64, resp.text)
+                playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
+                scheduleActionReset(resp.action, actionStartNanos)
                 addBondExp(3)
             }
         }
@@ -383,6 +502,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     timestamp = System.currentTimeMillis()
                 )
 
+                val actionStartNanos = System.nanoTime()
                 _uiState.update { current ->
                     val pose = when (resp.emotion) {
                         EmotionType.SHY -> "SHY"
@@ -403,6 +523,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         visualState = current.visualState.copy(
                             emotion = resp.emotion,
                             action = resp.action,
+                            actionStartedAtNanos = actionStartNanos,
                             expression = resp.expression,
                             highResPose = pose,
                             blushIntensity = if (pose == "SHY") 0.85f else 0f,
@@ -416,7 +537,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-                playPersonaVoice(resp.audioBase64, resp.text)
+                playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
+                scheduleActionReset(resp.action, actionStartNanos)
                 addBondExp(4)
             }.onFailure {
                 _uiState.update { it.copy(isLoading = false) }
@@ -433,6 +555,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
 
         // 1. 端侧即时高精微表情与姿态反馈 (Zero GMS 毫秒级零延迟触发)
+        //    3D 手办额外记录触摸反应开始时刻，由 FigureAnimator 播放专属全身反应动作
+        val touchReactionStartNanos = System.nanoTime()
         val reaction = when (part) {
             TouchPart.HEAD -> TouchReaction(pose = "SHY", blush = 0.90f, pout = 0f, smug = 0f)
             TouchPart.CHEEK -> TouchReaction(pose = "POUT", blush = 0f, pout = 0.95f, smug = 0f)
@@ -447,9 +571,25 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     blushIntensity = reaction.blush,
                     poutIntensity = reaction.pout,
                     smugTiltDegrees = reaction.smug,
-                    sleepinessFactor = 0f // 触摸唤醒
+                    sleepinessFactor = 0f, // 触摸唤醒
+                    touchReaction = part,
+                    touchReactionStartedAtNanos = touchReactionStartNanos
                 )
             )
+        }
+
+        // 3D 触摸反应 2.6 秒后自动复位（以开始时间戳为令牌，避免连点误清）
+        viewModelScope.launch {
+            delay(2700L)
+            _uiState.update { current ->
+                if (current.visualState.touchReactionStartedAtNanos != touchReactionStartNanos) current
+                else current.copy(
+                    visualState = current.visualState.copy(
+                        touchReaction = null,
+                        touchReactionStartedAtNanos = 0L
+                    )
+                )
+            }
         }
 
         // 3.5 秒后表情平滑自然恢复
@@ -517,7 +657,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 }
-                playPersonaVoice(resp.audioBase64, resp.text)
+                playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
                 addBondExp(expGain)
             }
         }
@@ -533,7 +673,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     highResPose = "SLEEPY",
                     sleepinessFactor = 0.92f,
                     emotion = EmotionType.SLEEPY,
-                    action = ActionType.SLEEP
+                    action = ActionType.SLEEP,
+                    actionStartedAtNanos = System.nanoTime()
                 )
             )
         }
@@ -847,6 +988,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     isMacroProximity = false,
                     surfaceOcclusionBottomCutoff = 0f
                 )
+            )
+        }
+    }
+
+    /** 直接设置 3D 骨骼体态（设置页「站立姿态 / 桌沿垂腿坐」按钮与动作预览共用） */
+    fun setSkeletonStance(stance: SkeletonStance) {
+        _uiState.update { current ->
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(skeletonStance = stance),
+                visualState = current.visualState.copy(skeletonStance = stance)
             )
         }
     }

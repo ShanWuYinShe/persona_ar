@@ -34,6 +34,7 @@ import com.persona.ar.ar.ARMode
 import com.persona.ar.ar.CameraXView
 import com.persona.ar.character.Character3DRenderer
 import com.persona.ar.character.CharacterCanvasRenderer
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.ui.components.ChatOverlay
 import com.persona.ar.ui.components.MemoryNotebookDialog
 import com.persona.ar.ui.components.PersonaStoreDialog
@@ -441,7 +442,10 @@ fun PersonaMainScreen(
                 },
                 onUpdateAsrConfig = { provider, baseUrl, apiKey, model ->
                     viewModel.updateAsrConfig(provider, baseUrl, apiKey, model)
-                }
+                },
+                onPreviewAction = { action -> viewModel.previewAction(action) },
+                onStand = { viewModel.setSkeletonStance(SkeletonStance.STANDING) },
+                onSit = { viewModel.setSkeletonStance(SkeletonStance.SITTING) }
             )
         }
     }

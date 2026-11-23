@@ -3,6 +3,7 @@
 .workwork/
 
 # Gradle & Android
+android/.kotlin/
 *.iml
 .gradle
 /local.properties

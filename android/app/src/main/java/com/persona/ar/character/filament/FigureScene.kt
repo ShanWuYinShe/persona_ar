@@ -28,7 +28,12 @@ import com.google.android.filament.gltfio.FilamentAsset
 import com.google.android.filament.gltfio.MaterialProvider
 import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
-import com.persona.ar.data.model.ActionType
+import com.persona.ar.character.animation.AnimationInput
+import com.persona.ar.character.animation.FaceRig
+import com.persona.ar.character.animation.FigureAnimator
+import com.persona.ar.character.animation.GltfRig
+import com.persona.ar.character.animation.GltfRigParser
+import com.persona.ar.character.animation.PoseSolver
 import com.persona.ar.data.model.TouchPart
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -73,9 +78,6 @@ class FigureScene(
         private const val SHADOW_CATCHER_ASSET = "materials/shadow_catcher.filamat"
         private const val SHADOW_MAP_SIZE = 2048
         private const val SHADOW_FAR_METERS = 2.5f
-        private const val BREATH_PERIOD_SECONDS = 3.8f
-        /** 动作循环速率（Hz）：一个完整动作周期耗时 1/ACTION_SPEED 秒 */
-        private const val ACTION_SPEED = 0.85f
 
         // 曝光模型：EV100 = EV_BASE + EV_RANGE × 环境照度；快门 / ISO 固定，由 EV 反推光圈
         private const val EV_BASE = 7.5
@@ -110,8 +112,38 @@ class FigureScene(
     private val assetPivot = FloatArray(3)
     private val headEntities = HashSet<Int>()
     private val bodyEntities = HashSet<Int>()
-    private val boneDrivers = ArrayList<BoneDriver>()
     private val readyRenderables = IntArray(64)
+
+    // ---- 骨骼动画 / 蒙皮 / 表情（gltfio 1.81 需应用侧计算蒙皮矩阵并显式上传）----
+    private var rig: GltfRig? = null
+    private var poseSolver: PoseSolver? = null
+    private var animator: FigureAnimator? = null
+    private val animationInput = AnimationInput()
+    private val skinnedRenderables = ArrayList<SkinnedRenderable>()
+    private val faceRenderables = ArrayList<FaceRenderable>()
+    private val boundMeshEntities = HashSet<Int>()
+    private val boundFaceEntities = HashSet<Int>()
+    private var lastAnimFrameNanos = 0L
+    private var currentAirborne = 0f
+    private var lastPitchDegrees = 0f
+    private var lastRollDegrees = 0f
+
+    /** 一个蒙皮渲染实例（Face/Body/Hair 各一个）：每帧上传 joints*16 蒙皮矩阵 */
+    private class SkinnedRenderable(
+        val rci: Int,
+        val mesh: GltfRig.MeshNode,
+        val boneMatrices: FloatArray
+    )
+
+    /** 一个带 VRM morph 表情的渲染实例：每帧上传表情/口型/眨眼权重 */
+    private class FaceRenderable(
+        val rci: Int,
+        val faceRig: FaceRig,
+        val weights: FloatArray
+    )
+
+    /** 模型资产：GLB 直接字节缓冲 + 解析出的骨骼拓扑（读盘/解析在 IO 线程完成） */
+    class ModelAsset(val buffer: ByteBuffer, val rig: GltfRig?)
 
     // ---- 灯光 ----
     private val keyLightEntity = engine.entityManager.create()
@@ -137,49 +169,8 @@ class FigureScene(
     private val footWorld = FloatArray(3)
     private val mModel = FloatArray(16)
     private val mGround = FloatArray(16)
-    private val mRot = FloatArray(16)
-    private val mBone = FloatArray(16)
     private val projMatrix = DoubleArray(16)
     private val viewMatrix = DoubleArray(16)
-
-    /**
-     * 待机骨骼驱动：保存骨骼的静止局部变换中**平移分量**与初始旋转，每帧重组 M = T · R_pose · R_anim。
-     * 关键：Filament 的 TransformManager 矩阵是「相对父节点」的完整 4x4，旋转必须与平移按 T·R 顺序重组，
-     * 若直接把旋转矩阵与整条 restLocal 相乘（R · T），会绕世界原点旋转而把骨骼甩飞。
-     * @param restTranslation 静止局部位移（父空间）
-     * @param restRotation    静止局部旋转（通常为单位矩阵）
-     * @param poseAxis        姿态修正旋转轴（null 表示不修正，仅播放动画偏移）
-     * @param poseAngle       姿态修正角度（度）
-     */
-    private class BoneDriver(
-        val instance: Int,
-        val restTranslation: FloatArray,
-        val restRotation: FloatArray,
-        /** 骨骼语义角色，决定它响应哪类动作 */
-        val role: BoneRole,
-        val poseAxis: FloatArray? = null,
-        val poseAngle: Float = 0f
-    )
-
-    /** 骨骼在动作系统中承担的角色（按 VRoid humanoid 骨架语义划分） */
-    private enum class BoneRole {
-        CHEST, HEAD, NECK,
-        UPPER_ARM_L, UPPER_ARM_R,
-        LOWER_ARM_L, LOWER_ARM_R,
-        UPPER_LEG_L, UPPER_LEG_R,
-        LOWER_LEG_L, LOWER_LEG_R,
-        HAND_L, HAND_R
-    }
-
-    /** 单个动作在某一骨骼上的旋转量（弧度换算成度后交给 Matrix.rotateM） */
-    private class BonePose(
-        /** 绕 X 轴（人体前后俯仰：点头 / 鞠躬 / 前倾） */
-        val pitch: Float = 0f,
-        /** 绕 Y 轴（人体左右转体） */
-        val yaw: Float = 0f,
-        /** 绕 Z 轴（手臂抬落 / 身体侧倾） */
-        val roll: Float = 0f
-    )
 
     /** UiHelper 回调：Surface 生命周期 → SwapChain 管理（透明 + 4x MSAA） */
     val surfaceCallback: UiHelper.RendererCallback = object : UiHelper.RendererCallback {
@@ -275,7 +266,7 @@ class FigureScene(
 
     // ===================================================================== 资产
 
-    /** 从 assets 读取 GLB 到直接字节缓冲（供 IO 线程调用） */
+    /** 从 assets 读取任意二进制资产到直接字节缓冲（供 IO 线程调用） */
     fun readAssetBuffer(assetPath: String): ByteBuffer {
         val stream = context.assets.open(assetPath)
         val bytes = stream.use { it.readBytes() }
@@ -284,10 +275,22 @@ class FigureScene(
         return buffer
     }
 
-    /** 安装 GLB 手办（主线程）：解析 → 异步上传贴图 → 建立部位映射与骨骼驱动。重复调用先销毁旧资产。 */
-    fun installAsset(buffer: ByteBuffer) {
+    /**
+     * 读取 GLB 并解析骨骼拓扑（IO 线程调用）：返回直接字节缓冲 + [GltfRig]。
+     * 解析失败时 rig 为 null，退化为静态手办渲染，不影响其余功能。
+     */
+    fun loadModelAsset(assetPath: String): ModelAsset {
+        val bytes = context.assets.open(assetPath).use { it.readBytes() }
+        val parsedRig = GltfRigParser.parse(bytes)
+        val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
+        buffer.put(bytes).flip()
+        return ModelAsset(buffer, parsedRig)
+    }
+
+    /** 安装 GLB 手办（主线程）：解析 → 异步上传贴图 → 建立骨骼/蒙皮/表情绑定。重复调用先销毁旧资产。 */
+    fun installAsset(model: ModelAsset) {
         destroyAsset()
-        val newAsset = assetLoader.createAsset(buffer)
+        val newAsset = assetLoader.createAsset(model.buffer)
         if (newAsset == null) {
             Log.e(TAG, "createAsset 返回 null，GLB 解析失败")
             return
@@ -296,6 +299,10 @@ class FigureScene(
         resourceLoader.asyncBeginLoad(newAsset)
         newAsset.releaseSourceData()
         assetRootInstance = transformManager.getInstance(newAsset.root)
+        rig = model.rig
+        poseSolver = model.rig?.let { PoseSolver(it) }
+        animator = model.rig?.let { FigureAnimator(it) }
+        lastAnimFrameNanos = 0L
 
         // 枢轴与缩放：包围盒中心 XZ + 脚底 Y，使脚底落在落脚点、身高归一到默认手办身高
         val box = newAsset.boundingBox
@@ -312,59 +319,57 @@ class FigureScene(
         headEntities.addAll(newAsset.getEntitiesByPrefix("Face").toList())
         headEntities.addAll(newAsset.getEntitiesByPrefix("Hair").toList())
         bodyEntities.addAll(newAsset.getEntitiesByPrefix("Body").toList())
+        boundMeshEntities.clear()
+        boundFaceEntities.clear()
+        skinnedRenderables.clear()
+        faceRenderables.clear()
+        bindRig(newAsset)
 
-        Log.i(TAG, "asset installed: bbox=${half[0] * 2}x${half[1] * 2}x${half[2] * 2}m scale=$assetScale head=${headEntities.size} body=${bodyEntities.size} bones=${boneDrivers.size}")
+        Log.i(TAG, "asset installed: bbox=${half[0] * 2}x${half[1] * 2}x${half[2] * 2}m scale=$assetScale " +
+                "head=${headEntities.size} body=${bodyEntities.size} rigNodes=${model.rig?.nodeCount ?: 0} " +
+                "skinned=${skinnedRenderables.size} face=${faceRenderables.size}")
     }
 
-    private fun setupBoneDrivers(a: FilamentAsset) {
-        boneDrivers.clear()
-
-        /** 登记骨骼：poseAxis/poseAngle 用于把导入的 T-pose 修正为自然站姿 */
-        fun add(boneName: String, role: BoneRole, axis: FloatArray? = null, angle: Float = 0f): Boolean {
-            val entity = a.getFirstEntityByName(boneName)
-            if (entity == 0) return false
-            val instance = transformManager.getInstance(entity)
-            if (instance == 0) return false
-            val rest = transformManager.getTransform(instance, FloatArray(16))
-            // 分解：平移取第 4 列，其余 3x3 作为静止旋转（保证 T·R 重组后与原矩阵一致）
-            val translation = floatArrayOf(rest[12], rest[13], rest[14])
-            val rotation = floatArrayOf(
-                rest[0], rest[1], rest[2], 0f,
-                rest[4], rest[5], rest[6], 0f,
-                rest[8], rest[9], rest[10], 0f,
-                0f, 0f, 0f, 1f
-            )
-            boneDrivers.add(BoneDriver(instance, translation, rotation, role, axis, angle))
-            return true
+    /**
+     * 绑定骨骼蒙皮与 VRM morph 表情渲染实例。
+     *
+     * 关键：gltfio 1.81 起蒙皮矩阵不再自动从 TransformManager 推导，必须由应用侧按
+     * inverse(renderableWorld) · jointWorld · inverseBindMatrix 计算后上传，否则模型永远停在
+     * 绑定 T-pose（上一版「T-pose 手臂放不下来、动作不生效」的根因即此）。
+     */
+    private fun bindRig(a: FilamentAsset) {
+        val rig = rig ?: return
+        val rcm = engine.renderableManager
+        for (mesh in rig.meshNodes) {
+            var entity = a.getFirstEntityByName(mesh.name)
+            if (entity == 0) {
+                entity = a.getEntitiesByPrefix(mesh.name).toList().firstOrNull { it != 0 } ?: 0
+            }
+            if (entity == 0) {
+                Log.w(TAG, "蒙皮网格实体未找到: ${mesh.name}")
+                continue
+            }
+            if (!boundMeshEntities.add(entity)) continue
+            val rci = rcm.getInstance(entity)
+            if (rci == 0) continue
+            val joints = rig.skins[mesh.skinIndex].joints.size
+            skinnedRenderables.add(SkinnedRenderable(rci, mesh, FloatArray(joints * 16)))
+            Log.i(TAG, "skinned bound: ${mesh.name} joints=$joints rci=$rci")
         }
-
-        val zAxis = floatArrayOf(0f, 0f, 1f)
-
-        // ---- 躯干链（呼吸 / 前倾 / 侧倾）----
-        add("J_Bip_C_Spine", BoneRole.CHEST)
-        add("J_Bip_C_UpperChest", BoneRole.CHEST)
-        add("J_Bip_C_Neck", BoneRole.NECK)
-        add("J_Bip_C_Head", BoneRole.HEAD)
-
-        // ---- 双臂：VRM 示例模型是 T-pose，绕 Z 轴放下成自然 A-pose ----
-        // 左臂骨骼链沿 -X：绕 +Z 转 θ 时 (-1,0) → (-cosθ, -sinθ)，θ=+72° 使其向下；
-        // 右臂沿 +X：绕 +Z 转 θ 时 (1,0) → (cosθ, sinθ)，θ=-72° 使其向下。
-        add("J_Bip_L_UpperArm", BoneRole.UPPER_ARM_L, zAxis, 72f)
-        add("J_Bip_R_UpperArm", BoneRole.UPPER_ARM_R, zAxis, -72f)
-        add("J_Bip_L_LowerArm", BoneRole.LOWER_ARM_L, zAxis, 14f)
-        add("J_Bip_R_LowerArm", BoneRole.LOWER_ARM_R, zAxis, -14f)
-        add("J_Bip_L_Hand", BoneRole.HAND_L)
-        add("J_Bip_R_Hand", BoneRole.HAND_R)
-
-        // ---- 双腿：站立时笔直；坐姿动作由动作层旋转 ----
-        add("J_Bip_L_UpperLeg", BoneRole.UPPER_LEG_L)
-        add("J_Bip_R_UpperLeg", BoneRole.UPPER_LEG_R)
-        add("J_Bip_L_LowerLeg", BoneRole.LOWER_LEG_L)
-        add("J_Bip_R_LowerLeg", BoneRole.LOWER_LEG_R)
-
-        Log.i(TAG, "bone drivers=" + boneDrivers.size + " roles=" + boneDrivers.joinToString { it.role.name })
+        for (entity in a.getRenderableEntities()) {
+            if (entity in boundFaceEntities) continue
+            val names = runCatching { a.getMorphTargetNames(entity) }.getOrNull()
+            if (names == null || names.isEmpty() || names.none { it.contains("Fcl_") }) {
+                boundFaceEntities.add(entity)
+                continue
+            }
+            val rci = rcm.getInstance(entity)
+            if (rci == 0) continue
+            faceRenderables.add(FaceRenderable(rci, FaceRig(names), FloatArray(names.size)))
+            boundFaceEntities.add(entity)
+            Log.i(TAG, "face bound: ${a.getName(entity)} morphs=${names.size}")
+        }
     }
-
     private fun destroyAsset() {
         val a = asset ?: return
         resourceLoader.asyncCancelLoad()
@@ -374,7 +379,14 @@ class FigureScene(
         assetRootInstance = 0
         headEntities.clear()
         bodyEntities.clear()
-        boneDrivers.clear()
+        skinnedRenderables.clear()
+        faceRenderables.clear()
+        boundMeshEntities.clear()
+        boundFaceEntities.clear()
+        rig = null
+        poseSolver = null
+        animator = null
+        lastAnimFrameNanos = 0L
     }
 
     /** 把已就绪的 renderable 加入场景（贴图异步上传完成后逐批出现），并为其开启接触阴影接收 */
@@ -390,8 +402,8 @@ class FigureScene(
             scene.addEntities(readyRenderables.copyOf(count))
             diagRenderablesAdded += count
         }
-        // 骨骼驱动必须等 gltfio 把静止变换写入 TransformManager 之后再取，否则取到的是单位矩阵
-        if (boneDrivers.isEmpty() && diagRenderablesAdded > 0) setupBoneDrivers(a)
+        // 个别渲染实例就绪较晚时补绑定（骨骼蒙皮 / morph 表情）
+        if (rig != null && (skinnedRenderables.isEmpty() || faceRenderables.isEmpty())) bindRig(a)
         val lights = a.lightEntities
         if (lights.isNotEmpty()) scene.addEntities(lights)
     }
@@ -465,7 +477,7 @@ class FigureScene(
         updateLights(frame)
         updateGround(frame)
         updateFigure(frame)
-        updateBones(frame)
+        updateAnimation(frame)
 
         if (!renderer.beginFrame(sc, frame.timeNanos)) {
             diagFramesSkipped++
@@ -486,6 +498,8 @@ class FigureScene(
             TAG,
             "frames submitted=$diagFramesSubmitted skipped=$diagFramesSkipped renderables=$diagRenderablesAdded " +
                     "loadProgress=$progress viewport=${viewportWidth}x${viewportHeight} anchored=${asset != null} " +
+                    "skinned=${skinnedRenderables.size} face=${faceRenderables.size} " +
+                    "airborne=$currentAirborne pitch=$lastPitchDegrees roll=$lastRollDegrees " +
                     "foot=[${footWorld[0]}, ${footWorld[1]}, ${footWorld[2]}]"
         )
     }
@@ -499,8 +513,13 @@ class FigureScene(
         val aspect = viewportWidth.toDouble() / viewportHeight.toDouble()
         camera.setProjection(CAMERA_VERTICAL_FOV_DEGREES, aspect, CAMERA_NEAR, CAMERA_FAR, Camera.Fov.VERTICAL)
 
-        val pitch = Math.toRadians(f.cameraPitchDegrees.toDouble().coerceIn(0.0, 89.0))
-        val roll = Math.toRadians(f.cameraRollDegrees.toDouble())
+        lastPitchDegrees = f.cameraPitchDegrees
+        lastRollDegrees = f.cameraRollDegrees
+        // 俯仰跟随 IMU（低头看桌面时相机下俯），但横滚做「重力锁定」夹紧：
+        // 与 2.5D 立绘路径的 gravityRoll 策略保持一致，避免用户侧握手机时整个世界（含手办）被 roll 转成横躺。
+        // 限幅 18°：小角度保留真实侧倾动感，大角度（横握/平放）时手办仍然保持屏幕竖直可读。
+        val pitch = Math.toRadians(f.cameraPitchDegrees.toDouble().coerceIn(0.0, 85.0))
+        val roll = Math.toRadians(f.cameraRollDegrees.toDouble().coerceIn(-18.0, 18.0))
         // 平视：forward=(0,0,-1) up=(0,1,0) right=(1,0,0)；俯仰 p 后绕 X 轴向下转
         val fx = 0.0; val fy = -sin(pitch); val fz = -cos(pitch)
         val ux0 = 0.0; val uy0 = cos(pitch); val uz0 = -sin(pitch)
@@ -588,7 +607,8 @@ class FigureScene(
         Matrix.scaleM(mGround, 0, halfExtent, 1f, halfExtent)
         if (groundTransformInstance != 0) transformManager.setTransform(groundTransformInstance, mGround)
         // 阴影最大不透明度：暗环境更实，悬空脱离支撑时平滑消散
-        val strength = (0.80f + 0.18f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f)
+        val strength = (0.80f + 0.18f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f) *
+                (1f - currentAirborne * 0.7f)
         groundInstance?.setParameter("strength", strength)
     }
 
@@ -609,197 +629,65 @@ class FigureScene(
         transformManager.setTransform(assetRootInstance, mModel)
     }
 
-    /** 待机骨骼动画：胸腔呼吸微俯仰、头部缓慢环顾。均叠加在骨骼自身的静止局部变换之上。 */
     /**
-     * 骨骼动画主循环：三层叠加
-     *   ① 静止姿态修正（T-pose → A-pose，由 BoneDriver.poseAxis/poseAngle 表达）
-     *   ② 待机微动（呼吸起伏 + 头部缓慢环顾 + 说话时头部微俯仰）
-     *   ③ 动作层（ActionType 驱动的关节角度曲线，含起落缓动）
-     * 每根骨骼最终矩阵 = T(静止位移) · R(静止旋转) · R(姿态修正 · 待机 · 动作)。
+     * 全身骨骼动画与蒙皮上传（每帧）：
+     * 1. FigureAnimator 把体态 / 待机 / 情绪 / 动作 / 触摸反应 / 表情合成为逐骨骼角度；
+     * 2. PoseSolver 做正向运动学，按 gltfio 同款公式计算蒙皮矩阵；
+     * 3. 通过 setBonesAsMatrices 上传骨骼矩阵、setMorphWeights 上传表情/口型/眨眼权重。
+     *
+     * 时间统一使用 Choreographer 的帧时间（System.nanoTime 同源），动作起止时刻由 ViewModel 触发时记录，
+     * 因此动作时长与帧率解耦，慢帧也不会把动作「抽快」。
      */
-    private fun updateBones(f: FigureFrameState) {
-        if (boneDrivers.isEmpty() || !f.anchored) return
-        val t = f.timeNanos * 1e-9f
+    private fun updateAnimation(f: FigureFrameState) {
+        val solver = poseSolver ?: return
+        val animator = animator ?: return
 
-        // 动作进度：同一动作在 0..1 之间往复的平滑包络，避免动作瞬间跳变
-        val action = f.action
-        val actionPhase = (t * ACTION_SPEED) % 1f
-        // 归一化到 -1..1 的平滑曲线（正弦），用于周期性动作如挥手
-        val cycle = sin(actionPhase * 2f * PI.toFloat())
-        // 起落包络：动作开始时 0→1，结尾 1→0
-        val envelope = sin(actionPhase * PI.toFloat()).coerceIn(0f, 1f)
+        val dt = if (lastAnimFrameNanos == 0L) 1f / 60f
+        else ((f.timeNanos - lastAnimFrameNanos).coerceIn(0L, 200_000_000L) / 1e9f)
+        lastAnimFrameNanos = f.timeNanos
 
-        for (bd in boneDrivers) {
-            val pose = resolvePose(bd.role, action, t, cycle, envelope, f.lipSyncAmplitude)
+        animationInput.dtSeconds = dt
+        animationInput.timeSeconds = (f.timeNanos % 3_600_000_000_000L) / 1_000_000_000f
+        animationInput.action = f.action
+        animationInput.actionElapsed = elapsedSince(f.actionStartedAtNanos, f.timeNanos)
+        animationInput.emotion = f.emotion
+        animationInput.expression = f.expression
+        animationInput.lipSync = f.lipSyncAmplitude
+        animationInput.speaking = f.lipSyncAmplitude > 0.03f
+        animationInput.stance = f.stance
+        animationInput.gazeX = f.gazeX
+        animationInput.gazeY = f.gazeY
+        animationInput.inertialSway = f.inertialSwayAngle
+        animationInput.touchReaction = f.touchReaction
+        animationInput.touchElapsed = elapsedSince(f.touchReactionStartedAtNanos, f.timeNanos)
+        animator.update(animationInput)
+        currentAirborne = animator.airborne
 
-            Matrix.setIdentityM(mRot, 0)
-            // ① 姿态修正（T-pose → A-pose）
-            bd.poseAxis?.let { axis -> Matrix.rotateM(mRot, 0, bd.poseAngle, axis[0], axis[1], axis[2]) }
-            // ② + ③ 动作层（按 X 前俯仰 / Y 转体 / Z 侧倾 顺序叠加）
-            if (pose.pitch != 0f) Matrix.rotateM(mRot, 0, pose.pitch, 1f, 0f, 0f)
-            if (pose.yaw != 0f) Matrix.rotateM(mRot, 0, pose.yaw, 0f, 1f, 0f)
-            if (pose.roll != 0f) Matrix.rotateM(mRot, 0, pose.roll, 0f, 0f, 1f)
+        if (!f.anchored) return
+        solver.solve(animator.angles, animator.hipsOffsetX, animator.hipsOffsetY, animator.hipsOffsetZ)
 
-            // M = T · R_rest · R_pose/anim —— 先旋转再平移到静止位移，避免绕原点旋转
-            Matrix.multiplyMM(mBone, 0, bd.restRotation, 0, mRot, 0)
-            mBone[12] = bd.restTranslation[0]
-            mBone[13] = bd.restTranslation[1]
-            mBone[14] = bd.restTranslation[2]
-            transformManager.setTransform(bd.instance, mBone)
+        val rcm = engine.renderableManager
+        for (sr in skinnedRenderables) {
+            solver.computeSkinMatrices(sr.mesh, sr.boneMatrices)
+            rcm.setBonesAsMatrices(sr.rci, sr.boneMatrices)
+        }
+        for (fr in faceRenderables) {
+            fr.faceRig.fillWeights(
+                fr.weights,
+                animator.faceExpression,
+                animator.faceEmotion,
+                animator.blinkAmount,
+                animator.mouthOpen
+            )
+            rcm.setMorphWeights(fr.rci, fr.weights)
         }
     }
 
-    /**
-     * 按动作类型解析单根骨骼的旋转量。返回度数为单位的角度三元组。
-     * 约定：pitch = 绕 X（前俯/点头），yaw = 绕 Y（左右转），roll = 绕 Z（左右倾/手臂抬落）。
-     */
-    private fun resolvePose(
-        role: BoneRole,
-        action: ActionType,
-        t: Float,
-        cycle: Float,
-        envelope: Float,
-        lipSync: Float
-    ): BonePose {
-        // ---- 待机微动（所有动作的基础层）----
-        var pitch = 0f
-        var yaw = 0f
-        var roll = 0f
-
-        when (role) {
-            BoneRole.HEAD -> {
-                // 缓慢环顾 ±3°、轻微点头 ±1°，说话时随口型微动
-                yaw += sin(t * 0.37f) * 3.0f
-                pitch += sin(t * 0.53f) * 1.0f + lipSync * 2.5f
-            }
-            BoneRole.NECK -> {
-                pitch += sin(t * 0.41f) * 0.8f
-            }
-            BoneRole.CHEST -> {
-                // 呼吸起伏（胸腔微扩）
-                pitch += sin(t * 2f * PI.toFloat() / BREATH_PERIOD_SECONDS) * 0.9f
-            }
-            else -> Unit
-        }
-
-        // ---- 动作层：按 ActionType 叠加到对应骨骼 ----
-        when (action) {
-            ActionType.WAVE -> {
-                // 挥手：右臂抬起并绕 X 轴往复摆动
-                if (role == BoneRole.UPPER_ARM_R) {
-                    roll += -95f * envelope          // 从垂臂抬到侧平举
-                    pitch += 25f * envelope
-                }
-                if (role == BoneRole.LOWER_ARM_R) {
-                    roll += -35f * envelope
-                    pitch += cycle * 28f * envelope  // 前臂来回摆动形成挥手
-                }
-                if (role == BoneRole.HAND_R) {
-                    pitch += cycle * 18f * envelope
-                }
-                if (role == BoneRole.HEAD) {
-                    roll += 4f * envelope            // 头微微偏向挥手侧
-                    pitch += -2f * envelope
-                }
-            }
-            ActionType.NOD -> {
-                // 点头：头部绕 X 轴上下
-                if (role == BoneRole.HEAD) pitch += (cycle * 0.5f + 0.5f) * 14f * envelope - 4f * envelope
-                if (role == BoneRole.NECK) pitch += (cycle * 0.5f + 0.5f) * 6f * envelope
-            }
-            ActionType.SHAKE_HEAD -> {
-                // 摇头：头部绕 Y 轴左右
-                if (role == BoneRole.HEAD) yaw += cycle * 16f * envelope
-                if (role == BoneRole.NECK) yaw += cycle * 6f * envelope
-            }
-            ActionType.BOW -> {
-                // 鞠躬：脊柱 + 颈 + 头一起前倾
-                if (role == BoneRole.CHEST) pitch += 16f * envelope
-                if (role == BoneRole.NECK) pitch += 10f * envelope
-                if (role == BoneRole.HEAD) pitch += 8f * envelope
-                if (role == BoneRole.UPPER_ARM_L) roll += 6f * envelope
-                if (role == BoneRole.UPPER_ARM_R) roll += -6f * envelope
-            }
-            ActionType.JUMP -> {
-                // 跳跃：屈膝蓄力 → 伸展（由 updateFigure 的纵向位移配合）
-                if (role == BoneRole.UPPER_LEG_L || role == BoneRole.UPPER_LEG_R) {
-                    pitch += -18f * envelope
-                }
-                if (role == BoneRole.LOWER_LEG_L || role == BoneRole.LOWER_LEG_R) {
-                    pitch += 34f * envelope
-                }
-                if (role == BoneRole.UPPER_ARM_L) roll += 22f * envelope
-                if (role == BoneRole.UPPER_ARM_R) roll += -22f * envelope
-            }
-            ActionType.SIT -> {
-                // 坐下：髋部前屈、膝盖弯曲 90°
-                if (role == BoneRole.UPPER_LEG_L || role == BoneRole.UPPER_LEG_R) {
-                    pitch += -85f * envelope
-                }
-                if (role == BoneRole.LOWER_LEG_L || role == BoneRole.LOWER_LEG_R) {
-                    pitch += 88f * envelope
-                }
-                if (role == BoneRole.CHEST) pitch += 4f * envelope
-            }
-            ActionType.YAWN -> {
-                // 打哈欠：抬头后仰 + 抬右臂掩口
-                if (role == BoneRole.HEAD) pitch += -14f * envelope
-                if (role == BoneRole.NECK) pitch += -8f * envelope
-                if (role == BoneRole.UPPER_ARM_R) {
-                    roll += -78f * envelope
-                    pitch += 30f * envelope
-                }
-                if (role == BoneRole.LOWER_ARM_R) roll += -55f * envelope
-            }
-            ActionType.SLEEP -> {
-                // 打瞌睡：头逐渐下垂，身体前倾
-                if (role == BoneRole.HEAD) {
-                    pitch += 18f * envelope
-                    roll += 6f * envelope
-                }
-                if (role == BoneRole.NECK) pitch += 10f * envelope
-                if (role == BoneRole.CHEST) pitch += 5f * envelope
-            }
-            ActionType.BLUSH -> {
-                // 害羞：低头 + 双手微内收
-                if (role == BoneRole.HEAD) {
-                    pitch += 8f * envelope
-                    yaw += 5f * envelope
-                }
-                if (role == BoneRole.UPPER_ARM_L) roll -= 8f * envelope
-                if (role == BoneRole.UPPER_ARM_R) roll += 8f * envelope
-            }
-            ActionType.POUT -> {
-                // 傲娇：扭头 + 微抬下巴
-                if (role == BoneRole.HEAD) {
-                    yaw += 14f * envelope
-                    pitch += -6f * envelope
-                }
-                if (role == BoneRole.NECK) yaw += 6f * envelope
-                if (role == BoneRole.UPPER_ARM_L) roll -= 12f * envelope
-                if (role == BoneRole.UPPER_ARM_R) roll += -10f * envelope
-            }
-            ActionType.SMUG -> {
-                // 得意：挺胸抬头 + 双手叉腰
-                if (role == BoneRole.CHEST) pitch += -7f * envelope
-                if (role == BoneRole.HEAD) pitch += -5f * envelope
-                if (role == BoneRole.UPPER_ARM_L) {
-                    roll += 18f * envelope
-                    pitch += 32f * envelope
-                }
-                if (role == BoneRole.UPPER_ARM_R) {
-                    roll += -18f * envelope
-                    pitch += 32f * envelope
-                }
-                if (role == BoneRole.LOWER_ARM_L) pitch += 42f * envelope
-                if (role == BoneRole.LOWER_ARM_R) pitch += 42f * envelope
-            }
-            ActionType.IDLE -> Unit
-        }
-
-        return BonePose(pitch = pitch, yaw = yaw, roll = roll)
+    /** 距离动作/触摸开始的秒数；未开始（<=0）返回 Float.MAX_VALUE */
+    private fun elapsedSince(startNanos: Long, nowNanos: Long): Float {
+        if (startNanos <= 0L || nowNanos < startNanos) return Float.MAX_VALUE
+        return ((nowNanos - startNanos) / 1_000_000_000.0).toFloat()
     }
-
     // ===================================================================== 拾取
 
     /**
