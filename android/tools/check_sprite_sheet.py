@@ -150,10 +150,14 @@ def main():
         fh = maxy - miny + 1
         heights.append(fh)
         bottoms.append(maxy)
-        edge_hit = (minx <= x0 + 2) or (maxx >= x1 - 3)
-        note = '← 贴边' if edge_hit else ''
+        # 真正的越界：人物像素出现在格子之外（被相邻格切走）。
+        # 注意：贴近格子边缘属正常（张臂/弯腰时人物会变宽），不能据此判为切到。
+        overflow_left = minx < x0
+        overflow_right = maxx >= x1
+        edge_hit = overflow_left or overflow_right
+        note = '← 越界!' if edge_hit else ''
         if edge_hit:
-            warns.append(f'第{k+1}格人物碰到格子边界，可能被切到')
+            fails.append(f'第{k+1}格人物越出格子边界，会被切到')
         ok_frames += 1
         print(f'  {k+1}    {minx:4d}..{maxx:4d}      {miny:4d}..{maxy:4d}      {fh:4d}  {maxy:4d}  {note}')
 
@@ -161,15 +165,17 @@ def main():
     if ok_frames < FRAMES:
         fails.append(f'只有 {ok_frames}/{FRAMES} 格有人物')
 
-    # 高度一致性
+    # 高度变化：只作提示，不作为失败判据。
+    # 原因：弯腰(bow)、低头(shy)、坐下(sit) 等动作本身就会让人物投影变矮，这是正确的物理表现。
+    # 真正决定播放时是否跳动的是「底边是否对齐」（见下一段），而不是高度是否相等。
     if len(heights) >= 2:
         hmin, hmax = min(heights), max(heights)
         var = (hmax - hmin) / hmin
         print(f'人物高度: 最小 {hmin}, 最大 {hmax}, 差异 {var:.1%}')
-        if var > HEIGHT_VAR_TOLERANCE:
-            fails.append(f'各帧人物高度差异 {var:.1%} 超过 {HEIGHT_VAR_TOLERANCE:.0%}，播放时人物会上下跳动')
+        if var <= HEIGHT_VAR_TOLERANCE:
+            print('PASS  各帧高度基本一致')
         else:
-            print('PASS  各帧高度一致')
+            print(f'INFO  各帧高度变化 {var:.1%}（若为弯腰/低头/坐下等动作，属正常）')
     print()
 
     # 底边对齐：站立类动作要求脚踩同一条线（差异 < 画布的 3%）

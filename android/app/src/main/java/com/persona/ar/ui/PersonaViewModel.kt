@@ -21,7 +21,6 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
-import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
@@ -63,10 +62,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.update { current ->
                     // 拥 3D 手办资产的人格默认进入真 3D 模式：启动即渲染 Filament 手办，而不是先闪一下 2.5D 贴图。
                     // 仅当用户尚未手动切换过模式 (arModeExplicitlySet=false) 时才跟随人格能力自动切换。
-                    val has3D = active.modelType == PersonaModelType.GLTF_3D && active.modelAsset != null
+                    // 默认走 2.5D：预渲染的逐帧动作精灵表（idle/wave/bow/yawn/shy/nod/sit）只在此模式生效，
+                    // 动作质量远优于 3D 骨骼的程序化模拟。拥有 3D 手办资产的人格仍可手动切到 ARCORE_3D 看立体版。
                     val nextMode = when {
                         current.arModeExplicitlySet -> current.arMode
-                        has3D -> ARMode.ARCORE_3D
                         else -> ARMode.BILLBOARD_2_5D
                     }
                     current.copy(
