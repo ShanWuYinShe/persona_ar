@@ -14,6 +14,7 @@ import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.character.loader.PersonaModelManager
 import com.persona.ar.data.api.ApiClient
 import com.persona.ar.data.api.PersonaWebSocketClient
+import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
