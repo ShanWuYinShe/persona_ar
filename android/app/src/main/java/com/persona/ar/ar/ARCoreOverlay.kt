@@ -96,6 +96,24 @@ fun ARCoreOverlay(
         label = "runeRotationCCW"
     )
 
+    // 3D 俯仰透视、重力铅垂角与偏航角解算
+    val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
+    val gravityRoll = -spatialAnchor.cameraRollDegrees.coerceIn(-45f, 45f)
+    val yawRotation = spatialAnchor.rotationYaw
+
+    // 3D 骨骼逆运动学与 360 度多视角圆柱投影求解器
+    val skeletonEngine = remember { Skeleton3DEngine() }
+    val multiViewProj = remember(yawRotation, pitchTilt) {
+        skeletonEngine.calculateMultiViewPerspective(yawRotation, pitchTilt)
+    }
+
+    // 坐姿平滑过渡弹簧动画 (当处于坐姿模式或拖拽至桌沿悬崖边缘自动自平衡坐下)
+    val animatedSitProgress by animateFloatAsState(
+        targetValue = if (spatialAnchor.skeletonStance == SkeletonStance.SITTING || (spatialAnchor.isNearCliffEdge && spatialAnchor.screenY > 0.76f)) 1.0f else 0.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "sitProgress"
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -384,26 +402,6 @@ fun ARCoreOverlay(
         if (spatialAnchor.isAnchored) {
             val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
             val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
-
-            // 1) 3D 俯仰透视收缩 (相机俯仰看桌面时，角色头部前倾近大远小，下肢透视缩短)
-            val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
-            // 2) 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直于物理地面站立)
-            val gravityRoll = -spatialAnchor.cameraRollDegrees.coerceIn(-45f, 45f)
-            // 3) 用户在平面上手势旋转的偏航角 (Yaw)
-            val yawRotation = spatialAnchor.rotationYaw
-
-            // 4) 3D 骨骼逆运动学与 360 度圆柱视差求解引擎
-            val skeletonEngine = remember { Skeleton3DEngine() }
-            val multiViewProj = remember(yawRotation, pitchTilt) {
-                skeletonEngine.calculateMultiViewPerspective(yawRotation, pitchTilt)
-            }
-
-            // 5) 坐姿平滑过渡弹簧动画 (当处于坐姿模式或拖拽至桌沿悬崖边缘自动自平衡坐下)
-            val animatedSitProgress by animateFloatAsState(
-                targetValue = if (spatialAnchor.skeletonStance == SkeletonStance.SITTING || (spatialAnchor.isNearCliffEdge && spatialAnchor.screenY > 0.76f)) 1.0f else 0.0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
-                label = "sitProgress"
-            )
 
             Box(
                 modifier = Modifier
