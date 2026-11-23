@@ -118,6 +118,21 @@ data class ARSpatialAnchor(
     val inertialSquishY: Float = 1.0f,
     /** 前景键盘/桌面切片遮挡比例 (0.0f ~ 0.45f) */
     val foregroundOcclusionRatio: Float = 0f,
+    /** 是否正逼近真实桌面悬崖边缘 (例如靠近木质桌沿或桌垫边缘) */
+    val isNearCliffEdge: Boolean = false,
+    /** 悬崖边缘警惕强度 (0.0f 远离边缘安全 ~ 1.0f 濒临跌落边缘) */
+    val cliffEdgeIntensity: Float = 0f,
+    /** 悬崖边缘法线方向向量 (默认桌面前沿向近景 Y > 0) */
+    val cliffNormalX: Float = 0f,
+    val cliffNormalY: Float = 1.0f,
+    /** 是否已滑出桌面边缘处于悬空状态 (Dangling Over Cliff) */
+    val isDanglingOverCliff: Boolean = false,
+    /** 悬空离地高度比例 (0.0f 贴地 ~ 1.0f 高度悬空) */
+    val dangleAirDistance: Float = 0f,
+    /** 桌面物理支撑度 (1.0f 坚实桌面支撑 ~ 0.0f 完全悬空) */
+    val surfaceSupportConfidence: Float = 1.0f,
+    /** 机械键盘等立体障碍物台阶垂直抬升量 (0.0f ~ 18f dp) */
+    val surfaceStepHeightOffset: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

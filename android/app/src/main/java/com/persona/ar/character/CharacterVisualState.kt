@@ -72,5 +72,17 @@ data class CharacterVisualState(
     /** 物理惯性纵向弹性系数 */
     val inertialSquishY: Float = 1.0f,
     /** 桌面/键盘前景遮挡切片比例 (0.0f 无遮挡 ~ 0.35f 键盘前景真实遮挡双脚) */
-    val foregroundOcclusionRatio: Float = 0f
+    val foregroundOcclusionRatio: Float = 0f,
+    /** 是否正逼近真实桌面悬崖边缘 */
+    val isNearCliffEdge: Boolean = false,
+    /** 悬崖边缘警惕强度 (0.0f ~ 1.0f) */
+    val cliffEdgeIntensity: Float = 0f,
+    /** 是否已滑出桌面边缘处于悬空状态 (Dangling Over Cliff) */
+    val isDanglingOverCliff: Boolean = false,
+    /** 悬空离地空气高度比例 (0.0f ~ 1.0f) */
+    val dangleAirDistance: Float = 0f,
+    /** 桌面物理支撑度 (1.0f 坚实桌面 ~ 0.0f 完全脱离悬空) */
+    val surfaceSupportConfidence: Float = 1.0f,
+    /** 机械键盘等立体障碍物台阶垂直抬升量 (0.0f ~ 18f dp) */
+    val surfaceStepHeightOffset: Float = 0f
 )

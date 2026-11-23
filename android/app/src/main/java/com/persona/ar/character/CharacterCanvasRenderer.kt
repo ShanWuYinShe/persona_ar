@@ -1203,16 +1203,28 @@ private fun DrawScope.drawHighResolutionHoshino(
         add = if (visualState.isLowLight) Color(0x15101A) else Color.Transparent
     )
 
-    // 2. 惯性物理摆动与弹性形变 (以地面足底接触线为旋转原点)
+    // 2. 惯性物理摆动、重力下垂与悬空微摇 (以地面足底接触线或身体重心为旋转原点)
+    val pivotPoint = if (visualState.isDanglingOverCliff) {
+        Offset(cx, topY + charH * 0.45f) // 悬空状态以躯干重心为轴心钟摆下垂
+    } else {
+        Offset(cx, footY) // 踏地状态以足底接触点为轴心
+    }
+
+    val dangleDroopStretchY = if (visualState.isDanglingOverCliff) {
+        (visualState.inertialSquishY * (1.0f + visualState.dangleAirDistance * 0.08f)).coerceIn(1.0f, 1.14f)
+    } else {
+        visualState.inertialSquishY.coerceIn(0.92f, 1.08f)
+    }
+
     withTransform({
         rotate(
             degrees = visualState.inertialSwayAngle,
-            pivot = Offset(cx, footY)
+            pivot = pivotPoint
         )
         scale(
-            scaleX = (1.0f / visualState.inertialSquishY).coerceIn(0.92f, 1.08f),
-            scaleY = visualState.inertialSquishY.coerceIn(0.92f, 1.08f),
-            pivot = Offset(cx, footY)
+            scaleX = (1.0f / dangleDroopStretchY).coerceIn(0.90f, 1.08f),
+            scaleY = dangleDroopStretchY,
+            pivot = pivotPoint
         )
     }) {
         // 绘制高精度角色图像
@@ -1261,7 +1273,19 @@ private fun DrawScope.drawHighResolutionHoshino(
         )
     }
 
-    // 7. 情感微粒子
+    // 7. 悬崖边缘警惕与悬空微表情 (Cliff Edge Alert Emotes: 💦 萌系警惕微汗珠)
+    if (visualState.isDanglingOverCliff || visualState.cliffEdgeIntensity > 0.35f) {
+        val alertIntensity = if (visualState.isDanglingOverCliff) 1.0f else visualState.cliffEdgeIntensity
+        drawCliffAlertEmote(
+            cx = cx + 38f * s + visualState.inertialSwayAngle * 1.2f,
+            topY = topY + 68f * s,
+            s = s,
+            intensity = alertIntensity,
+            isDangling = visualState.isDanglingOverCliff
+        )
+    }
+
+    // 8. 情感微粒子
     drawGameEmoteParticles(cx, topY + 60f * s, s, visualState)
 }
 
@@ -1306,5 +1330,50 @@ private fun DrawScope.drawHighResGazeFocus(
         color = Color.White.copy(alpha = 0.9f),
         radius = 1.6f * s,
         center = Offset(rightEyeCenter.x - 1f * s, rightEyeCenter.y - 1f * s)
+    )
+}
+
+/**
+ * 绘制悬崖警觉/悬空微表情 (二次元萌系受惊微汗珠 💦)
+ */
+private fun DrawScope.drawCliffAlertEmote(
+    cx: Float,
+    topY: Float,
+    s: Float,
+    intensity: Float,
+    isDangling: Boolean
+) {
+    val sweatW = 10f * s
+    val sweatH = 16f * s
+    val dropPath = Path().apply {
+        moveTo(cx, topY)
+        cubicTo(
+            cx + sweatW * 0.8f, topY + sweatH * 0.45f,
+            cx + sweatW * 0.7f, topY + sweatH,
+            cx, topY + sweatH
+        )
+        cubicTo(
+            cx - sweatW * 0.7f, topY + sweatH,
+            cx - sweatW * 0.8f, topY + sweatH * 0.45f,
+            cx, topY
+        )
+        close()
+    }
+
+    val sweatAlpha = (0.85f * intensity).coerceIn(0.15f, 0.92f)
+    drawPath(
+        path = dropPath,
+        color = Color(0xFF38BDF8).copy(alpha = sweatAlpha)
+    )
+    // 汗珠边缘高光与立体光泽
+    drawPath(
+        path = dropPath,
+        color = Color.White.copy(alpha = sweatAlpha * 0.7f),
+        style = Stroke(width = 1.2f * s)
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = sweatAlpha * 0.95f),
+        radius = 1.8f * s,
+        center = Offset(cx - 2f * s, topY + sweatH * 0.65f)
     )
 }
