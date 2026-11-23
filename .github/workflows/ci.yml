@@ -73,3 +73,9 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Android Release（验证签名配置）
+        working-directory: ./android
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          test -f app/build/outputs/apk/release/app-release.apk

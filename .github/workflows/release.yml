@@ -1,0 +1,84 @@
+# 发布流程：推送 v* tag → 构建 Release APK → 创建 GitHub Release 并附 APK。
+#
+# 版本号以 git tag 为唯一源（v1.0.0 → 1.0.0）。默认使用 Android debug keystore
+# 对 Release 包签名，便于用户直接安装；如需正式签名，在仓库 Secrets 中配置
+# ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+# ANDROID_KEY_PASSWORD 四个变量（见 android/app/build.gradle.kts）。
+#
+# tag 推送纪律见 git-workflow skill：一个 tag 一条 push 命令，推完确认 CI 再推下一个。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 同一个 tag 重推时取消旧 run；不同 tag ref 不同、互不影响
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 创建 Release 需要写 contents 权限
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建 Release APK 并发布
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 安装 Android SDK 并接受 license，自动导出 ANDROID_HOME / ANDROID_SDK_ROOT
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      # 校验 gradle-wrapper.jar 完整性（与 ci.yml 的 setup-gradle 等价防护）
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Build Release APK
+        working-directory: ./android
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          test -f app/build/outputs/apk/release/app-release.apk
+
+      - name: 重命名 APK（带 tag）
+        working-directory: ./android
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk \
+             "persona-ar-${{ github.ref_name }}.apk"
+          ls -lh persona-ar-${{ github.ref_name }}.apk
+
+      - name: 校验 APK 签名
+        working-directory: ./android
+        run: |
+          APSIGN="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          echo "apksigner: $APSIGN"
+          "$APSIGN" verify --print-certs "persona-ar-${{ github.ref_name }}.apk" || \
+            echo "::warning::apksigner 校验未通过（非阻塞，APK 已构建）"
+
+      - name: 创建 GitHub Release 并附 APK
+        working-directory: ./android
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "persona-ar-${{ github.ref_name }}.apk" \
+            --title "次元回响 ${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag
+          gh release view "${{ github.ref_name }}" --json assets,url --jq '{url, assets: [.assets[].name]}'

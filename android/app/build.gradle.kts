@@ -20,9 +20,34 @@ android {
         }
     }
 
+    // Release 签名：四个环境变量齐全时创建正式 signingConfig；否则复用 AGP
+    // 内置的 debug 配置（AGP 会在首次构建时自动生成 ~/.android/debug.keystore），
+    // 保证 CI 与本地都能直接产出可安装的 Release APK。凭据只从环境变量读取，不入库。
+    signingConfigs {
+        if (
+            !System.getenv("ANDROID_KEYSTORE").isNullOrBlank() &&
+            !System.getenv("ANDROID_KEYSTORE_PASSWORD").isNullOrBlank() &&
+            !System.getenv("ANDROID_KEY_ALIAS").isNullOrBlank() &&
+            !System.getenv("ANDROID_KEY_PASSWORD").isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(System.getenv("ANDROID_KEYSTORE")!!)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 同上：有正式凭据时用 release 配置，否则复用 AGP 内置 debug 签名
+            if (signingConfigs.findByName("release") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
