@@ -17,6 +17,8 @@ data class PersonaModelManifest(
     val author: String = "Official",
     val version: String = "1.0.0",
     @SerializedName("model_type") val modelType: PersonaModelType = PersonaModelType.SPRITE_2_5D,
+    /** 3D 模型资产在 assets 内的相对路径（如 models/hoshino/figure.glb）；空则该人格无 3D 身体 */
+    @SerializedName("model_asset") val modelAsset: String? = null,
     val description: String,
     @SerializedName("preview_color") val previewColorHex: String = "#FF7B61FF",
     @SerializedName("hair_color") val hairColorHex: String = "#6B4E71",
