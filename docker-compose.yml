@@ -18,8 +18,23 @@ services:
       - LLM_API_KEY=
       - LLM_BASE_URL=https://api.deepseek.com
       - LLM_MODEL=deepseek-chat
+      # ===== 语音合成（TTS）=====
+      # 总开关：false 时接口不再返回音频，由客户端直接回退端侧系统 TTS
       - TTS_ENABLED=true
+      # 角色默认音色；各人格实际使用 persona.Voice（zh-CN-XiaoyiNeural / XiaoxiaoNeural / YunjianNeural / YunyangNeural）
       - TTS_VOICE=zh-CN-XiaoyiNeural
+      # 供应商：edge（默认，微软 Edge 在线神经网络语音，免费无需 key）| openai | disabled
+      - TTS_PROVIDER=edge
+      # Edge websocket 连接代理，留空=直连；容器需要走宿主代理时可填 http://host.docker.internal:7890
+      - TTS_PROXY=
+      # Edge 输出格式：mp3-hq（默认 96kbps，音质与体积平衡）| mp3（48kbps）
+      - TTS_EDGE_FORMAT=mp3-hq
+      # 可选 OpenAI 兼容 /audio/speech 端点（TTS_PROVIDER=openai 时生效；未填 TTS_API_KEY 会自动回退 edge）
+      # 注意：真实密钥只通过环境变量或 .env 注入，严禁写入本文件/代码/日志
+      - TTS_BASE_URL=https://api.openai.com/v1
+      - TTS_API_KEY=
+      - TTS_MODEL=tts-1
+      - TTS_OPENAI_VOICE=alloy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]

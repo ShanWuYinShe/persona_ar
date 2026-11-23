@@ -95,7 +95,7 @@ func (u *UserState) GetAffinityLevel() string {
 
 type Engine struct {
 	userStates        map[string]*UserState // key: userID_personaID
-	userActivePersona map[string]string    // key: userID -> personaID
+	userActivePersona map[string]string     // key: userID -> personaID
 	mu                sync.RWMutex
 }
 
@@ -272,6 +272,30 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 		state.Mood = "怦然心动"
 		affinityDelta = 4
 
+	case strings.Contains(msg, "对不起") || strings.Contains(msg, "抱歉") || strings.Contains(msg, "道歉") || strings.Contains(msg, "原谅"):
+		text = "诶…既然你都这么认真地道歉了，那我就勉为其难地原谅你吧。下次可不许再让我担心了哦！"
+		emotion, action, expr = model.EmotionShy, model.ActionBow, "BLUSH_FACE"
+		state.Mood = "心软原谅"
+		affinityDelta = 2
+
+	case strings.Contains(msg, "不要") || strings.Contains(msg, "不行") || strings.Contains(msg, "不同意") || strings.Contains(msg, "拒绝") || strings.Contains(msg, "不好"):
+		text = "才、才不要呢！这种事情我可不答应，哼——除非你好好哄哄我。"
+		emotion, action, expr = model.EmotionAngry, model.ActionShakeHead, "POUT"
+		state.Mood = "傲娇抗议"
+		affinityDelta = 1
+
+	case strings.Contains(msg, "真棒") || strings.Contains(msg, "厉害") || strings.Contains(msg, "优秀") || strings.Contains(msg, "了不起") || strings.Contains(msg, "夸夸"):
+		text = "哼哼，那当然啦！不过…被你这么直白地夸奖，我、我可是会有点不好意思的哦。"
+		emotion, action, expr = model.EmotionConfident, model.ActionSmug, "SMILE"
+		state.Mood = "小得意"
+		affinityDelta = 3
+
+	case strings.Contains(msg, "哈欠") || strings.Contains(msg, "打哈欠") || strings.Contains(msg, "犯困") || strings.Contains(msg, "眼皮"):
+		text = "哈啊——…抱歉抱歉，被你看到打哈欠的样子了。我这就打起精神，继续陪你聊天！"
+		emotion, action, expr = model.EmotionSleepy, model.ActionYawn, "SLEEPY"
+		state.Mood = "困倦慵懒"
+		affinityDelta = 1
+
 	case strings.Contains(msg, "难过") || strings.Contains(msg, "伤心") || strings.Contains(msg, "累") || strings.Contains(msg, "emo") || strings.Contains(msg, "辛苦") || strings.Contains(msg, "压力"):
 		text = "今天遇到不顺心的事情了吗？没关系哦，现在我就在你的桌前陪着你。深呼吸，有我在呢！"
 		emotion = model.EmotionNeutral
@@ -291,8 +315,8 @@ func (e *Engine) heuristicChat(persona PersonaDefinition, state *UserState, mess
 	state.History = append(state.History, map[string]string{"role": "user", "content": message})
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": text})
 
-	// 并发安全：按角色音色独立缓存与合成
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, persona.Voice)
+	// 并发安全：按角色音色 + 情绪 + 好感度韵律独立缓存与合成（同 key 并发只真正合成一次）
+	audioBase64 := tts.DefaultSynthesizer.Synthesize(text, persona.Voice, emotion, state.Affinity)
 
 	return &model.ChatResponse{
 		Text:            text,
@@ -377,7 +401,7 @@ func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchRespons
 	state.History = append(state.History, map[string]string{"role": "user", "content": fmt.Sprintf("[触碰了角色的 %s]", string(part))})
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": text})
 
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, persona.Voice)
+	audioBase64 := tts.DefaultSynthesizer.Synthesize(text, persona.Voice, emotion, state.Affinity)
 
 	return &model.TouchResponse{
 		Text:            text,
@@ -539,7 +563,7 @@ func (e *Engine) parseLLMResponse(persona PersonaDefinition, state *UserState, r
 	state.Affinity += 2
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": cleanText})
 
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(cleanText, persona.Voice)
+	audioBase64 := tts.DefaultSynthesizer.Synthesize(cleanText, persona.Voice, emotion, state.Affinity)
 
 	return &model.ChatResponse{
 		Text:            cleanText,
@@ -623,7 +647,7 @@ func (e *Engine) heuristicVisionChat(persona PersonaDefinition, state *UserState
 	state.History = append(state.History, map[string]string{"role": "user", "content": prompt})
 	state.History = append(state.History, map[string]string{"role": "assistant", "content": text})
 
-	audioBase64 := tts.DefaultSynthesizer.SynthesizeWithVoice(text, persona.Voice)
+	audioBase64 := tts.DefaultSynthesizer.Synthesize(text, persona.Voice, emotion, state.Affinity)
 
 	return &model.ChatResponse{
 		Text:            text,
