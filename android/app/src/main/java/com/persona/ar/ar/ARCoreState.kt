@@ -133,6 +133,13 @@ data class ARSpatialAnchor(
     val surfaceSupportConfidence: Float = 1.0f,
     /** 机械键盘等立体障碍物台阶垂直抬升量 (0.0f ~ 18f dp) */
     val surfaceStepHeightOffset: Float = 0f,
+    /** 高精动作姿态与微表情 (DEFAULT / SLEEPY / SHY / POUT / SMUG / SURPRISED) */
+    val highResPose: String = "DEFAULT",
+    val blushIntensity: Float = 0f,
+    val sleepinessFactor: Float = 0f,
+    val poutIntensity: Float = 0f,
+    val smugTiltDegrees: Float = 0f,
+    val haloSparkleIntensity: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */

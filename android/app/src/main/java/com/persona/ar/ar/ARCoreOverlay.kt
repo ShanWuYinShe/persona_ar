@@ -437,7 +437,13 @@ fun ARCoreOverlay(
                         isDanglingOverCliff = spatialAnchor.isDanglingOverCliff,
                         dangleAirDistance = spatialAnchor.dangleAirDistance,
                         surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
-                        surfaceStepHeightOffset = spatialAnchor.surfaceStepHeightOffset
+                        surfaceStepHeightOffset = spatialAnchor.surfaceStepHeightOffset,
+                        highResPose = visualState.highResPose,
+                        blushIntensity = visualState.blushIntensity,
+                        sleepinessFactor = visualState.sleepinessFactor,
+                        poutIntensity = visualState.poutIntensity,
+                        smugTiltDegrees = visualState.smugTiltDegrees,
+                        haloSparkleIntensity = visualState.haloSparkleIntensity
                     ),
                     onTouchPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
@@ -480,6 +486,14 @@ fun ARCoreOverlay(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         val pillText = when {
+                            visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" ->
+                                "💤 星野正在打瞌睡打哈欠... (大叔休眠模式，轻触唤醒) ✨"
+                            visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" ->
+                                "💕 星野面颊泛起羞涩微红晕 · 眼神羞怯微闪 ✨"
+                            visualState.poutIntensity > 0.4f || visualState.highResPose == "POUT" ->
+                                "💢 戳脸颊惹怒了星野！鼓起腮帮子傲娇中 ✨"
+                            visualState.smugTiltDegrees > 1.5f || visualState.highResPose == "SMUG" ->
+                                "⭐ 受到指挥官夸奖！星野前辈叉腰得意中 ✨"
                             spatialAnchor.isDanglingOverCliff ->
                                 "🎈 桌面边缘悬空脱离 · 重力悬摆与虚化半影物理已激活 ✨"
                             spatialAnchor.isNearCliffEdge ->
@@ -506,6 +520,10 @@ fun ARCoreOverlay(
                                 "已锁定于${spatialAnchor.planeTypeDescription} · 轻触桌面任意处重选位置 / 单指拖拽滑行"
                         }
                         val pillBgColor = when {
+                            visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" -> Color(0xE6283593) // 深夜幽蓝
+                            visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" -> Color(0xE6AD1457) // 害羞绯红
+                            visualState.poutIntensity > 0.4f || visualState.highResPose == "POUT" -> Color(0xE6C2185B) // 傲娇玫红
+                            visualState.smugTiltDegrees > 1.5f || visualState.highResPose == "SMUG" -> Color(0xE6F57F17) // 耀金得意
                             spatialAnchor.isDanglingOverCliff -> Color(0xE67B1FA2)
                             spatialAnchor.isNearCliffEdge -> Color(0xE6E65100)
                             spatialAnchor.surfaceStepHeightOffset > 1.0f -> Color(0xE600897B)

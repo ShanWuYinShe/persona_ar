@@ -10,6 +10,8 @@ const (
 	EmotionSurprised EmotionType = "SURPRISED"
 	EmotionThinking  EmotionType = "THINKING"
 	EmotionAngry     EmotionType = "ANGRY"
+	EmotionSleepy    EmotionType = "SLEEPY"
+	EmotionConfident EmotionType = "CONFIDENT"
 )
 
 type ActionType string
@@ -23,6 +25,9 @@ const (
 	ActionPout      ActionType = "POUT"
 	ActionBow       ActionType = "BOW"
 	ActionJump      ActionType = "JUMP"
+	ActionYawn      ActionType = "YAWN"
+	ActionSleep     ActionType = "SLEEP"
+	ActionSmug      ActionType = "SMUG"
 )
 
 type TouchPart string
