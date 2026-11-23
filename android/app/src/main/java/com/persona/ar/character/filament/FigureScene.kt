@@ -2,6 +2,8 @@ package com.persona.ar.character.filament
 
 import android.content.Context
 import android.opengl.Matrix
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Surface
 import com.google.android.filament.Box
@@ -173,6 +175,8 @@ class FigureScene(
     private val mGround = FloatArray(16)
     private val projMatrix = DoubleArray(16)
     private val viewMatrix = DoubleArray(16)
+    /** Filament 的 pick 只接受 Executor 或 Handler（不能用任意对象占位）；回调需回主线程更新触摸反馈 */
+    private val pickHandler = Handler(Looper.getMainLooper())
 
     /** UiHelper 回调：Surface 生命周期 → SwapChain 管理（透明 + 4x MSAA） */
     val surfaceCallback: UiHelper.RendererCallback = object : UiHelper.RendererCallback {
@@ -710,7 +714,15 @@ class FigureScene(
      * 未命中手办（打到地面或背景）时回调 null。
      */
     fun requestPick(x: Int, y: Int, onResult: (TouchPart?) -> Unit) {
-        view.pick(x, y, Any()) { result ->
+        if (viewportWidth <= 0 || viewportHeight <= 0) {
+            onResult(null)
+            return
+        }
+        val px = x.coerceIn(0, viewportWidth - 1)
+        // Filament 的 pick 以视口左下角为原点，Compose 触摸坐标以左上角为原点，故翻转 Y；
+        // classifyPart 仍接收原始左上原点坐标，保持部位判定的屏幕语义一致
+        val pickY = (viewportHeight - 1 - y).coerceIn(0, viewportHeight - 1)
+        view.pick(px, pickY, pickHandler) { result ->
             val entity = result.renderable
             if (entity == 0 || entity == groundEntity || asset == null) {
                 onResult(null)
