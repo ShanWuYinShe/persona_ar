@@ -3,7 +3,7 @@
 ## 项目架构与技术栈
 - 根目录包含两个核心组件：
   - `android/`: Android AR 客户端，基于 Kotlin、Jetpack Compose、CameraX、ARCore。
-  - `server/`: 专属情感大脑服务，基于 Go 1.24、Gin Web Framework、Gorilla WebSocket、磁盘 SHA256 TTS 缓存与长期记忆持久化。
+  - `server/`: 专属情感大脑服务，基于 Go（版本以 `server/go.mod` 的 `go` 行为准）、Gin Web Framework、Gorilla WebSocket、磁盘 SHA256 TTS 缓存与长期记忆持久化。
 - 部署：根目录提供 `docker-compose.yml` 容器化编排。
 
 ## 验证分工与秒级检查
