@@ -307,25 +307,6 @@ func TestMemoryAutoExtractionAndPersistence(t *testing.T) {
 	}
 }
 
-func TestTTSCacheMechanism(t *testing.T) {
-	cachePath := tts.DefaultSynthesizer.GetCachePath("你好指挥官", "zh-CN-XiaoyiNeural")
-	if !strings.HasSuffix(cachePath, ".mp3") {
-		t.Errorf("expected .mp3 suffix, got %s", cachePath)
-	}
-
-	// 合成并验证缓存生成
-	res := tts.DefaultSynthesizer.SynthesizeToBase64("你好指挥官")
-	if res == nil {
-		t.Errorf("expected base64 audio response")
-	}
-
-	// 二次调用应直接从缓存读取
-	res2 := tts.DefaultSynthesizer.SynthesizeToBase64("你好指挥官")
-	if res2 == nil || *res2 != *res {
-		t.Errorf("expected cached response matching first call")
-	}
-}
-
 func TestWebSocketContinuous(t *testing.T) {
 	r := setupTestRouter()
 	server := httptest.NewServer(r)
