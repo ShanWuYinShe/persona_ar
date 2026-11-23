@@ -12,7 +12,10 @@ import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.VoiceMode
 
 data class PersonaUiState(
+    /** 当前 AR 渲染模式；初始值在 setupModelManager 中按人格是否拥有 3D 手办资产自动决定 */
     val arMode: ARMode = ARMode.BILLBOARD_2_5D,
+    /** 用户是否手动切换过 AR 模式（true 后不再按人格能力自动改写） */
+    val arModeExplicitlySet: Boolean = false,
     val arTrackingStatus: ARTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
     val spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(),
     val visualState: CharacterVisualState = CharacterVisualState(),
