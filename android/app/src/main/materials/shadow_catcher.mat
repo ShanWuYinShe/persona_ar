@@ -1,0 +1,42 @@
+// AR 接触阴影接收面 (Shadow Catcher) —— PersonaAR 真 3D 手办管线
+//
+// 用途：一块平放在桌面、自身完全透明的四边形，只显示角色被方向光投下的阴影，
+//       叠在 CameraX 相机画面之上，让 Filament 渲染的手办看起来真实站在桌面上。
+//
+// 原理（Filament v1.81.0 docs/Materials.md 「Lighting: shadowMultiplier」）：
+//   shadowMultiplier 仅在 unlit 着色模型可用；着色器 surface_shading_unlit.fs 中
+//   finalColor = baseColor * (1.0 - visibility) —— 受光处 visibility = 1 → 颜色归零（隐形），
+//   阴影处 visibility → 0 → 黑色、不透明度 = baseColor.a。若方向光开启
+//   ShadowOptions.screenSpaceContactShadows，还会叠乘屏幕空间接触阴影，形成脚底深黑接触线。
+//   注意：仅支持方向光阴影（点光源阴影不会出现在此平面上）。
+//
+// 参数访问约定（v1.81.0）：非采样器参数通过 materialParams.<name> 结构体字段访问。
+//
+// 编译（Filament v1.81.0 macOS 发行包 bin/matc，Android 目标）：
+//   matc -p mobile -o android/app/src/main/assets/materials/shadow_catcher.filamat \
+//         android/app/src/main/materials/shadow_catcher.mat
+// 运行时用 Material.Builder().payload(ByteBuffer).build(engine) 加载 .filamat。
+
+material {
+    name : "AR shadow catcher",
+    shadingModel : unlit,
+    blending : transparent,
+    shadowMultiplier : true,
+    culling : none,
+    parameters : [
+        {
+            type : float,
+            name : strength,
+            hasDefault : true,
+            default : 1.0
+        }
+    ]
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        // 黑色 + alpha = strength：strength 是阴影最大不透明度，由 Kotlin 侧按环境照度实时调节。
+        material.baseColor = vec4(0.0, 0.0, 0.0, materialParams.strength);
+    }
+}

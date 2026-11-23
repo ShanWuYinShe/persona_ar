@@ -17,7 +17,8 @@ class PersonaModelManager(private val context: Context? = null) {
             name = "星野 (Hoshino)",
             author = "Persona Studio",
             version = "1.2.0",
-            modelType = PersonaModelType.SPRITE_2_5D,
+            modelType = PersonaModelType.GLTF_3D,
+            modelAsset = "models/hoshino/figure.glb",
             description = "投射在现实中的二次元傲娇元气少女，心软口硬，对现实世界充满好奇。",
             previewColorHex = "#FF7B61FF",
             hairColorHex = "#6B4E71",
@@ -96,7 +97,10 @@ class PersonaModelManager(private val context: Context? = null) {
     private val _storeModels = MutableStateFlow<List<PersonaModelManifest>>(allModels)
     val storeModels: StateFlow<List<PersonaModelManifest>> = _storeModels.asStateFlow()
 
-    private val _activeModel = MutableStateFlow<PersonaModelManifest>(allModels.first())
+    // 默认激活官方看板娘星野 (hoshino)：唯一拥有 3D 手办身体的人格；assets 目录按字母序列出时 airi 会排在首位，不能直接取 first()
+    private val _activeModel = MutableStateFlow<PersonaModelManifest>(
+        allModels.firstOrNull { it.id == "hoshino" } ?: allModels.first()
+    )
     val activeModel: StateFlow<PersonaModelManifest> = _activeModel.asStateFlow()
 
     private fun loadModelsFromAssetsOrBuiltin(): List<PersonaModelManifest> {
@@ -123,6 +127,7 @@ class PersonaModelManager(private val context: Context? = null) {
                                 author = obj.optString("author", "Persona Studio"),
                                 version = obj.optString("version", "1.0.0"),
                                 modelType = if (obj.optString("modelType") == "GLTF_3D") PersonaModelType.GLTF_3D else PersonaModelType.SPRITE_2_5D,
+                                modelAsset = obj.optString("modelAsset").ifBlank { null },
                                 description = obj.optString("description", ""),
                                 previewColorHex = obj.optString("previewColorHex", "#FF7B61FF"),
                                 hairColorHex = obj.optString("hairColorHex", "#6B4E71"),

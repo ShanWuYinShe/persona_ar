@@ -38,9 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.character.CharacterVisualState
+import com.persona.ar.character.filament.FigureFrameState
+import com.persona.ar.character.filament.FilamentFigureView
 import com.persona.ar.character.skeleton.MultiViewProfile
 import com.persona.ar.character.skeleton.Skeleton3DEngine
 import com.persona.ar.character.skeleton.SkeletonStance
+import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
 import kotlin.math.cos
@@ -100,6 +103,10 @@ fun ARCoreOverlay(
     val pitchTilt = (spatialAnchor.cameraPitchDegrees - 45f).coerceIn(-35f, 40f)
     val gravityRoll = -spatialAnchor.cameraRollDegrees.coerceIn(-45f, 45f)
     val yawRotation = spatialAnchor.rotationYaw
+
+    // 人格是否拥有 3D 资产：决定角色层走 Filament 真 3D 还是回退 2.5D Canvas，也决定贴地层/对焦框的足底坐标口径
+    val activeModel = visualState.model
+    val isTrue3D = activeModel != null && activeModel.modelType == PersonaModelType.GLTF_3D && activeModel.modelAsset != null
 
     // 3D 骨骼逆运动学与 360 度多视角圆柱投影求解器
     val skeletonEngine = remember { Skeleton3DEngine() }
@@ -202,100 +209,25 @@ fun ARCoreOverlay(
                     center = Offset(rx, ry)
                 )
             } else {
-                // B. 已放置角色时：三层真实物理光学接触模型 (Contact AO + Diffuse Penumbra + Ground Radiosity + 光流吸附)
-                val flowX = spatialAnchor.visualFlowOffsetX
-                val flowY = spatialAnchor.visualFlowOffsetY
-                val ax = w * spatialAnchor.screenX + spatialAnchor.parallaxShiftX + flowX
-                val ay = h * spatialAnchor.screenY + (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + flowY
-                val envLight = (spatialAnchor.lightIntensity * spatialAnchor.lensVignetteFactor).coerceIn(0.20f, 1.25f)
-                val alpha = (0.50f * envLight).coerceIn(0.16f, 0.58f)
-                val shadowCenterColor = if (spatialAnchor.isLowLight) Color(0x990A0414) else Color.Black.copy(alpha = alpha)
+                // B. 已放置角色时：贴地 AR 引导层 (契约光环 / 透视网格 / 悬崖警戒 / 拖拽光圈)
+                //    脚下的接触阴影与 AO 不再由 Canvas 伪造 —— 3D 手办由 Filament 方向光投射真实阴影到 shadow catcher 平面；
+                //    2.5D Canvas 回退路径 (无 3D 资产的人格) 继续沿用原有视差偏移
+                val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX
+                // 2.5D Canvas 角色盒的足底在盒中心下方 135dp；3D 手办落脚点精确等于锚点
+                val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY
 
-                // 随设备俯仰与偏转动态自适应透视阴影偏心距与物理贴地扁平比 (Flat Ground Surface Aspect)
-                val tiltSkewX = (spatialAnchor.parallaxShiftX * 0.22f)
-                val tiltOffsetY = (spatialAnchor.parallaxShiftY * 0.18f)
-
-                // 基于真实水平桌面光学投影模型：俯视角 pitch 越大 (更俯视)，地面投影越圆；平视时压扁成细线
+                // 贴地引导环随俯视角压扁 (平视时压成细线)
                 val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
                 val groundAspect = sin(groundPitchRad).toFloat()
 
-                // 真实物理主光源反向投射偏移 (Directional Projected Shadow Displacement)
-                // 当台灯/窗户强光源在一侧时，影子反向延展并依入射角拉长，彻底告别单调正圆阴影
-                val lightStrength = spatialAnchor.lightDirectionalStrength.coerceIn(0.1f, 1.0f)
-                val dirShadowShiftX = -spatialAnchor.lightDirectionX * 42f * lightStrength * spatialAnchor.scaleFactor
-                val dirShadowShiftY = -spatialAnchor.lightDirectionY * 22f * lightStrength * groundAspect * spatialAnchor.scaleFactor
-
-                val stretchFactorX = 1.0f + kotlin.math.abs(spatialAnchor.lightDirectionX) * 0.38f * lightStrength
-                val stretchFactorY = 1.0f + kotlin.math.abs(spatialAnchor.lightDirectionY) * 0.28f * lightStrength
-
-                // 足底接触点 (严格贴合双脚，杜绝浮空脱节)
-                val footContactX = ax + tiltSkewX
-                val footContactY = ay + tiltOffsetY
-
-                // 定向投射阴影中心 (随真实环境光源方向反向拉长)
-                val shadowCenterX = footContactX + dirShadowShiftX
-                val shadowCenterY = footContactY + dirShadowShiftY
-
+                val footContactX = ax
+                val footContactY = ay
+                val shadowCenterX = footContactX
+                val shadowCenterY = footContactY
                 val baseShadowWidth = 175f * spatialAnchor.scaleFactor
-                val baseShadowHeight = (baseShadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
-                val shadowWidth = baseShadowWidth * stretchFactorX
-                val shadowHeight = baseShadowHeight * stretchFactorY
+                val shadowWidth = baseShadowWidth
+                val shadowHeight = (baseShadowWidth * 0.44f * groundAspect).coerceAtLeast(14f * spatialAnchor.scaleFactor)
 
-                // 1) 现实桌面色彩反射微辉光 (Subtle Radiosity Color Bleed，融入伴侣所处局部的真实材质底色)
-                val bounceAlpha = (0.09f * envLight).coerceIn(0.03f, 0.16f)
-                val bounceColor = Color(
-                    red = (spatialAnchor.localSurfaceTintRed * 0.32f).coerceIn(0f, 1f),
-                    green = (spatialAnchor.localSurfaceTintGreen * 0.32f).coerceIn(0f, 1f),
-                    blue = (spatialAnchor.localSurfaceTintBlue * 0.32f).coerceIn(0f, 1f),
-                    alpha = bounceAlpha
-                )
-                drawOval(
-                    color = bounceColor,
-                    topLeft = Offset(shadowCenterX - shadowWidth * 0.55f, shadowCenterY - shadowHeight * 0.55f),
-                    size = Size(shadowWidth * 1.1f, shadowHeight * 1.1f)
-                )
-
-                // 2) 漫反射自适应半影 (Diffuse Penumbra) - 柔和椭圆环境光衰减、焦外弥散与悬空离地虚化扩展
-                val dangleSpread = 1.0f + (spatialAnchor.dangleAirDistance * 0.72f)
-                val dangleAlphaFactor = (1.0f - spatialAnchor.dangleAirDistance * 0.62f).coerceIn(0.15f, 1.0f)
-                val penumbraSpread = (1.0f + (spatialAnchor.depthOfFieldBlur * 0.30f)) * dangleSpread
-                val actualPenumbraAlpha = alpha * dangleAlphaFactor
-                drawOval(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            shadowCenterColor.copy(alpha = actualPenumbraAlpha),
-                            shadowCenterColor.copy(alpha = actualPenumbraAlpha * 0.38f),
-                            Color.Transparent
-                        ),
-                        center = Offset(shadowCenterX, shadowCenterY),
-                        radius = shadowWidth * 0.85f * penumbraSpread
-                    ),
-                    topLeft = Offset(shadowCenterX - shadowWidth * 0.5f * penumbraSpread, shadowCenterY - shadowHeight * 0.5f * penumbraSpread),
-                    size = Size(shadowWidth * penumbraSpread, shadowHeight * penumbraSpread)
-                )
-
-                // 3) 核心接触环境遮蔽 (Contact AO Footprint) - 紧贴足底切面的深色物理贴合缝隙 (悬空脱离时平滑消散)
-                val aoConfidence = spatialAnchor.surfaceSupportConfidence.coerceIn(0f, 1f)
-                val aoWidth = baseShadowWidth * 0.54f * (0.35f + 0.65f * aoConfidence)
-                val aoHeight = baseShadowHeight * 0.30f * (0.35f + 0.65f * aoConfidence)
-                val aoAlpha = (0.78f * envLight * aoConfidence).coerceIn(0.0f, 0.90f)
-                val aoCenterX = footContactX + dirShadowShiftX * 0.2f
-                val aoCenterY = footContactY + 1.5f + dirShadowShiftY * 0.2f
-                if (aoAlpha > 0.04f) {
-                    drawOval(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = aoAlpha),
-                                Color.Black.copy(alpha = aoAlpha * 0.45f),
-                                Color.Transparent
-                            ),
-                            center = Offset(aoCenterX, aoCenterY),
-                            radius = aoWidth * 0.65f
-                        ),
-                        topLeft = Offset(aoCenterX - aoWidth * 0.5f, aoCenterY - aoHeight * 0.5f),
-                        size = Size(aoWidth, aoHeight)
-                    )
-                }
 
                 // 4) 真实桌面悬崖边缘微光脉冲警戒线 (Desk Cliff Edge Warning Arc)
                 if (spatialAnchor.isNearCliffEdge || spatialAnchor.cliffEdgeIntensity > 0.04f) {
@@ -368,116 +300,124 @@ fun ARCoreOverlay(
                         strokeWidth = 1.0f
                     )
                 }
-                // 4) 专业单反相机硬件对焦测光指示框 (Hardware AF/AE Focus Reticle)
-                val focusAge = System.currentTimeMillis() - spatialAnchor.cameraFocusTimestamp
-                if (spatialAnchor.isCameraFocusing || focusAge < 1600L) {
-                    val focusProgress = (focusAge.toFloat() / 1600f).coerceIn(0f, 1f)
-                    val focusAlpha = if (spatialAnchor.isCameraFocusing) 0.90f else (1.0f - focusProgress).coerceIn(0f, 1f)
-                    val boxSize = (70f - (if (spatialAnchor.isCameraFocusing) 6f else 18f * focusProgress)) * spatialAnchor.scaleFactor
-                    val focusColor = if (spatialAnchor.isCameraFocusing) Color(0xFFFFD54F) else Color(0xFF69F0AE)
-                    val cornerLen = 14f * spatialAnchor.scaleFactor
-                    val fX = ax
-                    val fY = ay - (105f * spatialAnchor.scaleFactor) // 对准角色躯干与心口
+            }
+        }
 
-                    // 绘制取景器四角直角线瞄准括号 (AF Bracket)
-                    // 左上
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize + cornerLen, fY - boxSize), strokeWidth = 2.5f)
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
-                    // 右上
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize - cornerLen, fY - boxSize), strokeWidth = 2.5f)
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
-                    // 左下
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize + cornerLen, fY + boxSize), strokeWidth = 2.5f)
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
-                    // 右下
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize - cornerLen, fY + boxSize), strokeWidth = 2.5f)
-                    drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
-                    // 中心十字聚焦微点
-                    drawCircle(focusColor.copy(alpha = focusAlpha * 0.9f), radius = 2.5f, center = Offset(fX, fY))
+        // 2. 角色层：GLTF_3D 人格走 Filament 真 3D 手办 (PBR 受光 + 方向光接触阴影 + 相机同轴闪光灯)；否则回退 2.5D Canvas
+        if (spatialAnchor.isAnchored) {
+            if (isTrue3D) {
+                FilamentFigureView(
+                    frameState = FigureFrameState(
+                        anchored = true,
+                        screenX = spatialAnchor.screenX,
+                        screenY = spatialAnchor.screenY,
+                        distanceMeters = spatialAnchor.distanceMeters,
+                        scale = spatialAnchor.scaleFactor,
+                        yawDegrees = spatialAnchor.rotationYaw,
+                        cameraPitchDegrees = spatialAnchor.cameraPitchDegrees,
+                        cameraRollDegrees = spatialAnchor.cameraRollDegrees,
+                        envLuminance = spatialAnchor.lightIntensity,
+                        isLowLight = spatialAnchor.isLowLight,
+                        ambientTintRed = spatialAnchor.ambientTintRed,
+                        ambientTintGreen = spatialAnchor.ambientTintGreen,
+                        ambientTintBlue = spatialAnchor.ambientTintBlue,
+                        ambientColorTemp = spatialAnchor.ambientColorTemp,
+                        lightDirectionX = spatialAnchor.lightDirectionX,
+                        lightDirectionY = spatialAnchor.lightDirectionY,
+                        lightDirectionalStrength = spatialAnchor.lightDirectionalStrength,
+                        surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
+                        dangleAirDistance = spatialAnchor.dangleAirDistance
+                    ),
+                    modelAssetPath = activeModel.modelAsset,
+                    onTapPart = onTouchPart,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
+                val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(x = offsetX, y = offsetY)
+                        .graphicsLayer {
+                            // 关键：将 3D 透视变换原点严格锚定在伴侣与物理桌面的接触点 (双足地面切点)
+                            transformOrigin = TransformOrigin(0.5f, 0.94f)
+                            // 3D 俯仰透视收缩 (根据单反广角真实物理焦距)
+                            rotationX = -pitchTilt
+                            // 3D 偏航朝向 (结合 360 度多视角投影，硬件层保持柔和自然倾角，避免纯 2D 平面旋转时露馅切成薄片)
+                            rotationY = (multiViewProj.normalizedYaw * 0.38f).coerceIn(-28f, 28f)
+                            // 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直站立)
+                            rotationZ = gravityRoll
+                            // 物理相机光学透视视距
+                            cameraDistance = 8f * density
+                        }
+                ) {
+                    CharacterCanvasRenderer(
+                        visualState = visualState.copy(
+                            scale = spatialAnchor.scaleFactor,
+                            environmentalLighting = spatialAnchor.lightIntensity,
+                            isLowLight = spatialAnchor.isLowLight,
+                            ambientColorTemp = spatialAnchor.ambientColorTemp,
+                            ambientTintRed = spatialAnchor.ambientTintRed,
+                            ambientTintGreen = spatialAnchor.ambientTintGreen,
+                            ambientTintBlue = spatialAnchor.ambientTintBlue,
+                            sensorGrainIntensity = spatialAnchor.sensorGrainIntensity,
+                            gazeShiftX = spatialAnchor.cameraGazeOffsetX,
+                            gazeShiftY = spatialAnchor.cameraGazeOffsetY,
+                            chromaticAberrationIntensity = spatialAnchor.chromaticAberrationIntensity,
+                            chromaticAngleRad = spatialAnchor.chromaticAngleRad,
+                            bloomIntensity = spatialAnchor.bloomIntensity,
+                            depthOfFieldBlur = spatialAnchor.depthOfFieldBlur,
+                            isMacroProximity = spatialAnchor.isMacroProximity,
+                            surfaceOcclusionBottomCutoff = spatialAnchor.surfaceOcclusionBottomCutoff,
+                            cameraPitchDegrees = spatialAnchor.cameraPitchDegrees,
+                            cameraRollDegrees = spatialAnchor.cameraRollDegrees,
+                            visualFlowOffsetX = spatialAnchor.visualFlowOffsetX,
+                            visualFlowOffsetY = spatialAnchor.visualFlowOffsetY,
+                            lensVignetteFactor = spatialAnchor.lensVignetteFactor,
+                            isCameraFocusing = spatialAnchor.isCameraFocusing,
+                            gazeTrackingEyeX = spatialAnchor.gazeTrackingEyeX,
+                            gazeTrackingEyeY = spatialAnchor.gazeTrackingEyeY,
+                            inertialSwayAngle = spatialAnchor.inertialSwayAngle,
+                            inertialSquishY = spatialAnchor.inertialSquishY,
+                            foregroundOcclusionRatio = spatialAnchor.foregroundOcclusionRatio,
+                            isNearCliffEdge = spatialAnchor.isNearCliffEdge,
+                            cliffEdgeIntensity = spatialAnchor.cliffEdgeIntensity,
+                            isDanglingOverCliff = spatialAnchor.isDanglingOverCliff,
+                            dangleAirDistance = spatialAnchor.dangleAirDistance,
+                            surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
+                            surfaceStepHeightOffset = spatialAnchor.surfaceStepHeightOffset,
+                            highResPose = visualState.highResPose,
+                            blushIntensity = visualState.blushIntensity,
+                            sleepinessFactor = visualState.sleepinessFactor,
+                            poutIntensity = visualState.poutIntensity,
+                            smugTiltDegrees = visualState.smugTiltDegrees,
+                            haloSparkleIntensity = visualState.haloSparkleIntensity,
+                            skeletonStance = if (animatedSitProgress > 0.5f) SkeletonStance.SITTING else spatialAnchor.skeletonStance,
+                            sitProgress = animatedSitProgress,
+                            multiViewProfile = multiViewProj.profile,
+                            threeQuarterProfileProgress = multiViewProj.threeQuarterProgress,
+                            backProfileProgress = multiViewProj.backProgress,
+                            cylinderContractionX = multiViewProj.cylinderContractionX,
+                            depthDisparityHead = multiViewProj.depthDisparityHead,
+                            depthDisparityHairBack = multiViewProj.depthDisparityHairBack,
+                            depthDisparityFace = multiViewProj.depthDisparityFace,
+                            pigtailSwayAngleLeft = -spatialAnchor.inertialSwayAngle * 0.5f,
+                            pigtailSwayAngleRight = spatialAnchor.inertialSwayAngle * 0.5f
+                        ),
+                        onTouchPart = onTouchPart,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
 
-        // 2. 真实 3D 空间姿态投影层 (足底物理接触锚定 + 重力铅垂锁定 + 3D 俯仰透视 + 台阶高度抬升)
+        // 2.5 硬件对焦指示框：独立成层，绘制在 3D 手办之上（原在贴地层 Canvas 内会被手办遮挡）
         if (spatialAnchor.isAnchored) {
-            val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
-            val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset(x = offsetX, y = offsetY)
-                    .graphicsLayer {
-                        // 关键：将 3D 透视变换原点严格锚定在伴侣与物理桌面的接触点 (双足地面切点)
-                        transformOrigin = TransformOrigin(0.5f, 0.94f)
-                        // 3D 俯仰透视收缩 (根据单反广角真实物理焦距)
-                        rotationX = -pitchTilt
-                        // 3D 偏航朝向 (结合 360 度多视角投影，硬件层保持柔和自然倾角，避免纯 2D 平面旋转时露馅切成薄片)
-                        rotationY = (multiViewProj.normalizedYaw * 0.38f).coerceIn(-28f, 28f)
-                        // 3D 重力铅垂锁定 (手机横滚侧倾时，伴侣身体在现实中依然保持垂直站立)
-                        rotationZ = gravityRoll
-                        // 物理相机光学透视视距
-                        cameraDistance = 8f * density
-                    }
-            ) {
-                CharacterCanvasRenderer(
-                    visualState = visualState.copy(
-                        scale = spatialAnchor.scaleFactor,
-                        environmentalLighting = spatialAnchor.lightIntensity,
-                        isLowLight = spatialAnchor.isLowLight,
-                        ambientColorTemp = spatialAnchor.ambientColorTemp,
-                        ambientTintRed = spatialAnchor.ambientTintRed,
-                        ambientTintGreen = spatialAnchor.ambientTintGreen,
-                        ambientTintBlue = spatialAnchor.ambientTintBlue,
-                        sensorGrainIntensity = spatialAnchor.sensorGrainIntensity,
-                        gazeShiftX = spatialAnchor.cameraGazeOffsetX,
-                        gazeShiftY = spatialAnchor.cameraGazeOffsetY,
-                        chromaticAberrationIntensity = spatialAnchor.chromaticAberrationIntensity,
-                        chromaticAngleRad = spatialAnchor.chromaticAngleRad,
-                        bloomIntensity = spatialAnchor.bloomIntensity,
-                        depthOfFieldBlur = spatialAnchor.depthOfFieldBlur,
-                        isMacroProximity = spatialAnchor.isMacroProximity,
-                        surfaceOcclusionBottomCutoff = spatialAnchor.surfaceOcclusionBottomCutoff,
-                        cameraPitchDegrees = spatialAnchor.cameraPitchDegrees,
-                        cameraRollDegrees = spatialAnchor.cameraRollDegrees,
-                        visualFlowOffsetX = spatialAnchor.visualFlowOffsetX,
-                        visualFlowOffsetY = spatialAnchor.visualFlowOffsetY,
-                        lensVignetteFactor = spatialAnchor.lensVignetteFactor,
-                        isCameraFocusing = spatialAnchor.isCameraFocusing,
-                        gazeTrackingEyeX = spatialAnchor.gazeTrackingEyeX,
-                        gazeTrackingEyeY = spatialAnchor.gazeTrackingEyeY,
-                        inertialSwayAngle = spatialAnchor.inertialSwayAngle,
-                        inertialSquishY = spatialAnchor.inertialSquishY,
-                        foregroundOcclusionRatio = spatialAnchor.foregroundOcclusionRatio,
-                        isNearCliffEdge = spatialAnchor.isNearCliffEdge,
-                        cliffEdgeIntensity = spatialAnchor.cliffEdgeIntensity,
-                        isDanglingOverCliff = spatialAnchor.isDanglingOverCliff,
-                        dangleAirDistance = spatialAnchor.dangleAirDistance,
-                        surfaceSupportConfidence = spatialAnchor.surfaceSupportConfidence,
-                        surfaceStepHeightOffset = spatialAnchor.surfaceStepHeightOffset,
-                        highResPose = visualState.highResPose,
-                        blushIntensity = visualState.blushIntensity,
-                        sleepinessFactor = visualState.sleepinessFactor,
-                        poutIntensity = visualState.poutIntensity,
-                        smugTiltDegrees = visualState.smugTiltDegrees,
-                        haloSparkleIntensity = visualState.haloSparkleIntensity,
-                        skeletonStance = if (animatedSitProgress > 0.5f) SkeletonStance.SITTING else spatialAnchor.skeletonStance,
-                        sitProgress = animatedSitProgress,
-                        multiViewProfile = multiViewProj.profile,
-                        threeQuarterProfileProgress = multiViewProj.threeQuarterProgress,
-                        backProfileProgress = multiViewProj.backProgress,
-                        cylinderContractionX = multiViewProj.cylinderContractionX,
-                        depthDisparityHead = multiViewProj.depthDisparityHead,
-                        depthDisparityHairBack = multiViewProj.depthDisparityHairBack,
-                        depthDisparityFace = multiViewProj.depthDisparityFace,
-                        pigtailSwayAngleLeft = -spatialAnchor.inertialSwayAngle * 0.5f,
-                        pigtailSwayAngleRight = spatialAnchor.inertialSwayAngle * 0.5f
-                    ),
-                    onTouchPart = onTouchPart,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            CameraFocusBracketOverlay(spatialAnchor = spatialAnchor, isTrue3D = isTrue3D, modifier = Modifier.fillMaxSize())
         }
+
 
         // 3. 顶部 AR 状态胶囊与引导提示 (Spatial Guidance Pill)
         Column(
@@ -693,4 +633,48 @@ fun ARCoreOverlay(
         onTouchPart = { part, _, _ -> onTouchPart(part) },
         modifier = modifier
     )
+}
+
+/**
+ * 物理相机硬件对焦测光指示框 (Hardware AF/AE Focus Reticle)：专业单反四角直角瞄准括号 + 中心十字。
+ * 独立于贴地层 Canvas，以保证绘制在 Filament 3D 手办之上。
+ */
+@Composable
+private fun CameraFocusBracketOverlay(
+    spatialAnchor: ARSpatialAnchor,
+    isTrue3D: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val focusAge = System.currentTimeMillis() - spatialAnchor.cameraFocusTimestamp
+        if (!spatialAnchor.isCameraFocusing && focusAge >= 1600L) return@Canvas
+        val w = size.width
+        val h = size.height
+        val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX
+        val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY
+
+        val focusProgress = (focusAge.toFloat() / 1600f).coerceIn(0f, 1f)
+        val focusAlpha = if (spatialAnchor.isCameraFocusing) 0.90f else (1.0f - focusProgress).coerceIn(0f, 1f)
+        val boxSize = (70f - (if (spatialAnchor.isCameraFocusing) 6f else 18f * focusProgress)) * spatialAnchor.scaleFactor
+        val focusColor = if (spatialAnchor.isCameraFocusing) Color(0xFFFFD54F) else Color(0xFF69F0AE)
+        val cornerLen = 14f * spatialAnchor.scaleFactor
+        val fX = ax
+        val fY = ay - (105f * spatialAnchor.scaleFactor) // 对准角色躯干与心口
+
+        // 取景器四角直角线瞄准括号 (AF Bracket)
+        // 左上
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize + cornerLen, fY - boxSize), strokeWidth = 2.5f)
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY - boxSize), Offset(fX - boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
+        // 右上
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize - cornerLen, fY - boxSize), strokeWidth = 2.5f)
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY - boxSize), Offset(fX + boxSize, fY - boxSize + cornerLen), strokeWidth = 2.5f)
+        // 左下
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize + cornerLen, fY + boxSize), strokeWidth = 2.5f)
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX - boxSize, fY + boxSize), Offset(fX - boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
+        // 右下
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize - cornerLen, fY + boxSize), strokeWidth = 2.5f)
+        drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
+        // 中心十字聚焦微点
+        drawCircle(focusColor.copy(alpha = focusAlpha * 0.9f), radius = 2.5f, center = Offset(fX, fY))
+    }
 }
