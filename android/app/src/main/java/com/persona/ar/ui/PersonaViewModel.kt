@@ -571,7 +571,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     blushIntensity = reaction.blush,
                     poutIntensity = reaction.pout,
                     smugTiltDegrees = reaction.smug,
-                    sleepinessFactor = 0f, // 触摸唤醒
+                    // 触摸唤醒：从打瞌睡（保持型 SLEEP 动作）中被触碰时立即结束睡眠动作，避免睡眠姿态盖住触摸反应
+                    action = if (current.visualState.action == ActionType.SLEEP) ActionType.IDLE
+                             else current.visualState.action,
+                    actionStartedAtNanos = if (current.visualState.action == ActionType.SLEEP)
+                        0L else current.visualState.actionStartedAtNanos,
+                    sleepinessFactor = 0f,
                     touchReaction = part,
                     touchReactionStartedAtNanos = touchReactionStartNanos
                 )
