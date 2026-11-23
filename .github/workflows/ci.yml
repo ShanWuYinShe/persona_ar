@@ -65,14 +65,17 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install required SDK platform
         run: |
-          # Filament 1.81 要求 compileSdk 37；SDK 仓库以次版本包名发布 API 37（platforms;android-37.0）
-          sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0"
-          yes | sdkmanager --licenses > /dev/null
+          # Filament 1.81 要求 compileSdk 37；SDK 仓库以次版本包名发布 API 37（platforms;android-37.0，无整数命名的 android-37）。
+          # 直接用 runner 预装 SDK 里的 sdkmanager：不引入 android-actions/setup-android，
+          # 该 action v3 会执行 `sdkmanager tools`，而 "tools" 包已从 SDK 仓库移除，会直接失败。
+          SDKMANAGER="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER=$(command -v sdkmanager)
+          echo "using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;36.0.0"
+          ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
