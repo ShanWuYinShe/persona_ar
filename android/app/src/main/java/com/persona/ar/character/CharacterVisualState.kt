@@ -5,13 +5,19 @@ import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelManifest
+import com.persona.ar.data.model.TouchPart
 
 data class CharacterVisualState(
     val name: String = "星野",
     val model: PersonaModelManifest? = null,
     val emotion: EmotionType = EmotionType.NEUTRAL,
     val action: ActionType = ActionType.IDLE,
+    /** 动作开始时刻 (System.nanoTime)；3D 动画按真实时间推进，与帧率解耦 */
+    val actionStartedAtNanos: Long = 0L,
     val expression: String = "SMILE",
+    /** 触摸反应部位与开始时刻（3D 手办专属全身反应动作；2.5D 用微表情差分） */
+    val touchReaction: TouchPart? = null,
+    val touchReactionStartedAtNanos: Long = 0L,
     val lipSyncAmplitude: Float = 0f,
     val isBlinking: Boolean = false,
     val breathingOffset: Float = 0f,

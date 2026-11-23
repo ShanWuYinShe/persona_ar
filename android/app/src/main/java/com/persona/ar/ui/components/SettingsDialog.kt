@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.persona.ar.ar.ARMode
+import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.VoiceMode
 
@@ -55,7 +57,13 @@ fun SettingsDialog(
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
     onUpdateServerUrl: (String) -> Unit,
     onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
-    onUpdateAsrConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> }
+    onUpdateAsrConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
+    /** 点击后立即触发 3D 手办动作照出（无需等待对话） */
+    onPreviewAction: (ActionType) -> Unit = {},
+    /** 直接切换到站立姿态 */
+    onStand: () -> Unit = {},
+    /** 直接切换到桌沿垂腿坐姿 */
+    onSit: () -> Unit = {}
 ) {
     var serverInput by remember { mutableStateOf(currentServerUrl) }
     var selectedVoiceMode by remember { mutableStateOf(currentVoiceMode) }
@@ -253,6 +261,81 @@ fun SettingsDialog(
                         fontSize = 10.sp,
                         lineHeight = 14.sp
                     )
+                }
+
+                // 3.5 3D 手办动作演出预览（同时也是真机动作回归验证入口）
+                SectionContainer(
+                    icon = Icons.Filled.AutoAwesome,
+                    title = "3D 动作演出预览",
+                    sectionBg = sectionBg,
+                    borderColor = borderColor
+                ) {
+                    Text(
+                        text = "点击立即让 3D 手办播放对应动作（无需等待对话）。表情/口型由 VRM morph 驱动。",
+                        color = Color(0xFF6B587B),
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                    val actionRows = listOf(
+                        listOf(
+                            "挥手" to ActionType.WAVE,
+                            "点头" to ActionType.NOD,
+                            "摇头" to ActionType.SHAKE_HEAD,
+                            "鞠躬" to ActionType.BOW
+                        ),
+                        listOf(
+                            "跳跃" to ActionType.JUMP,
+                            "噘嘴" to ActionType.POUT,
+                            "害羞" to ActionType.BLUSH,
+                            "打哈欠" to ActionType.YAWN
+                        ),
+                        listOf(
+                            "打瞌睡" to ActionType.SLEEP,
+                            "得意" to ActionType.SMUG,
+                            "待机" to ActionType.IDLE
+                        )
+                    )
+                    for (row in actionRows) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            for ((label, action) in row) {
+                                GameMiniChip(
+                                    title = label,
+                                    isSelected = false,
+                                    activeColor = Color(0xFF00B0FF),
+                                    onClick = { onPreviewAction(action) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GameOptionChip(
+                            title = "站立姿态",
+                            subtitle = "站直在桌面",
+                            isSelected = false,
+                            activeColor = Color(0xFF00B0FF),
+                            onClick = {
+                                if (currentMode == ARMode.ARCORE_3D) onStand()
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GameOptionChip(
+                            title = "桌沿垂腿坐",
+                            subtitle = "坐在桌面边缘",
+                            isSelected = false,
+                            activeColor = Color(0xFFE65100),
+                            onClick = {
+                                if (currentMode == ARMode.ARCORE_3D) onSit()
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
                 // 4. 后端 API 地址

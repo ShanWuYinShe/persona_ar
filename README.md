@@ -15,9 +15,11 @@
   - **现实桌面投影阴影**：脚底生成带羽化的环境光椭圆阴影，让纸片人稳稳立于真实世界桌面或地面。
   - **陀螺仪重力微视差 (Parallax Effect)**：晃动手机时，纸片人产生空间视差浮动，强化破壁而出的立体沉浸感。
   - **手势自由操控**：单指任意拖拽摆放位置、双指缩放调整大小比例。
-- **3D 真实空间平面检测模式 (ARCore 3D)**：
-  - 支持 Google ARCore 水平地面/桌面识别与空间特征网格扫描，提供 360 度视角旋转与空间锚定。
-  - 可以在设置中心随时一键切换两种视觉模式。
+- **真 3D 手办空间模式 (Filament + 全动作骨骼)**：
+  - 离线 Filament PBR 渲染 VRM 手办：方向光真实投射接触阴影、相机同轴闪光灯、现实环境 IBL 色渗与按照度自动曝光。
+  - **全身骨骼动作**：挥手、点头、摇头、鞠躬、跳跃、噘嘴、害羞捂脸、打哈欠、打瞌睡、得意叉腰、桌沿垂腿坐，以及摸头/戳脸/牵手/拥抱 4 种触摸反应；动作带缓动与自动回落，不是简单旋转贴图。
+  - **VRM 表情 + 真实口型**：41 个 blend shape 驱动微笑/害羞/生气/惊讶/困倦与随机眨眼，`Visualizer` 采样真实语音振幅驱动嘴型开合。
+  - 360 度视角旋转、单指拖拽摆放、双指缩放、桌面边缘坐姿切换；无 3D 资产的人格自动回退 2.5D 逐帧立绘。
 
 ### 2. 模拟真实人类的情感交互大脑
 - **多维度情绪与动作驱动**：
@@ -34,9 +36,9 @@
   - 语气、态度与反应随好感度显著变化，真正模拟真实恋爱/养成陪伴感。
 
 ### 3. 拟人语音与实时口型同步 (Lip-sync)
-- **自然声音合成**：支持微软 Edge-TTS 少女声线输出，同时内置端侧 TTS 朗读兜底。
-- **实时口型开合**：音频播放时，算法实时计算声音振幅频谱，动态驱动纸片人嘴巴开合，栩栩如生。
-- **语音输入**：支持长按麦克风对讲，带有实时拾音跳动脉冲波形展示。
+- **真人级神经网络语音**：后端默认使用微软 Edge 神经网络 TTS（免费无需 key，如 zh-CN-XiaoyiNeural / XiaoxiaoNeural / YunjianNeural），并按 9 种情绪与羁绊等级实时调整语速/音高/音量（喜悦轻快、害羞软糯、困倦放慢…），合成前自动清洗 emoji/舞台说明；磁盘 SHA256 缓存命中后毫秒级返回。
+- **真实口型开合**：Android `Visualizer` 采集播放中的真实音频波形 RMS 驱动 3D 手办 VRM 口型 morph 与头部微动；失败时自动回退端侧 TTS。
+- **语音输入**：支持长按麦克风对讲与连续连麦（可打断），带实时拾音脉冲波形。
 
 ---
 
@@ -58,16 +60,17 @@ persona_ar/
 │   │   └── AndroidManifest.xml
 │   ├── build.gradle.kts
 │   └── settings.gradle.kts
-├── server/                      # 专属情感后端服务 (Python FastAPI)
-│   ├── app/
-│   │   ├── api/                # 对话互动、触碰反应、状态查询 API 路由
-│   │   ├── core/               # 配置管理 (模型密钥、角色人设、TTS 声音)
-│   │   ├── models/             # Pydantic 结构化数据定义
-│   │   ├── persona/            # 拟人性格提示词工程、记忆回溯、情绪动作状态机
-│   │   └── tts/                # Edge-TTS 自然语音流合成
-│   ├── tests/                  # 服务端自动化单元测试 (Pytest)
+├── server/                      # 专属情感后端服务 (Go + Gin + Gorilla WebSocket)
+│   ├── cmd/server/             # 服务入口
+│   ├── internal/
+│   │   ├── api/                # 对话/语音/触碰/记忆/商城/ASR/WS 全双工路由
+│   │   ├── persona/            # 角色人设、情绪动作状态机、长期记忆
+│   │   ├── llm/                # OpenAI 兼容大模型接入与内置拟人规则降级
+│   │   ├── asr/                # Whisper 兼容语音识别与内置降级
+│   │   └── tts/                # 微软 Edge 神经网络语音 + 情绪韵律 + 版本化缓存
+│   ├── internal/test/          # Go 单元测试
 │   ├── Dockerfile
-│   └── requirements.txt
+│   └── go.mod
 ├── docker-compose.yml           # 一键容器化部署
 └── README.md
 ```
@@ -83,15 +86,16 @@ persona_ar/
 docker compose up -d
 ```
 
-#### 方式 B：本地 Python 运行
+#### 方式 B：本地 Go 运行
 ```bash
 cd server
-pip install -r requirements.txt
-python run.py
+go run ./cmd/server
 ```
 服务将在 `http://0.0.0.0:8000` 启动，健康检查端点为 `http://localhost:8000/healthz`。
 
 > **提示**：服务内置了高拟真二次元情感大脑与离线规则库，即使不配置外部 API Key 也能开箱畅快体验！如需接入真实外部大语言模型，只需在 `docker-compose.yml` 或环境变量中填入 `LLM_API_KEY`（支持 DeepSeek / OpenAI 等）。
+>
+> **语音**：默认使用微软 Edge 神经网络 TTS（`TTS_PROVIDER=edge`，免费无需 key，需服务端可访问 `speech.platform.bing.com`；受限网络可设 `TTS_PROXY`）。也可用 `TTS_PROVIDER=openai` + `TTS_BASE_URL/TTS_API_KEY/TTS_MODEL/TTS_OPENAI_VOICE` 接入任意 OpenAI 兼容 `/audio/speech` 服务。合成失败时客户端自动回退端侧 TTS。
 
 ### 2. 下载预编译 APK（推荐）
 
@@ -121,4 +125,4 @@ python run.py
 | **轻触双手** | 触发牵手反应（光子共振、眨眼微笑） |
 | **按住底部麦克风** | 实时拾音对讲，松开即刻发送语音给星野 |
 | **点击顶部 AR 胶囊** | 在【2.5D 精致立绘】与【3D 空间追踪】模式间无缝切换 |
-| **点击齿轮图标** | 打开设置，配置服务器地址与系统参数 |
+| **点击齿轮图标** | 打开设置：服务器地址、视觉模式、3D 动作演出预览（一键触发全部动作/坐姿切换）与系统参数 |
