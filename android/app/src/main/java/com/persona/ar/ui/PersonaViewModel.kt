@@ -12,6 +12,7 @@ import com.persona.ar.ar.SensorTiltHelper
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.character.loader.PersonaModelManager
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.api.ApiClient
 import com.persona.ar.data.api.PersonaWebSocketClient
 import com.persona.ar.data.model.ActionType
@@ -830,6 +831,23 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     isMacroProximity = false,
                     surfaceOcclusionBottomCutoff = 0f
                 )
+            )
+        }
+    }
+
+    /**
+     * 切换 3D 骨骼姿态 (站立 STANDING / 桌沿垂腿坐姿 SITTING)
+     */
+    fun onToggleSkeletonStance() {
+        _uiState.update { current ->
+            val nextStance = if (current.spatialAnchor.skeletonStance == SkeletonStance.STANDING) {
+                SkeletonStance.SITTING
+            } else {
+                SkeletonStance.STANDING
+            }
+            current.copy(
+                spatialAnchor = current.spatialAnchor.copy(skeletonStance = nextStance),
+                visualState = current.visualState.copy(skeletonStance = nextStance)
             )
         }
     }

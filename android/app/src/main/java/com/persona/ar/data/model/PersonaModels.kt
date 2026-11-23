@@ -25,7 +25,8 @@ enum class ActionType {
     JUMP,
     YAWN,
     SLEEP,
-    SMUG
+    SMUG,
+    SIT
 }
 
 enum class TouchPart {

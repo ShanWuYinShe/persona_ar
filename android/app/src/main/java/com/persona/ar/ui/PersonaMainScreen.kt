@@ -129,6 +129,7 @@ fun PersonaMainScreen(
                     onDragStateChanged = { isDragging -> viewModel.onDragStateChanged(isDragging) },
                     onResetAnchor = { viewModel.onResetAnchor() },
                     onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
+                    onToggleStance = { viewModel.onToggleSkeletonStance() },
                     modifier = Modifier.fillMaxSize()
                 )
             }

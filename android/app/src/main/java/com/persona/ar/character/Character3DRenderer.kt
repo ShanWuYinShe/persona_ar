@@ -23,7 +23,8 @@ fun Character3DRenderer(
     onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
     onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
     onDragStateChanged: (Boolean) -> Unit = {},
-    onResetAnchor: () -> Unit = {}
+    onResetAnchor: () -> Unit = {},
+    onToggleStance: () -> Unit = {}
 ) {
     ARCoreOverlay(
         trackingStatus = trackingStatus,
@@ -36,6 +37,7 @@ fun Character3DRenderer(
         onDragStateChanged = onDragStateChanged,
         onResetAnchor = onResetAnchor,
         onTouchPart = onTouchPart,
+        onToggleStance = onToggleStance,
         modifier = modifier
     )
 }
@@ -52,7 +54,8 @@ fun Character3DRenderer(
     onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
     onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
     onDragStateChanged: (Boolean) -> Unit = {},
-    onResetAnchor: () -> Unit = {}
+    onResetAnchor: () -> Unit = {},
+    onToggleStance: () -> Unit = {}
 ) {
     Character3DRenderer(
         visualState = visualState,
@@ -65,6 +68,7 @@ fun Character3DRenderer(
         onTransformGesture = onTransformGesture,
         onDragAnchor = onDragAnchor,
         onDragStateChanged = onDragStateChanged,
-        onResetAnchor = onResetAnchor
+        onResetAnchor = onResetAnchor,
+        onToggleStance = onToggleStance
     )
 }
