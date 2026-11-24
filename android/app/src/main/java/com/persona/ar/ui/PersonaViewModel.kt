@@ -44,7 +44,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val universalTracker = UniversalSensorSurfaceTracker(application)
     private val modelManager = PersonaModelManager(application)
     private val wsClient = PersonaWebSocketClient()
-    private val vibrator = application.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+    private val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        application.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        application.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+    }
 
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
@@ -329,7 +334,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         ActionType.BLUSH, ActionType.SMUG -> "BLUSH_FACE"
                         ActionType.POUT, ActionType.SHAKE_HEAD -> "POUT"
                         ActionType.YAWN, ActionType.SLEEP -> "SLEEPY"
-                        else -> current.visualState.expression
+                        ActionType.IDLE, ActionType.SIT -> current.visualState.expression
                     }
                 )
             )

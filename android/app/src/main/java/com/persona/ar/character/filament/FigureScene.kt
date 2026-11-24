@@ -794,11 +794,11 @@ class FigureScene(
         }
     }
 
-    /** 按命中网格与屏幕位置推断触碰部位：结合站姿与坐姿体态自适应判断摸头、戳脸、牵手与抱抱 */
+    /** 按命中网格与屏幕位置推断触碰部位：结合站姿与坐姿体态自适应平滑插值判断摸头、戳脸、牵手与抱抱 */
     private fun classifyPart(entity: Int, px: Int, py: Int): TouchPart {
-        val isSitting = lastStance == com.persona.ar.character.skeleton.SkeletonStance.SITTING
-        val effectiveHeightRatio = if (isSitting) 0.78f else 1.0f
-        val headRatio = if (isSitting) 0.68f else 0.88f
+        val sitK = animator?.currentSitBlend ?: (if (lastStance == com.persona.ar.character.skeleton.SkeletonStance.SITTING) 1f else 0f)
+        val effectiveHeightRatio = 1.0f - 0.22f * sitK
+        val headRatio = 0.88f - 0.20f * sitK
 
         // 手办顶部与头部中心投影到屏幕
         val topY = projectY(footWorld[0], footWorld[1] + DEFAULT_FIGURE_HEIGHT_METERS * effectiveHeightRatio * lastScale, footWorld[2])
@@ -811,9 +811,10 @@ class FigureScene(
         val relativeY = (py - topY) / height
         val centerX = viewportWidth * lastScreenX
         val relativeX = kotlin.math.abs(px - centerX) / height
-        val handYRange = if (isSitting) 0.32f..0.62f else 0.42f..0.70f
-        val handXMin = if (isSitting) 0.12f else 0.16f
-        return if (relativeY in handYRange && relativeX > handXMin) TouchPart.HAND else TouchPart.BODY
+        val handYMin = 0.42f - 0.10f * sitK
+        val handYMax = 0.70f - 0.08f * sitK
+        val handXMin = 0.16f - 0.04f * sitK
+        return if (relativeY in handYMin..handYMax && relativeX > handXMin) TouchPart.HAND else TouchPart.BODY
     }
 
     private var lastScale = 1f
