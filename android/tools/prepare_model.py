@@ -67,22 +67,49 @@ def for_each_texture_ref(node, fn):
 def transform(js, bin_):
     materials = js.get("materials", [])
 
-    # 1/2. 材质级：剥离 unlit（眼睛例外）与 VRM 扩展
+    # 1. 材质级：剥离 unlit（眼睛例外）与 VRM 扩展，并为二次元手办注入物理 PBR 材质分层
     any_unlit_left = False
     for m in materials:
+        name = m.get("name", "").upper()
         ext = m.get("extensions")
-        if not ext:
-            continue
-        is_eye = "EYE" in m.get("name", "").upper()
-        if "KHR_materials_unlit" in ext:
-            if is_eye:
-                any_unlit_left = True
+        is_eye = "EYE" in name
+        if ext:
+            if "KHR_materials_unlit" in ext:
+                if is_eye:
+                    any_unlit_left = True
+                else:
+                    del ext["KHR_materials_unlit"]
+            if "VRM" in ext:
+                del ext["VRM"]
+            if not ext:
+                del m["extensions"]
+
+        # PBR 手办材质分层：根据部位映射真实的实体 PVC/树脂手办物理属性
+        if not is_eye:
+            pbr = m.setdefault("pbrMetallicRoughness", {})
+            if "HAIR" in name:
+                # 半光泽树脂漆面：迎光面产生清晰流动的"天使之环"发丝高光
+                pbr["roughnessFactor"] = 0.38
+                pbr["metallicFactor"] = 0.02
+            elif "SKIN" in name:
+                # 细腻磨砂树脂：温润微散射，杜绝死白与塑料油光
+                pbr["roughnessFactor"] = 0.68
+                pbr["metallicFactor"] = 0.0
+            elif "SHOES" in name:
+                # 注塑成型高光小皮鞋：反光扎实，与桌面接触面形成分明光影
+                pbr["roughnessFactor"] = 0.28
+                pbr["metallicFactor"] = 0.08
+            elif "CLOTH" in name or "ONEPICE" in name:
+                # 常服面料：棉织物微纤维散射
+                pbr["roughnessFactor"] = 0.82
+                pbr["metallicFactor"] = 0.0
+            elif "MOUTH" in name:
+                # 唇口微润
+                pbr["roughnessFactor"] = 0.48
+                pbr["metallicFactor"] = 0.0
             else:
-                del ext["KHR_materials_unlit"]
-        if "VRM" in ext:
-            del ext["VRM"]
-        if not ext:
-            del m["extensions"]
+                pbr["roughnessFactor"] = 0.70
+                pbr["metallicFactor"] = 0.0
 
     # 2. 顶层 VRM 扩展（meta / humanoid / blendShape / secondary）
     top_ext = js.get("extensions")
@@ -175,6 +202,12 @@ def verify(path):
     for m in js["materials"]:
         for_each_texture_ref(m, lambda d: (_ for _ in ()).throw(AssertionError("texture 索引越界"))
                              if d["index"] >= len(js["textures"]) else None)
+        if not is_eye(m):
+            pbr = m.get("pbrMetallicRoughness", {})
+            rf = pbr.get("roughnessFactor", 1.0)
+            mf = pbr.get("metallicFactor", 0.0)
+            assert 0.0 <= rf <= 1.0, f"粗糙度越界: {rf}"
+            assert 0.0 <= mf <= 1.0, f"金属度越界: {mf}"
     return js, bin_
 
 

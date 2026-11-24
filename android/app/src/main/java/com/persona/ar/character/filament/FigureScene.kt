@@ -6,8 +6,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
+import com.google.android.filament.ACESToneMapper
 import com.google.android.filament.Box
 import com.google.android.filament.Camera
+import com.google.android.filament.ColorGrading
 import com.google.android.filament.Fence
 import com.google.android.filament.Engine
 import com.google.android.filament.EntityManager
@@ -155,6 +157,7 @@ class FigureScene(
     private val keyLightInstance: Int
     private val flashLightInstance: Int
     private var indirectLight: IndirectLight? = null
+    private var colorGrading: ColorGrading? = null
 
     // ---- 接触阴影地面 ----
     private val groundEntity = engine.entityManager.create()
@@ -216,7 +219,9 @@ class FigureScene(
             discard = false
         }
         view.setShadowingEnabled(true)
+        view.shadowType = View.ShadowType.PCF
         view.setAntiAliasing(View.AntiAliasing.NONE) // 已启用 4x MSAA
+        view.dithering = View.Dithering.TEMPORAL
         view.setPostProcessingEnabled(true)
         view.setAmbientOcclusionOptions(View.AmbientOcclusionOptions().apply {
             enabled = true
@@ -225,6 +230,22 @@ class FigureScene(
             intensity = 1.0f
             quality = View.QualityLevel.MEDIUM
         })
+        view.bloomOptions = View.BloomOptions().apply {
+            enabled = true
+            strength = 0.16f
+            resolution = 360
+            quality = View.QualityLevel.MEDIUM
+            highlight = 1000.0f
+        }
+
+        // 电影级 ACES 色彩分级与色调映射：高光平滑过渡，增强二次元角色色彩饱和与对比
+        colorGrading = ColorGrading.Builder()
+            .quality(ColorGrading.QualityLevel.HIGH)
+            .toneMapper(ACESToneMapper())
+            .contrast(1.04f)
+            .vibrance(1.05f)
+            .build(engine)
+        view.colorGrading = colorGrading
 
         // 方向光：台灯，唯一投影光源。阴影贴图覆盖 ~2.5m 的桌面级场景，开启屏幕空间接触阴影形成脚底深黑接触线
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
@@ -260,9 +281,12 @@ class FigureScene(
         scene.addEntity(keyLightEntity)
         scene.addEntity(flashLightEntity)
 
-        // 环境光：单频带球谐常数项（RGB 由每帧环境色渗驱动）
+        // 环境光：2-Band 球谐定向光照（4 组基函数共 12 系数）：
+        // L00 为基础漫反射常数项；L1,-1 为垂直 Y 轴偶极子（天顶偏冷白光，桌面偏暖地表色渗），
+        // 消除单频带平面感，让手办的下巴底、发梢内侧与裙摆下方产生真实的半球环境漫反射。
+        val initialSh = FigureLighting.compute2BandSH()
         indirectLight = IndirectLight.Builder()
-            .irradiance(1, floatArrayOf(1f, 1f, 1f))
+            .irradiance(2, initialSh)
             .intensity(1_000f)
             .build(engine)
         scene.indirectLight = indirectLight
@@ -789,6 +813,11 @@ class FigureScene(
         groundVertexBuffer?.let { engine.destroyVertexBuffer(it) }
         groundIndexBuffer?.let { engine.destroyIndexBuffer(it) }
         indirectLight?.let { engine.destroyIndirectLight(it) }
+        colorGrading?.let {
+            engine.destroyColorGrading(it)
+            colorGrading = null
+        }
+        view.colorGrading = null
 
         swapChain?.let { engine.destroySwapChain(it) }
         swapChain = null

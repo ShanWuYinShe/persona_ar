@@ -1,0 +1,82 @@
+package com.persona.ar.character.filament
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class FigureLightingTest {
+
+    @Test
+    fun `compute2BandSH returns 12 coefficients`() {
+        val sh = FigureLighting.compute2BandSH()
+        assertEquals(FigureLighting.SH_2BAND_COEFFICIENT_COUNT, sh.size)
+        // L00 基础项应为正值 (全向漫反射)
+        assertTrue("L00 R 应 > 0", sh[0] > 0f)
+        assertTrue("L00 G 应 > 0", sh[1] > 0f)
+        assertTrue("L00 B 应 > 0", sh[2] > 0f)
+    }
+
+    @Test
+    fun `compute2BandSH responds to color temperature`() {
+        val warmSH = FigureLighting.compute2BandSH(ambientColorTemp = -1f)
+        val coolSH = FigureLighting.compute2BandSH(ambientColorTemp = 1f)
+
+        // L1,-1 垂直偶极子 (索引 3..5: R, G, B)
+        // 暖环境 (傍晚/暖灯) 下 R 显著增强，冷环境 (阴天/冷光) 下 B 显著增强
+        assertTrue("暖环境下 L1,-1 R 应高于冷环境", warmSH[3] > coolSH[3])
+        assertTrue("冷环境下 L1,-1 B 应高于暖环境", coolSH[5] > warmSH[5])
+    }
+
+    @Test
+    fun `compute2BandSH scales with ambient tints`() {
+        val baseSH = FigureLighting.compute2BandSH(tintRed = 1f, tintGreen = 1f, tintBlue = 1f)
+        val tintedSH = FigureLighting.compute2BandSH(tintRed = 1.3f, tintGreen = 0.8f, tintBlue = 0.9f)
+
+        // L00 与定向分量均应随通道增益线性响应
+        assertEquals(baseSH[0] * 1.3f, tintedSH[0], 1e-4f)
+        assertEquals(baseSH[1] * 0.8f, tintedSH[1], 1e-4f)
+        assertEquals(baseSH[2] * 0.9f, tintedSH[2], 1e-4f)
+    }
+
+    @Test
+    fun `resolvePbrProfile differentiates figure materials`() {
+        // 头发：半光泽 PVC 漆面 (高光流动)
+        val hair = FigureLighting.resolvePbrProfile("F00_000_Hair_00_HAIR_01")
+        assertFalse(hair.isUnlit)
+        assertEquals(0.38f, hair.roughness, 1e-3f)
+        assertEquals(0.02f, hair.metallic, 1e-3f)
+
+        // 皮肤：细腻磨砂树脂 (温润柔和)
+        val skin = FigureLighting.resolvePbrProfile("F00_002_02_Body_00_SKIN")
+        assertFalse(skin.isUnlit)
+        assertEquals(0.68f, skin.roughness, 1e-3f)
+        assertEquals(0.0f, skin.metallic, 1e-3f)
+
+        // 鞋子：注塑成型高光小皮鞋 (扎实反光)
+        val shoes = FigureLighting.resolvePbrProfile("F00_002_01_Shoes_01_CLOTH")
+        assertFalse(shoes.isUnlit)
+        assertEquals(0.28f, shoes.roughness, 1e-3f)
+        assertEquals(0.08f, shoes.metallic, 1e-3f)
+
+        // 常服：微纤维漫反射织物
+        val cloth = FigureLighting.resolvePbrProfile("F00_002_01_Onepice_01_CLOTH")
+        assertFalse(cloth.isUnlit)
+        assertEquals(0.82f, cloth.roughness, 1e-3f)
+
+        // 唇口：微润半透
+        val mouth = FigureLighting.resolvePbrProfile("F00_000_00_FaceMouth_00_FACE")
+        assertFalse(mouth.isUnlit)
+        assertEquals(0.48f, mouth.roughness, 1e-3f)
+
+        // 眼睛/睫毛：保持 unlit 锐利二次元表现
+        val iris = FigureLighting.resolvePbrProfile("F00_000_00_EyeIris_00_EYE")
+        assertTrue(iris.isUnlit)
+
+        val eyelash = FigureLighting.resolvePbrProfile("F00_000_00_FaceEyelash_00_FACE")
+        assertTrue(eyelash.isUnlit)
+
+        val eyeline = FigureLighting.resolvePbrProfile("F00_000_00_FaceEyeline_00_FACE")
+        assertTrue(eyeline.isUnlit)
+    }
+}
