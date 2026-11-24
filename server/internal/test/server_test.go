@@ -17,6 +17,7 @@ import (
 
 	"github.com/ShanWuYinShe/persona_ar/server/internal/api"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/asr"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/llm"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/persona"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/tts"
@@ -418,12 +419,15 @@ func TestCircadianAndMultiVoiceIsolation(t *testing.T) {
 }
 
 func TestLLMProviderAndGracefulFallback(t *testing.T) {
+	// 全局配置是进程级的，测试结束必须还原成 mock，否则后续用例会真的去连外部大模型。
+	defer llm.DefaultManager.Configure(llm.ProviderConfig{Provider: "mock"})
 	router := setupTestRouter()
 
 	// 1. 测试设置大模型 API 配置
+	// 用本机关闭端口模拟「网络异常」：既覆盖降级路径，又不依赖外网可用性与真实响应时延。
 	cfgPayload := map[string]string{
 		"provider": "openai",
-		"base_url": "https://api.deepseek.com",
+		"base_url": "http://127.0.0.1:1",
 		"api_key":  "sk-test-mock-deepseek-key-123456",
 		"model":    "deepseek-chat",
 	}
@@ -476,6 +480,16 @@ func TestLLMProviderAndGracefulFallback(t *testing.T) {
 }
 
 func TestChatStreamAndCyberKPersona(t *testing.T) {
+	// 该用例断言 cyber_k 的启发式人设台词：显式注入一个必定连不上的外部 LLM，
+	// 强制走 heuristic 分支，避免依赖前面用例遗留的全局 LLM 配置。
+	llm.DefaultManager.Configure(llm.ProviderConfig{
+		Provider: "openai",
+		BaseURL:  "http://127.0.0.1:1",
+		APIKey:   "test-invalid-key",
+		Model:    "test-model",
+	})
+	defer llm.DefaultManager.Configure(llm.ProviderConfig{Provider: "mock"})
+
 	// 1. 切换至 K-07 战术机娘
 	userID := "test_stream_cyberk_user"
 	ok := persona.DefaultEngine.SwitchUserPersona(userID, "cyber_k")
@@ -534,12 +548,15 @@ func TestChatStreamAndCyberKPersona(t *testing.T) {
 }
 
 func TestASRProviderAndRoutes(t *testing.T) {
+	// ASR 配置同样是进程级全局状态：还原 mock，避免后续 WebSocket/语音用例继承外部 ASR 端点。
+	defer asr.DefaultManager.UpdateConfig(asr.Config{Provider: "mock"})
 	router := setupTestRouter()
 
 	// 1. 设置 ASR 模拟与外部配置
+	// 用本机关闭端口模拟上游不可达：验证「ASR 失败自动降级启发式识别」，同时不依赖外网响应时延。
 	cfgPayload := map[string]string{
 		"provider": "whisper",
-		"base_url": "https://api.openai.com/v1",
+		"base_url": "http://127.0.0.1:1",
 		"api_key":  "sk-test-mock-whisper-key-987654",
 		"model":    "whisper-1",
 		"language": "zh",

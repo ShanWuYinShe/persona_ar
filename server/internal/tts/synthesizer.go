@@ -275,12 +275,18 @@ func (s *Synthesizer) GetCachePath(text, voice string) string {
 	return s.CachePath(text, voice, model.EmotionNeutral, 0)
 }
 
-// cachePath 缓存 key = sha256(voice|emotion|rate|pitch|volume|text)。
+// cachePath 缓存 key = sha256(voice|emotion|rate|pitch|volume|text|openai 身份)。
 // 使用 \x00 分隔各字段，避免文本里出现分隔符导致不同输入哈希碰撞。
+//
+// OpenAI 兼容供应商的实际音色/模型来自全局配置而不是 persona.Voice，切换
+// TTS_OPENAI_VOICE / TTS_MODEL / TTS_BASE_URL 后若不参与 key，会错误复用旧音色的缓存。
 func (s *Synthesizer) cachePath(cleanedText, voice string, emotion model.EmotionType, prosody Prosody) string {
 	hasher := sha256.New()
 	fmt.Fprintf(hasher, "%s\x00%s\x00%s\x00%s\x00%s\x00%s",
 		voice, string(emotion), prosody.Rate, prosody.Pitch, prosody.Volume, cleanedText)
+	if s.provider == "openai" {
+		fmt.Fprintf(hasher, "\x00%s\x00%s\x00%s", s.openAI.BaseURL, s.openAI.Model, s.openAI.Voice)
+	}
 	return filepath.Join(s.cacheDir(), hex.EncodeToString(hasher.Sum(nil))+".mp3")
 }
 

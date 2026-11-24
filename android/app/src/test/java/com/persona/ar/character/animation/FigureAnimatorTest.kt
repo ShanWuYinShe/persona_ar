@@ -4,9 +4,11 @@ import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
 
 class FigureAnimatorTest {
 
@@ -134,5 +136,54 @@ class FigureAnimatorTest {
     fun `blush action overrides expression`() {
         animator.update(input(ActionType.BLUSH, 1.2f))
         assertTrue(animator.faceExpression == "BLUSH_FACE")
+    }
+
+    /** 用带左右手臂链的缩样骨架跑一次动作中段，返回双手与头的模型空间位置。 */
+    private fun handWorld(action: ActionType): Triple<FloatArray, FloatArray, FloatArray> {
+        val rig = TestRigs.armRig()
+        val animator = FigureAnimator(rig)
+        val solver = PoseSolver(rig)
+        val i = AnimationInput()
+        i.dtSeconds = 1f / 60f
+        i.timeSeconds = 1.0f
+        i.action = action
+        i.actionElapsed = ActionTiming.durationOf(action) * 0.45f
+        i.emotion = EmotionType.NEUTRAL
+        i.expression = "SMILE"
+        animator.update(i)
+        solver.solve(animator.angles, 0f, 0f, 0f)
+        val left = FloatArray(3)
+        val right = FloatArray(3)
+        val head = FloatArray(3)
+        solver.worldPosition(rig.humanoid[HumanoidBone.HAND_L]!!, left)
+        solver.worldPosition(rig.humanoid[HumanoidBone.HAND_R]!!, right)
+        solver.worldPosition(rig.humanoid[HumanoidBone.HEAD]!!, head)
+        return Triple(left, right, head)
+    }
+
+    // 上臂沿左右 ±X 伸出，rx 是绕各自上臂轴的扭转：左右必须同号才能把双手转到同一高度。
+    // 此前写成 ±60/±30 的镜像符号，导致害羞只有一只手捂脸、得意只有一只手叉腰（另一只停在胸前）。
+    @Test
+    fun `blush raises both hands to face symmetrically`() {
+        val (left, right, head) = handWorld(ActionType.BLUSH)
+        assertEquals("双手应左右镜像", -left[0], right[0], 0.02f)
+        assertEquals("双手高度应一致", left[1], right[1], 0.02f)
+        assertEquals("双手前后应一致", left[2], right[2], 0.02f)
+        assertTrue(
+            "双手都应抬到脸附近，实际 L.y=${left[1]} R.y=${right[1]} head.y=${head[1]}",
+            abs(left[1] - head[1]) < 0.15f && abs(right[1] - head[1]) < 0.15f
+        )
+    }
+
+    @Test
+    fun `smug puts both hands on hips symmetrically`() {
+        val (left, right, head) = handWorld(ActionType.SMUG)
+        assertEquals("双手应左右镜像", -left[0], right[0], 0.02f)
+        assertEquals("双手高度应一致", left[1], right[1], 0.02f)
+        assertEquals("双手前后应一致", left[2], right[2], 0.02f)
+        assertTrue(
+            "双手都应落在腰胯高度，实际 L.y=${left[1]} R.y=${right[1]} head.y=${head[1]}",
+            head[1] - left[1] > 0.3f && head[1] - right[1] > 0.3f
+        )
     }
 }

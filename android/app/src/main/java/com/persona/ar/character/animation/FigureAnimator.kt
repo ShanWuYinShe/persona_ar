@@ -6,7 +6,6 @@ import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -394,8 +393,10 @@ class FigureAnimator(private val rig: GltfRig) {
         val tremble = sin(p * 2f * PI.toFloat() * 3.2f) * 1.6f * env
         add(HumanoidBone.HEAD, rx = 10f * env, rz = 4f * env, ry = tremble)
         add(HumanoidBone.NECK, rx = 3f * env)
+        // 双臂的 rx 是沿各自上臂轴（左右分别为 ±X）的轴向扭转：左右臂要转到同一世界方向，
+        // 旋转角的符号必须相同；若写成 ±60 的镜像符号，只有一只手能抬到脸前，另一只停在胸前。
         add(HumanoidBone.UPPER_ARM_L, rx = -60f * env, rz = 2f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = 60f * env, rz = -2f * env)
+        add(HumanoidBone.UPPER_ARM_R, rx = -60f * env, rz = -2f * env)
         add(HumanoidBone.LOWER_ARM_L, ry = 140f * env)
         add(HumanoidBone.LOWER_ARM_R, ry = -140f * env)
         add(HumanoidBone.UPPER_LEG_L, rz = -1.5f * env)
@@ -431,8 +432,9 @@ class FigureAnimator(private val rig: GltfRig) {
         if (env <= 0f) return
         add(HumanoidBone.CHEST, rx = -6f * env)
         add(HumanoidBone.HEAD, rx = -6f * env, rz = -2f * env)
+        // 同 applyBlush：上臂轴向扭转 rx 左右同号（ry/rz 的镜像才是反号），双手才会对称落在腰侧。
         add(HumanoidBone.UPPER_ARM_L, rx = 30f * env, ry = 20f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = -30f * env, ry = -20f * env)
+        add(HumanoidBone.UPPER_ARM_R, rx = 30f * env, ry = -20f * env)
         add(HumanoidBone.LOWER_ARM_L, ry = 40f * env)
         add(HumanoidBone.LOWER_ARM_R, ry = -40f * env)
     }
