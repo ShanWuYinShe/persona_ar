@@ -123,6 +123,8 @@ class FigureScene(
     private val faceRenderables = ArrayList<FaceRenderable>()
     private val boundMeshEntities = HashSet<Int>()
     private val boundFaceEntities = HashSet<Int>()
+    /** 所有蒙皮网格与 renderable 都已完成绑定决策；false 时每帧补绑（应对异步资源延迟就绪） */
+    private var rigBindComplete = false
     private var lastAnimFrameNanos = 0L
     private var currentAirborne = 0f
     private var lastPitchDegrees = 0f
@@ -323,6 +325,7 @@ class FigureScene(
         boundFaceEntities.clear()
         skinnedRenderables.clear()
         faceRenderables.clear()
+        rigBindComplete = false
         bindRig(newAsset)
 
         Log.i(TAG, "asset installed: bbox=${half[0] * 2}x${half[1] * 2}x${half[2] * 2}m scale=$assetScale " +
@@ -349,9 +352,10 @@ class FigureScene(
                 Log.w(TAG, "蒙皮网格实体未找到: ${mesh.name}")
                 continue
             }
-            if (!boundMeshEntities.add(entity)) continue
+            if (entity in boundMeshEntities) continue
             val rci = rcm.getInstance(entity)
-            if (rci == 0) continue
+            if (rci == 0) continue // 渲染实例尚未就绪：不要记为已绑定，等 populateScene 重试
+            boundMeshEntities.add(entity)
             val joints = rig.skins[mesh.skinIndex].joints.size
             skinnedRenderables.add(SkinnedRenderable(rci, mesh, FloatArray(joints * 16)))
             Log.i(TAG, "skinned bound: ${mesh.name} joints=$joints rci=$rci")
@@ -359,16 +363,26 @@ class FigureScene(
         for (entity in a.getRenderableEntities()) {
             if (entity in boundFaceEntities) continue
             val names = runCatching { a.getMorphTargetNames(entity) }.getOrNull()
-            if (names == null || names.isEmpty() || names.none { it.contains("Fcl_") }) {
+            // 取名字失败（实例尚未就绪）时保留重试机会；空数组则是确定没有 morph，直接记已处理。
+            if (names == null) continue
+            if (names.isEmpty() || names.none { it.contains("Fcl_") }) {
                 boundFaceEntities.add(entity)
                 continue
             }
             val rci = rcm.getInstance(entity)
-            if (rci == 0) continue
-            faceRenderables.add(FaceRenderable(rci, FaceRig(names), FloatArray(names.size)))
+            if (rci == 0) continue // 同上：渲染实例未就绪，不能提前标记
             boundFaceEntities.add(entity)
+            faceRenderables.add(FaceRenderable(rci, FaceRig(names), FloatArray(names.size)))
             Log.i(TAG, "face bound: ${a.getName(entity)} morphs=${names.size}")
         }
+        // 只有「每个蒙皮网格都已创建绑定 + 每个 renderable 都已做出表情绑定决策」才算完成：
+        // 若只判断列表非空，Face/Body 已绑而 Hair 尚未就绪时会漏掉补绑，Hair 将永远停在绑定姿势。
+        val allMeshesBound = rig.meshNodes.all { mesh ->
+            skinnedRenderables.any { it.mesh.nodeIndex == mesh.nodeIndex }
+        }
+        val renderables = a.getRenderableEntities()
+        val allRenderablesSettled = renderables.isNotEmpty() && renderables.all { it in boundFaceEntities }
+        rigBindComplete = allMeshesBound && allRenderablesSettled
     }
     private fun destroyAsset() {
         val a = asset ?: return
@@ -383,6 +397,7 @@ class FigureScene(
         faceRenderables.clear()
         boundMeshEntities.clear()
         boundFaceEntities.clear()
+        rigBindComplete = false
         rig = null
         poseSolver = null
         animator = null
@@ -403,7 +418,7 @@ class FigureScene(
             diagRenderablesAdded += count
         }
         // 个别渲染实例就绪较晚时补绑定（骨骼蒙皮 / morph 表情）
-        if (rig != null && (skinnedRenderables.isEmpty() || faceRenderables.isEmpty())) bindRig(a)
+        if (rig != null && !rigBindComplete) bindRig(a)
         val lights = a.lightEntities
         if (lights.isNotEmpty()) scene.addEntities(lights)
     }

@@ -29,7 +29,7 @@
 ## 语音合成（TTS）
 - 默认 `TTS_PROVIDER=edge`：使用微软 Edge 在线神经网络语音（免费、无需 key），Go 依赖 `github.com/wujunwei928/edge-tts-go` 固定在包含 Sec-MS-GEC v2 修复的主分支提交（旧 tag 的 v1 令牌会被服务端 403 拒绝，升级前先跑一次真实网络冒烟）。
 - 情绪韵律（rate/pitch/volume）与好感度微调集中在 `server/internal/tts/prosody.go`；合成前文本清洗在 `text_clean.go`（只影响语音，不改动返回给客户端的显示文本）。
-- 缓存目录 `server/data/tts_cache/v2/<provider>/<format>/`，key 含 voice/emotion/rate/pitch/volume/清洗后文本；命中前校验文件大小与音频头，损坏或旧版假缓存自动清理。合成失败必须返回 `nil` 让客户端回退端侧 TTS，**禁止返回占位假音频**。
+- 缓存目录 `server/data/tts_cache/v2/<provider>/<format>/`，key 含 voice/emotion/rate/pitch/volume/清洗后文本；OpenAI 兼容模式还含 base_url/model/voice，切换音色或模型后不会复用旧音频。命中前校验文件大小与音频头，损坏或旧版假缓存自动清理。合成失败必须返回 `nil` 让客户端回退端侧 TTS，**禁止返回占位假音频**。
 - 可选 `TTS_PROVIDER=openai` + `TTS_BASE_URL/TTS_API_KEY/TTS_MODEL/TTS_OPENAI_VOICE` 接入 OpenAI 兼容 `/audio/speech`；未配置 key 自动回退 edge。容器需出网访问 `speech.platform.bing.com`，受限网络用 `TTS_PROXY` 注入代理。
 
 ## 验证分工与秒级检查

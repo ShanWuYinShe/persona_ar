@@ -641,6 +641,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     emotion = resp.emotion
                 )
 
+                // 服务端触摸回复也可能带动作（点头/噘嘴/鞠躬等），必须与对话路径一样记录开始时刻，
+                // 否则 FigureScene 用旧时间戳/0 计算 actionElapsed，动作会直接判定为已结束而不播放。
+                val actionStartNanos = System.nanoTime()
                 _uiState.update { current ->
                     val pose = when (resp.emotion) {
                         EmotionType.SHY -> "SHY"
@@ -654,6 +657,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         visualState = current.visualState.copy(
                             emotion = resp.emotion,
                             action = resp.action,
+                            actionStartedAtNanos = actionStartNanos,
                             expression = resp.expression,
                             highResPose = pose
                         ),
@@ -663,6 +667,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
                 playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
+                scheduleActionReset(resp.action, actionStartNanos)
                 addBondExp(expGain)
             }
         }

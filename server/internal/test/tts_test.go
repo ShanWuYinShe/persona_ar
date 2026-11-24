@@ -183,6 +183,46 @@ func TestTTSCacheKeyVariesByEmotion(t *testing.T) {
 	}
 }
 
+// TestTTSCacheKeyVariesByOpenAIConfig OpenAI 兼容供应商的 voice/model/base_url 来自全局配置，
+// 切换后必须得到不同的缓存 key，否则用户会听到上一个音色/模型生成的旧音频。
+func TestTTSCacheKeyVariesByOpenAIConfig(t *testing.T) {
+	dir := t.TempDir()
+	pathFor := func(baseURL, modelName, openAIVoice string) string {
+		s := tts.New(tts.Options{
+			Enabled:    true,
+			Voice:      "zh-CN-XiaoyiNeural",
+			Provider:   "openai",
+			EdgeFormat: "mp3-hq",
+			CacheDir:   dir,
+			SynthFunc:  fakeSynthForTest,
+			OpenAI: tts.OpenAICompatibleConfig{
+				BaseURL: baseURL,
+				APIKey:  "sk-test-openai-compatible",
+				Model:   modelName,
+				Voice:   openAIVoice,
+			},
+		})
+		return s.GetCachePath("同一句话", "zh-CN-XiaoyiNeural")
+	}
+
+	alloy := pathFor("https://api.openai.com/v1", "tts-1", "alloy")
+	nova := pathFor("https://api.openai.com/v1", "tts-1", "nova")
+	otherModel := pathFor("https://api.openai.com/v1", "gpt-4o-mini-tts", "alloy")
+	otherBase := pathFor("https://example.com/v1", "tts-1", "alloy")
+	if alloy == "" {
+		t.Fatalf("期望有效缓存路径，实际为空")
+	}
+	for name, other := range map[string]string{
+		"音色":      nova,
+		"模型":      otherModel,
+		"BaseURL": otherBase,
+	} {
+		if alloy == other {
+			t.Errorf("切换 OpenAI %s 后缓存 key 不应相同: %s", name, alloy)
+		}
+	}
+}
+
 // TestTTSCacheCorruptionAndLegacyInvalidation 覆盖两类历史脏数据：
 //  1. v2 缓存文件被破坏成 5 字节假帧 → 命中时校验大小失败，删除并重合成；
 //  2. 旧版 v1 平铺在缓存根目录的 5 字节假 mp3 → 永远不会被当成有效命中，启动清理会删除。

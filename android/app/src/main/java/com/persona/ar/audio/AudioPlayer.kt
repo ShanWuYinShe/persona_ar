@@ -114,6 +114,10 @@ class AudioPlayer(private val context: Context) {
             FileOutputStream(tempFile).use { it.write(audioBytes) }
 
             val player = MediaPlayer()
+            // 先挂到字段上：applySpatialVolume() 与异步错误回调都从 mediaPlayer 读取当前实例。
+            // 若等 start 之后才赋值，空间声像设置会作用在 null/旧实例上（立体声 pan 永远不生效），
+            // prepare/start 抛异常时局部 player 也会泄漏。
+            mediaPlayer = player
             player.setDataSource(tempFile.absolutePath)
             player.setOnErrorListener { _, what, extra ->
                 Log.e(TAG, "MediaPlayer 异步播放错误 what=" + what + " extra=" + extra)
@@ -127,7 +131,6 @@ class AudioPlayer(private val context: Context) {
             player.prepare()
             applySpatialVolume()
             player.start()
-            mediaPlayer = player
             // 音频会话 ID 在 prepare 后才有效，此时再绑定 Visualizer 读取真实波形
             startAmplitudeTracking()
         } catch (e: Exception) {
