@@ -186,4 +186,24 @@ class FigureAnimatorTest {
             head[1] - left[1] > 0.3f && head[1] - right[1] > 0.3f
         )
     }
+
+    @Test
+    fun `dynamic gaze tracking rotates head and neck towards camera direction`() {
+        val iLeft = input()
+        iLeft.gazeX = 0.8f
+        iLeft.gazeY = 0.5f
+        animator.update(iLeft)
+        val headYawLeft = angle(HumanoidBone.HEAD, 1)
+        val neckYawLeft = angle(HumanoidBone.NECK, 1)
+        val headPitchDown = angle(HumanoidBone.HEAD, 0)
+        assertTrue("gazeX > 0 应当向侧边偏航注视，实际 headYaw=$headYawLeft", headYawLeft > 12f)
+        assertTrue("gazeX > 0 颈部协同转动，实际 neckYaw=$neckYawLeft", neckYawLeft > 5f)
+        assertTrue("gazeY > 0 镜头在上方时头部向上抬仰，实际 headPitch=$headPitchDown", headPitchDown < 0f)
+
+        val iRight = input()
+        iRight.gazeX = -0.8f
+        animator.update(iRight)
+        val headYawRight = angle(HumanoidBone.HEAD, 1)
+        assertTrue("gazeX < 0 应当向另一侧偏航，实际 headYaw=$headYawRight", headYawRight < -12f)
+    }
 }

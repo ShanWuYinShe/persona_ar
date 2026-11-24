@@ -95,7 +95,7 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
         }
     }
 
-    private fun applyOrientationFilter(rawRot: FloatArray, targetYaw: Float, targetPitch: Float, targetRoll: Float) {
+    internal fun applyOrientationFilter(rawRot: FloatArray, targetYaw: Float, targetPitch: Float, targetRoll: Float) {
         pitch += alpha * (targetPitch - pitch)
         roll += alpha * (targetRoll - roll)
         yaw += alpha * (targetYaw - yaw)
@@ -143,7 +143,7 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
 
             val viewX = px * rx + py * ry + pz * rz
             val viewY = px * ux + py * uy + pz * uz
-            val viewZ = -(px * fx + py * fy + pz * fz) // viewZ > 0 表示在相机前方
+            val viewZ = (px * fx + py * fy + pz * fz) // viewZ > 0 表示在相机前方 (沿着 cameraForward 投影距离)
 
             val tanHalfFov = tan(Math.toRadians(verticalFovDegrees.toDouble()) / 2.0).toFloat()
             val safeViewZ = if (viewZ > 0.05f) viewZ else 0.05f
@@ -181,6 +181,11 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
                 cameraPitchDegrees = pitch,
                 cameraRollDegrees = roll,
                 cameraFocalDistance = 10f
+            )
+        } else {
+            _spatialAnchor.value = currentAnchor.copy(
+                cameraPitchDegrees = pitch,
+                cameraRollDegrees = roll
             )
         }
     }

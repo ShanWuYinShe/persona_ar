@@ -163,12 +163,22 @@ class FigureAnimator(private val rig: GltfRig) {
         add(HumanoidBone.HIPS, rz = swayHips, ry = sin(weightPhase * 0.7f) * 0.8f)
         add(HumanoidBone.SPINE, rz = -swayHips * 0.45f)
 
-        // 头部注视：看向镜头方向 + 随呼吸与思绪微幅自然环顾探视
-        val microGazeYaw = sin(t * 0.42f) * 2.2f + sin(t * 0.85f) * 0.8f
-        val headYaw = microGazeYaw + input.gazeX.coerceIn(-1f, 1f) * 7.5f
-        val headPitch = sin(t * 0.55f) * 1.2f + input.gazeY.coerceIn(-1f, 1f) * 4.0f + smoothMouth * 2.6f
-        add(HumanoidBone.HEAD, rx = headPitch, ry = headYaw, rz = sin(t * 0.31f) * 1.2f)
-        add(HumanoidBone.NECK, rx = headPitch * 0.35f, ry = headYaw * 0.3f)
+        // 头部注视：动态 3D 镜头追焦（Eye & Head Contact），伴随多频呼吸与思绪微幅自然环顾探视
+        val microGazeYaw = sin(t * 0.42f) * 2.0f + sin(t * 0.85f) * 0.8f
+        val targetGazeYaw = input.gazeX.coerceIn(-1f, 1f) * 20.0f
+        val targetNeckYaw = input.gazeX.coerceIn(-1f, 1f) * 9.0f
+
+        val targetGazePitch = -input.gazeY.coerceIn(-1f, 1f) * 14.0f
+        val targetNeckPitch = -input.gazeY.coerceIn(-1f, 1f) * 6.0f
+
+        val headYaw = microGazeYaw + targetGazeYaw
+        val neckYaw = (microGazeYaw * 0.3f) + targetNeckYaw
+        val headPitch = sin(t * 0.55f) * 1.2f + targetGazePitch + smoothMouth * 2.6f
+        val neckPitch = targetNeckPitch + (sin(t * 0.55f) * 0.4f)
+        val headRoll = sin(t * 0.31f) * 1.2f - (input.gazeX.coerceIn(-1f, 1f) * 2.5f)
+
+        add(HumanoidBone.HEAD, rx = headPitch, ry = headYaw, rz = headRoll)
+        add(HumanoidBone.NECK, rx = neckPitch, ry = neckYaw)
 
         // 手臂随呼吸与重心转移自然轻摆（左右相位差异）
         add(HumanoidBone.UPPER_ARM_L, rz = sin(t * 0.41f) * 1.5f, ry = breath * 0.6f)

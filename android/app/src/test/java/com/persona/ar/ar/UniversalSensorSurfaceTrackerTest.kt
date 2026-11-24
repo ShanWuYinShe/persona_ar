@@ -57,4 +57,19 @@ class UniversalSensorSurfaceTrackerTest {
         tracker.updateRotation(360f)
         assertEquals(45f, tracker.spatialAnchor.value.rotationYaw, 0.01f)
     }
+
+    @Test
+    fun `applyOrientationFilter keeps anchor in front when orientation matches anchor pose`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        tracker.anchorToDesktop(0.5f, 0.65f)
+
+        val identity = FloatArray(9) { if (it % 4 == 0) 1f else 0f }
+        tracker.applyOrientationFilter(identity, 0f, 45f, 0f)
+
+        val anchor = tracker.spatialAnchor.value
+        assertTrue("锚点应在视野内", anchor.isInView)
+        assertEquals(0f, anchor.azimuthDeltaDegrees, 1.0f)
+        assertTrue("锚点投影应在视野水平中心附近，实际 ${anchor.screenX}", anchor.screenX in 0.40f..0.60f)
+        assertTrue("锚点投影应在视野中下部，实际 ${anchor.screenY}", anchor.screenY in 0.50f..0.80f)
+    }
 }
