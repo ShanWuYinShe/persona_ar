@@ -467,6 +467,8 @@ fun ARCoreOverlay(
                     CharacterCanvasRenderer(
                         visualState = visualState.copy(
                             scale = spatialAnchor.scaleFactor,
+                            tiltOffsetX = 0f,
+                            tiltOffsetY = 0f,
                             environmentalLighting = spatialAnchor.lightIntensity,
                             isLowLight = spatialAnchor.isLowLight,
                             ambientColorTemp = spatialAnchor.ambientColorTemp,
