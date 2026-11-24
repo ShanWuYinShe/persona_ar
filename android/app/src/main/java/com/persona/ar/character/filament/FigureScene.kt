@@ -558,40 +558,76 @@ class FigureScene(
 
         lastPitchDegrees = f.cameraPitchDegrees
         lastRollDegrees = f.cameraRollDegrees
-        // 俯仰跟随 IMU（低头看桌面时相机下俯），但横滚做「重力锁定」夹紧：
-        // 与 2.5D 立绘路径的 gravityRoll 策略保持一致，避免用户侧握手机时整个世界（含手办）被 roll 转成横躺。
-        // 限幅 18°：小角度保留真实侧倾动感，大角度（横握/平放）时手办仍然保持屏幕竖直可读。
-        val pitch = Math.toRadians(f.cameraPitchDegrees.toDouble().coerceIn(0.0, 85.0))
-        val roll = Math.toRadians(f.cameraRollDegrees.toDouble().coerceIn(-18.0, 18.0))
-        // 平视：forward=(0,0,-1) up=(0,1,0) right=(1,0,0)；俯仰 p 后绕 X 轴向下转
-        val fx = 0.0; val fy = -sin(pitch); val fz = -cos(pitch)
-        val ux0 = 0.0; val uy0 = cos(pitch); val uz0 = -sin(pitch)
-        val rx0 = 1.0; val ry0 = 0.0; val rz0 = 0.0
-        // 横滚 r：up / right 绕 forward 旋转
-        val cr = cos(roll); val sr = sin(roll)
-        val ux = ux0 * cr + rx0 * sr; val uy = uy0 * cr + ry0 * sr; val uz = uz0 * cr + rz0 * sr
-        val rx = rx0 * cr - ux0 * sr; val ry = ry0 * cr - uy0 * sr; val rz = rz0 * cr - uz0 * sr
-        camForward[0] = fx.toFloat(); camForward[1] = fy.toFloat(); camForward[2] = fz.toFloat()
-        camUp[0] = ux.toFloat(); camUp[1] = uy.toFloat(); camUp[2] = uz.toFloat()
-        camRight[0] = rx.toFloat(); camRight[1] = ry.toFloat(); camRight[2] = rz.toFloat()
-        camera.lookAt(0.0, 0.0, 0.0, fx, fy, fz, ux, uy, uz)
 
-        // 曝光：EV100 由环境照度决定；快门 1/60、ISO100，反推光圈 N = sqrt(2^EV · t)
-        val ev = EV_BASE + EV_RANGE * f.envLuminance.toDouble().coerceIn(0.2, 1.35)
-        val aperture = sqrt(2.0.pow(ev) * SHUTTER_SECONDS * (ISO / 100.0))
-        camera.setExposure(aperture.toFloat(), SHUTTER_SECONDS.toFloat(), ISO.toFloat())
+        if (f.isWorldAnchored) {
+            val fx = f.cameraForwardX.toDouble()
+            val fy = f.cameraForwardY.toDouble()
+            val fz = f.cameraForwardZ.toDouble()
+            val ux = f.cameraUpX.toDouble()
+            val uy = f.cameraUpY.toDouble()
+            val uz = f.cameraUpZ.toDouble()
 
-        // 落脚点反投影
-        val d = f.distanceMeters.toDouble().coerceIn(0.2, 2.0)
-        val tanHalfFov = tan(Math.toRadians(CAMERA_VERTICAL_FOV_DEGREES) / 2.0)
-        val ndcX = 2.0 * f.screenX - 1.0
-        val ndcY = 1.0 - 2.0 * f.screenY
-        val camX = tanHalfFov * aspect * ndcX * d
-        val camY = tanHalfFov * ndcY * d
-        // world = camX·right + camY·up + d·forward
-        footWorld[0] = (camX * rx + camY * ux + d * fx).toFloat()
-        footWorld[1] = (camX * ry + camY * uy + d * fy).toFloat()
-        footWorld[2] = (camX * rz + camY * uz + d * fz).toFloat()
+            camForward[0] = f.cameraForwardX
+            camForward[1] = f.cameraForwardY
+            camForward[2] = f.cameraForwardZ
+            camUp[0] = f.cameraUpX
+            camUp[1] = f.cameraUpY
+            camUp[2] = f.cameraUpZ
+
+            val rx = uy * fz - uz * fy
+            val ry = uz * fx - ux * fz
+            val rz = ux * fy - uy * fx
+            camRight[0] = rx.toFloat()
+            camRight[1] = ry.toFloat()
+            camRight[2] = rz.toFloat()
+
+            camera.lookAt(0.0, 0.0, 0.0, fx, fy, fz, ux, uy, uz)
+
+            // 曝光：EV100 由环境照度决定；快门 1/60、ISO100，反推光圈 N = sqrt(2^EV · t)
+            val ev = EV_BASE + EV_RANGE * f.envLuminance.toDouble().coerceIn(0.2, 1.35)
+            val aperture = sqrt(2.0.pow(ev) * SHUTTER_SECONDS * (ISO / 100.0))
+            camera.setExposure(aperture.toFloat(), SHUTTER_SECONDS.toFloat(), ISO.toFloat())
+
+            // 落脚点固定在物理世界坐标系
+            footWorld[0] = f.worldAnchorX
+            footWorld[1] = f.worldAnchorY
+            footWorld[2] = f.worldAnchorZ
+        } else {
+            // 俯仰跟随 IMU（低头看桌面时相机下俯），但横滚做「重力锁定」夹紧：
+            // 与 2.5D 立绘路径的 gravityRoll 策略保持一致，避免用户侧握手机时整个世界（含手办）被 roll 转成横躺。
+            // 限幅 18°：小角度保留真实侧倾动感，大角度（横握/平放）时手办仍然保持屏幕竖直可读。
+            val pitch = Math.toRadians(f.cameraPitchDegrees.toDouble().coerceIn(0.0, 85.0))
+            val roll = Math.toRadians(f.cameraRollDegrees.toDouble().coerceIn(-18.0, 18.0))
+            // 平视：forward=(0,0,-1) up=(0,1,0) right=(1,0,0)；俯仰 p 后绕 X 轴向下转
+            val fx = 0.0; val fy = -sin(pitch); val fz = -cos(pitch)
+            val ux0 = 0.0; val uy0 = cos(pitch); val uz0 = -sin(pitch)
+            val rx0 = 1.0; val ry0 = 0.0; val rz0 = 0.0
+            // 横滚 r：up / right 绕 forward 旋转
+            val cr = cos(roll); val sr = sin(roll)
+            val ux = ux0 * cr + rx0 * sr; val uy = uy0 * cr + ry0 * sr; val uz = uz0 * cr + rz0 * sr
+            val rx = rx0 * cr - ux0 * sr; val ry = ry0 * cr - uy0 * sr; val rz = rz0 * cr - uz0 * sr
+            camForward[0] = fx.toFloat(); camForward[1] = fy.toFloat(); camForward[2] = fz.toFloat()
+            camUp[0] = ux.toFloat(); camUp[1] = uy.toFloat(); camUp[2] = uz.toFloat()
+            camRight[0] = rx.toFloat(); camRight[1] = ry.toFloat(); camRight[2] = rz.toFloat()
+            camera.lookAt(0.0, 0.0, 0.0, fx, fy, fz, ux, uy, uz)
+
+            // 曝光：EV100 由环境照度决定；快门 1/60、ISO100，反推光圈 N = sqrt(2^EV · t)
+            val ev = EV_BASE + EV_RANGE * f.envLuminance.toDouble().coerceIn(0.2, 1.35)
+            val aperture = sqrt(2.0.pow(ev) * SHUTTER_SECONDS * (ISO / 100.0))
+            camera.setExposure(aperture.toFloat(), SHUTTER_SECONDS.toFloat(), ISO.toFloat())
+
+            // 落脚点反投影
+            val d = f.distanceMeters.toDouble().coerceIn(0.2, 2.0)
+            val tanHalfFov = tan(Math.toRadians(CAMERA_VERTICAL_FOV_DEGREES) / 2.0)
+            val ndcX = 2.0 * f.screenX - 1.0
+            val ndcY = 1.0 - 2.0 * f.screenY
+            val camX = tanHalfFov * aspect * ndcX * d
+            val camY = tanHalfFov * ndcY * d
+            // world = camX·right + camY·up + d·forward
+            footWorld[0] = (camX * rx + camY * ux + d * fx).toFloat()
+            footWorld[1] = (camX * ry + camY * uy + d * fy).toFloat()
+            footWorld[2] = (camX * rz + camY * uz + d * fz).toFloat()
+        }
     }
 
     private fun updateLights(f: FigureFrameState) {
@@ -649,15 +685,16 @@ class FigureScene(
         Matrix.translateM(mGround, 0, footWorld[0], footWorld[1], footWorld[2])
         Matrix.scaleM(mGround, 0, halfExtent, 1f, halfExtent)
         if (groundTransformInstance != 0) transformManager.setTransform(groundTransformInstance, mGround)
-        // 阴影最大不透明度：暗环境更实，悬空脱离支撑时平滑消散
-        val strength = (0.80f + 0.18f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f) *
+        // 阴影最大不透明度：暗环境更实，悬空脱离支撑时平滑消散；手办出画时同步隐去
+        val baseStrength = (0.80f + 0.18f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f) *
                 (1f - currentAirborne * 0.7f)
+        val strength = if (!f.isWorldAnchored || f.isInView) baseStrength else 0f
         groundInstance?.setParameter("strength", strength)
     }
 
     private fun updateFigure(f: FigureFrameState) {
         if (assetRootInstance == 0) return
-        val k = if (f.anchored) assetScale * f.scale else 0f
+        val k = if (f.anchored && (!f.isWorldAnchored || f.isInView)) assetScale * f.scale else 0f
         lastScale = f.scale
         lastScreenX = f.screenX
         // M = T(foot) · Ry(yaw + 180°) · S(k) · T(-pivot)

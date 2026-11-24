@@ -6,6 +6,7 @@ import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -150,24 +151,28 @@ class FigureAnimator(private val rig: GltfRig) {
         add(HumanoidBone.LOWER_ARM_R, ry = -15f)
 
         val breath = sin(t * 2f * PI.toFloat() / BREATH_PERIOD)
-        val breath2 = sin(t * 2f * PI.toFloat() / BREATH_PERIOD + 0.55f)
-        // 胸腔呼吸起伏（轻微，避免像充气娃娃）
-        add(HumanoidBone.CHEST, rx = breath * 0.85f, rz = breath * 0.18f)
-        add(HumanoidBone.SPINE, rx = breath2 * 0.32f)
-        add(HumanoidBone.UPPER_CHEST, rx = breath * 0.22f)
+        val breath2 = sin(t * 2f * PI.toFloat() / BREATH_PERIOD + 0.45f)
+        // 胸腔与腹式复合多频呼吸起伏（轻柔微动）
+        add(HumanoidBone.CHEST, rx = breath * 0.95f, rz = breath * 0.22f)
+        add(HumanoidBone.SPINE, rx = breath2 * 0.40f)
+        add(HumanoidBone.UPPER_CHEST, rx = breath * 0.30f)
 
-        // 重心左右缓慢偏移（比纯呼吸更“活着”）
-        add(HumanoidBone.HIPS, rz = sin(t * 0.23f) * 0.9f, ry = sin(t * 0.17f) * 1.1f)
+        // 真实重心左右缓慢转移（周期约 6.8 秒，骨盆微倾 + 脊柱反向自平衡补偿）
+        val weightPhase = t * 2f * PI.toFloat() / 6.8f
+        val swayHips = sin(weightPhase) * 1.2f
+        add(HumanoidBone.HIPS, rz = swayHips, ry = sin(weightPhase * 0.7f) * 0.8f)
+        add(HumanoidBone.SPINE, rz = -swayHips * 0.45f)
 
-        // 头部注视：看向镜头方向（gazeX/gazeY 来自空间锚点）+ 微幅自然环顾
-        val headYaw = sin(t * 0.37f) * 3.0f + input.gazeX.coerceIn(-1f, 1f) * 7f
-        val headPitch = sin(t * 0.53f) * 1.1f + input.gazeY.coerceIn(-1f, 1f) * 3.5f + smoothMouth * 2.6f
-        add(HumanoidBone.HEAD, rx = headPitch, ry = headYaw, rz = sin(t * 0.29f) * 1.4f)
+        // 头部注视：看向镜头方向 + 随呼吸与思绪微幅自然环顾探视
+        val microGazeYaw = sin(t * 0.42f) * 2.2f + sin(t * 0.85f) * 0.8f
+        val headYaw = microGazeYaw + input.gazeX.coerceIn(-1f, 1f) * 7.5f
+        val headPitch = sin(t * 0.55f) * 1.2f + input.gazeY.coerceIn(-1f, 1f) * 4.0f + smoothMouth * 2.6f
+        add(HumanoidBone.HEAD, rx = headPitch, ry = headYaw, rz = sin(t * 0.31f) * 1.2f)
         add(HumanoidBone.NECK, rx = headPitch * 0.35f, ry = headYaw * 0.3f)
 
-        // 手臂随呼吸与惯性轻摆（左右相位错开，避免机械同步）
-        add(HumanoidBone.UPPER_ARM_L, rz = sin(t * 0.41f) * 1.4f, ry = breath * 0.5f)
-        add(HumanoidBone.UPPER_ARM_R, rz = -sin(t * 0.37f + 0.8f) * 1.4f, ry = breath2 * 0.5f)
+        // 手臂随呼吸与重心转移自然轻摆（左右相位差异）
+        add(HumanoidBone.UPPER_ARM_L, rz = sin(t * 0.41f) * 1.5f, ry = breath * 0.6f)
+        add(HumanoidBone.UPPER_ARM_R, rz = -sin(t * 0.37f + 0.8f) * 1.5f, ry = breath2 * 0.6f)
         add(HumanoidBone.LOWER_ARM_L, ry = sin(t * 0.33f + 0.4f) * 1.8f)
         add(HumanoidBone.LOWER_ARM_R, ry = -sin(t * 0.31f + 1.1f) * 1.8f)
 
@@ -248,10 +253,13 @@ class FigureAnimator(private val rig: GltfRig) {
         add(HumanoidBone.UPPER_ARM_R, rz = 12f * k, ry = -10f * k)
         add(HumanoidBone.LOWER_ARM_L, ry = 22f * k)
         add(HumanoidBone.LOWER_ARM_R, ry = -22f * k)
-        // 双腿轻微晃动的自然感
-        val swing = sin(hairPhase * 2.1f) * 2.5f * k
-        add(HumanoidBone.LOWER_LEG_L, rx = swing)
-        add(HumanoidBone.LOWER_LEG_R, rx = -swing)
+        // 双腿自然悬垂交替轻摆（休闲律动）
+        val legSwingL = sin(hairPhase * 1.5f) * 3.6f * k
+        val legSwingR = sin(hairPhase * 1.5f + PI.toFloat() * 0.85f) * 3.0f * k
+        add(HumanoidBone.LOWER_LEG_L, rx = legSwingL)
+        add(HumanoidBone.LOWER_LEG_R, rx = legSwingR)
+        add(HumanoidBone.FOOT_L, rx = -8f * k + cos(hairPhase * 1.5f) * 2.0f * k)
+        add(HumanoidBone.FOOT_R, rx = -8f * k + cos(hairPhase * 1.5f + PI.toFloat() * 0.85f) * 1.6f * k)
     }
 
     // ============================================================ 动作层
@@ -284,17 +292,17 @@ class FigureAnimator(private val rig: GltfRig) {
         return true
     }
 
-    /** 挥手：右臂抬起 → 前臂左右摆动 → 放下 */
+    /** 挥手：右臂抬起 → 前臂柔和自然摆动 → 平滑复位 */
     private fun applyWave(p: Float) {
-        val raise = smoothIn(min(1f, p / 0.26f)) * (1f - smoothIn(((p - 0.76f) / 0.24f).coerceIn(0f, 1f)))
+        val raise = envelope(p, 0.22f, 0.78f)
         if (raise <= 0f) return
-        val wave = sin(p * 2f * PI.toFloat() * 2.6f) * raise
-        // 右臂从自然垂落 (rz=-72) 抬到上方 (rz≈+83)：增量 +155
-        add(HumanoidBone.UPPER_ARM_R, rz = 155f * raise, ry = -8f * raise)
-        add(HumanoidBone.LOWER_ARM_R, ry = (-38f + wave * 16f) * raise)
-        add(HumanoidBone.HAND_R, rz = wave * 10f * raise)
-        add(HumanoidBone.HEAD, rz = -3.5f * raise, ry = -5f * raise, rx = -2f * raise)
-        add(HumanoidBone.UPPER_ARM_L, rz = -3f * raise)
+        val wave = sin(p * 2f * PI.toFloat() * 2.8f) * raise
+        // 右臂从自然垂落 (rz=-72) 抬到上方 (rz≈+83)：增量 +155，手腕协同微动
+        add(HumanoidBone.UPPER_ARM_R, rz = 155f * raise, ry = -10f * raise)
+        add(HumanoidBone.LOWER_ARM_R, ry = (-38f + wave * 18f) * raise)
+        add(HumanoidBone.HAND_R, rz = wave * 12f * raise, ry = wave * 6f * raise)
+        add(HumanoidBone.HEAD, rz = -4.0f * raise, ry = -5f * raise, rx = -2f * raise)
+        add(HumanoidBone.UPPER_ARM_L, rz = -4f * raise)
     }
 
     /** 点头：两次自然点头（头部+颈部协同，带略微低头再回正） */
@@ -316,14 +324,14 @@ class FigureAnimator(private val rig: GltfRig) {
 
     /** 鞠躬：脊柱链前倾 + 手臂后摆 + 回正 */
     private fun applyBow(p: Float) {
-        val env = envelope(p, 0.24f, 0.68f)
+        val env = envelope(p, 0.28f, 0.72f)
         if (env <= 0f) return
-        add(HumanoidBone.SPINE, rx = 12f * env)
-        add(HumanoidBone.CHEST, rx = 15f * env)
-        add(HumanoidBone.NECK, rx = 8f * env)
-        add(HumanoidBone.HEAD, rx = 6f * env)
-        add(HumanoidBone.UPPER_ARM_L, rx = 8f * env, rz = -2f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = 8f * env, rz = 2f * env)
+        add(HumanoidBone.SPINE, rx = 14f * env)
+        add(HumanoidBone.CHEST, rx = 16f * env)
+        add(HumanoidBone.NECK, rx = 9f * env)
+        add(HumanoidBone.HEAD, rx = 7f * env)
+        add(HumanoidBone.UPPER_ARM_L, rx = 10f * env, rz = -3f * env)
+        add(HumanoidBone.UPPER_ARM_R, rx = 10f * env, rz = 3f * env)
         add(HumanoidBone.UPPER_LEG_L, rx = -2f * env)
         add(HumanoidBone.UPPER_LEG_R, rx = -2f * env)
     }

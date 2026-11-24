@@ -74,17 +74,18 @@ fun ChatOverlay(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 240.dp)
-            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .heightIn(max = 150.dp)
+            .padding(horizontal = 14.dp, vertical = 4.dp)
     ) {
         when (displayMode) {
             BubbleDisplayMode.PERSISTENT -> {
+                val displayList = messages.takeLast(1)
                 LazyColumn(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(messages, key = { it.id }) { msg ->
+                    items(displayList, key = { it.id }) { msg ->
                         AnimeGameDialogueItem(
                             msg = msg,
                             partnerName = partnerName,

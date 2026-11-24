@@ -104,6 +104,19 @@ data class FigureFrameState(
     val touchReactionStartedAtNanos: Long = 0L,
     /** 说话口型幅度 (0..1，来自真实音频振幅)，驱动口型 morph 与头部微动 */
     val lipSyncAmplitude: Float = 0f,
+    /** 真实 3D 物理空间锚定与姿态追踪 */
+    val isWorldAnchored: Boolean = false,
+    val worldAnchorX: Float = 0f,
+    val worldAnchorY: Float = -0.12f,
+    val worldAnchorZ: Float = -0.65f,
+    val cameraForwardX: Float = 0f,
+    val cameraForwardY: Float = 0f,
+    val cameraForwardZ: Float = -1f,
+    val cameraUpX: Float = 0f,
+    val cameraUpY: Float = 1f,
+    val cameraUpZ: Float = 0f,
+    val isInView: Boolean = true,
+    val azimuthDeltaDegrees: Float = 0f,
     /** 帧时间 (纳秒)，驱动呼吸 / 待机 / 动作骨骼动画 */
     val timeNanos: Long = 0L
 )
