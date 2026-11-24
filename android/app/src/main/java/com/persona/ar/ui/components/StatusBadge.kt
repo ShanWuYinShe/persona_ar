@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.ar.ARMode
+import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 
@@ -43,6 +44,7 @@ fun StatusBadge(
     status: PersonaStatus?,
     activeModel: PersonaModelManifest?,
     arMode: ARMode,
+    currentEmotion: EmotionType = EmotionType.NEUTRAL,
     bondLevel: Int = 1,
     bondExp: Int = 45,
     bondExpNext: Int = 100,
@@ -155,6 +157,36 @@ fun StatusBadge(
                             .size(11.dp)
                             .scale(heartScale)
                     )
+
+                    // 萌系二次元动态情绪反馈胶囊
+                    val (emotionText, emotionColor, emotionBg) = when (currentEmotion) {
+                        EmotionType.JOY -> Triple("🌸 欢快", Color(0xFFFF2A6D), Color(0xFFFFEBF2))
+                        EmotionType.SHY -> Triple("💕 害羞", Color(0xFFE91E63), Color(0xFFFCE4EC))
+                        EmotionType.ANGRY -> Triple("😤 傲娇", Color(0xFFFF5722), Color(0xFFFBE9E7))
+                        EmotionType.CONFIDENT -> Triple("✨ 得意", Color(0xFFFFA000), Color(0xFFFFF8E1))
+                        EmotionType.SLEEPY -> Triple("💤 困倦", Color(0xFF7E57C2), Color(0xFFEDE7F6))
+                        EmotionType.THINKING -> Triple("💭 思考", Color(0xFF0288D1), Color(0xFFE1F5FE))
+                        EmotionType.SAD -> Triple("💧 委屈", Color(0xFF1976D2), Color(0xFFE3F2FD))
+                        EmotionType.SURPRISED -> Triple("⚡ 惊讶", Color(0xFFFFB300), Color(0xFFFFFDE7))
+                        EmotionType.NEUTRAL -> Triple("🍵 平静", Color(0xFF5A4470), Color(0xFFF3E5F5))
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(emotionBg)
+                            .border(0.8.dp, emotionColor.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 4.5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = emotionText,
+                            color = emotionColor,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(3.dp))

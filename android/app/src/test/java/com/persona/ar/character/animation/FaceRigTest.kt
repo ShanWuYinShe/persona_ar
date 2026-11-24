@@ -14,7 +14,10 @@ class FaceRigTest {
         "Face.M_F00_000_00_Fcl_EYE_Close",
         "Face.M_F00_000_00_Fcl_MTH_Joy",
         "Face.M_F00_000_00_Fcl_MTH_Neutral",
-        "Face.M_F00_000_00_Fcl_MTH_A"
+        "Face.M_F00_000_00_Fcl_MTH_A",
+        "Face.M_F00_000_00_Fcl_ALL_Angry",
+        "Face.M_F00_000_00_Fcl_MTH_U",
+        "Face.M_F00_000_00_Fcl_HA_Fung1"
     ))
 
     @Test
@@ -24,6 +27,25 @@ class FaceRigTest {
         rig.fillWeights(out, "SMILE", EmotionType.NEUTRAL, 0f, 0f)
         assertTrue("ALL_Joy 应被激活", out[0] > 0.2f)
         assertTrue("EYE_Joy 应被激活", out[2] > 0.2f)
+    }
+
+    @Test
+    fun `pout drives duck mouth and angry face`() {
+        val rig = faceRig()
+        val out = FloatArray(rig.morphCount)
+        rig.fillWeights(out, "POUT", EmotionType.ANGRY, 0f, 0f)
+        assertTrue("ALL_Angry 应有鲜明形变", out[7] > 0.8f)
+        assertTrue("MTH_U 嘟嘴形变应激活", out[8] > 0.8f)
+    }
+
+    @Test
+    fun `joy and smug activate cute anime fang`() {
+        val rig = faceRig()
+        val out = FloatArray(rig.morphCount)
+        rig.fillWeights(out, "JOY", EmotionType.JOY, 0f, 0f)
+        assertTrue("JOY 露齿笑应露出小虎牙", out[9] > 0.6f)
+        rig.fillWeights(out, "SMUG", EmotionType.CONFIDENT, 0f, 0f)
+        assertTrue("SMUG 得意应完全露出小虎牙", out[9] > 0.9f)
     }
 
     @Test

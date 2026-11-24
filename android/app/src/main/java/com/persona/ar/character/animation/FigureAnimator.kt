@@ -253,28 +253,32 @@ class FigureAnimator(private val rig: GltfRig) {
     private fun applySitting(k: Float) {
         hipsOffsetY -= SIT_HIPS_DOWN * k
         hipsOffsetZ += SIT_HIPS_FORWARD * k
-        add(HumanoidBone.HIPS, rx = -2f * k)
-        add(HumanoidBone.SPINE, rx = 3.5f * k)
-        add(HumanoidBone.CHEST, rx = -1.5f * k)
+        add(HumanoidBone.HIPS, rx = -4f * k)
+        add(HumanoidBone.SPINE, rx = 5.5f * k)
+        add(HumanoidBone.CHEST, rx = -2.5f * k)
 
-        // 萌系曲腿内八并拢坐姿（下半身稳坐于桌面接触平面，绝不穿模浮空）
-        add(HumanoidBone.UPPER_LEG_L, rx = -76f * k, ry = 4f * k, rz = 5f * k)
-        add(HumanoidBone.UPPER_LEG_R, rx = -76f * k, ry = -4f * k, rz = -5f * k)
-        add(HumanoidBone.LOWER_LEG_L, rx = 138f * k, rz = -4f * k)
-        add(HumanoidBone.LOWER_LEG_R, rx = 138f * k, rz = 4f * k)
-        add(HumanoidBone.FOOT_L, rx = 40f * k)
-        add(HumanoidBone.FOOT_R, rx = 40f * k)
+        // 少女萌系屈腿优雅坐姿：
+        // 大腿向前屈髋抬平（rx = -82°），双膝温柔内扣并拢（ry 镜像微收，rz 内倾）
+        add(HumanoidBone.UPPER_LEG_L, rx = -82f * k, ry = 3.5f * k, rz = 4.5f * k)
+        add(HumanoidBone.UPPER_LEG_R, rx = -82f * k, ry = -3.5f * k, rz = -4.5f * k)
+        // 小腿自然垂直略微后收（rx = 86°，避免过折成 138° 僵硬下垂），双踝轻靠
+        add(HumanoidBone.LOWER_LEG_L, rx = 86f * k, rz = -3.5f * k)
+        add(HumanoidBone.LOWER_LEG_R, rx = 86f * k, rz = 3.5f * k)
+        // 足部自然微踮轻垂，足尖优雅放松
+        add(HumanoidBone.FOOT_L, rx = 24f * k)
+        add(HumanoidBone.FOOT_R, rx = 24f * k)
 
-        // 双手自然温和搭在大腿膝盖上（平贴大腿面，告别浮空支棱 A-pose）
-        add(HumanoidBone.UPPER_ARM_L, rz = -4f * k, ry = 24f * k, rx = -6f * k)
-        add(HumanoidBone.UPPER_ARM_R, rz = 4f * k, ry = -24f * k, rx = -6f * k)
-        add(HumanoidBone.LOWER_ARM_L, ry = 52f * k, rx = 18f * k)
-        add(HumanoidBone.LOWER_ARM_R, ry = -52f * k, rx = 18f * k)
-        add(HumanoidBone.HAND_L, rz = 6f * k, ry = 10f * k)
-        add(HumanoidBone.HAND_R, rz = -6f * k, ry = -10f * k)
+        // 双手自然平顺搭在大腿膝上（大臂前屈内收，前臂屈肘并内旋，彻底告别悬空 A-pose）
+        add(HumanoidBone.UPPER_ARM_L, rz = -48f * k, ry = 18f * k, rx = 22f * k)
+        add(HumanoidBone.UPPER_ARM_R, rz = 48f * k, ry = -18f * k, rx = 22f * k)
+        add(HumanoidBone.LOWER_ARM_L, ry = 62f * k, rx = 12f * k)
+        add(HumanoidBone.LOWER_ARM_R, ry = -62f * k, rx = 12f * k)
+        add(HumanoidBone.HAND_L, rz = 8f * k, ry = 12f * k)
+        add(HumanoidBone.HAND_R, rz = -8f * k, ry = -12f * k)
 
-        // 头部轻微歪头，增添乖巧少女感
-        add(HumanoidBone.HEAD, rz = -2.5f * k, rx = 2f * k)
+        // 头部轻柔侧倾，眼神温婉灵动
+        add(HumanoidBone.HEAD, rz = -3.5f * k, rx = 3f * k)
+        add(HumanoidBone.NECK, rz = -1.5f * k)
     }
 
     // ============================================================ 动作层
@@ -307,168 +311,189 @@ class FigureAnimator(private val rig: GltfRig) {
         return true
     }
 
-    /** 挥手：右臂抬起 → 前臂柔和自然摆动 → 平滑复位 */
+    /** 挥手：元气满满侧身倾斜 + 右臂高高轻快摆动 + 左手微提裙边 */
     private fun applyWave(p: Float) {
-        val raise = envelope(p, 0.18f, 0.82f)
+        val raise = envelope(p, 0.16f, 0.84f)
         if (raise <= 0f) return
         val wave = sin(p * 2f * PI.toFloat() * 2.8f) * raise
-        // 右臂从自然垂落 (rz=-72) 抬到上方 (rz≈+80)：增量 +152，手腕协同微动
-        add(HumanoidBone.UPPER_ARM_R, rz = 152f * raise, ry = -12f * raise, rx = 10f * raise)
-        add(HumanoidBone.LOWER_ARM_R, ry = (-42f + wave * 22f) * raise, rx = 8f * raise)
-        add(HumanoidBone.HAND_R, rz = wave * 16f * raise, ry = wave * 8f * raise)
-        add(HumanoidBone.HEAD, rz = -5.0f * raise, ry = -4f * raise, rx = -2f * raise)
-        add(HumanoidBone.SPINE, rz = 2.5f * raise)
-        add(HumanoidBone.UPPER_ARM_L, rz = 4f * raise, ry = 6f * raise)
+        // 躯干向左轻倾，头部偏向招手侧
+        add(HumanoidBone.SPINE, rz = 5.0f * raise, rx = -2f * raise)
+        add(HumanoidBone.CHEST, rz = 3.5f * raise)
+        add(HumanoidBone.HIPS, rz = -3.0f * raise)
+        add(HumanoidBone.HEAD, rz = -8.0f * raise, ry = -6f * raise, rx = -3f * raise)
+        add(HumanoidBone.NECK, rz = -4.0f * raise)
+        // 右臂大幅高举欢快挥动
+        add(HumanoidBone.UPPER_ARM_R, rz = 156f * raise, ry = -16f * raise, rx = 14f * raise)
+        add(HumanoidBone.LOWER_ARM_R, ry = (-48f + wave * 26f) * raise, rx = 10f * raise)
+        add(HumanoidBone.HAND_R, rz = wave * 22f * raise, ry = wave * 12f * raise)
+        // 左手轻提裙边微展，剪影清晰优雅
+        add(HumanoidBone.UPPER_ARM_L, rz = 12f * raise, ry = 16f * raise)
+        add(HumanoidBone.LOWER_ARM_L, ry = 24f * raise)
     }
 
-    /** 点头：两次自然肯定点头（头部+颈部+胸腔呼吸协同反馈） */
+    /** 点头：二段肯定元气点头 + 双肩轻快起伏 */
     private fun applyNod(p: Float) {
         val env = bell(p)
         val nodPhase = p * 2f * PI.toFloat() * 2.0f
-        val nod = (sin(nodPhase) * 0.7f + sin(nodPhase * 0.5f) * 0.3f)
-        add(HumanoidBone.HEAD, rx = (10f + nod * 9f) * env, rz = sin(p * PI.toFloat()) * 1.5f)
-        add(HumanoidBone.NECK, rx = (4.5f + nod * 3.5f) * env)
-        add(HumanoidBone.CHEST, rx = 2f * env)
+        val nod = (sin(nodPhase) * 0.75f + sin(nodPhase * 0.5f) * 0.25f)
+        add(HumanoidBone.HEAD, rx = (13f + nod * 12f) * env, rz = sin(p * PI.toFloat()) * 2.0f)
+        add(HumanoidBone.NECK, rx = (6f + nod * 5f) * env)
+        add(HumanoidBone.CHEST, rx = 3.5f * env)
+        add(HumanoidBone.UPPER_ARM_L, ry = 6f * env, rz = 4f * env)
+        add(HumanoidBone.UPPER_ARM_R, ry = -6f * env, rz = -4f * env)
     }
 
-    /** 摇头：带可爱否认歪头与双手微展的轻摇 */
+    /** 摇头：双手身前轻推否认 + 傲娇轻摇 + 侧倾歪头 */
     private fun applyShakeHead(p: Float) {
         val env = bell(p)
         val shake = sin(p * 2f * PI.toFloat() * 2.2f)
-        add(HumanoidBone.HEAD, ry = shake * 16f * env, rz = -shake * 3.5f * env)
-        add(HumanoidBone.NECK, ry = shake * 7f * env)
-        add(HumanoidBone.CHEST, ry = shake * 2.5f * env)
-        add(HumanoidBone.UPPER_ARM_L, ry = 10f * env, rz = -4f * env)
-        add(HumanoidBone.UPPER_ARM_R, ry = -10f * env, rz = 4f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 16f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -16f * env)
+        add(HumanoidBone.HEAD, ry = shake * 20f * env, rz = -shake * 4.5f * env)
+        add(HumanoidBone.NECK, ry = shake * 9f * env)
+        add(HumanoidBone.CHEST, ry = shake * 3.5f * env)
+        // 双手身前微推否认剪影
+        add(HumanoidBone.UPPER_ARM_L, ry = 18f * env, rz = -6f * env)
+        add(HumanoidBone.UPPER_ARM_R, ry = -18f * env, rz = 6f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 28f * env + shake * 8f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -28f * env + shake * 8f * env)
     }
 
-    /** 鞠躬：双手自然收拢置于裙前，脊柱挺直温和前倾礼貌鞠躬 */
+    /** 鞠躬：双手收拢于裙前，脊柱挺拔端正前倾 30° 礼貌鞠躬 */
     private fun applyBow(p: Float) {
-        val env = envelope(p, 0.25f, 0.75f)
+        val env = envelope(p, 0.22f, 0.78f)
         if (env <= 0f) return
-        add(HumanoidBone.SPINE, rx = 16f * env)
-        add(HumanoidBone.CHEST, rx = 14f * env)
-        add(HumanoidBone.NECK, rx = 8f * env)
-        add(HumanoidBone.HEAD, rx = 6f * env)
-        add(HumanoidBone.UPPER_ARM_L, ry = 28f * env, rz = 10f * env)
-        add(HumanoidBone.UPPER_ARM_R, ry = -28f * env, rz = -10f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 42f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -42f * env)
-        add(HumanoidBone.UPPER_LEG_L, rx = -3f * env)
-        add(HumanoidBone.UPPER_LEG_R, rx = -3f * env)
+        add(HumanoidBone.SPINE, rx = 20f * env)
+        add(HumanoidBone.CHEST, rx = 16f * env)
+        add(HumanoidBone.NECK, rx = 10f * env)
+        add(HumanoidBone.HEAD, rx = 8f * env)
+        add(HumanoidBone.UPPER_ARM_L, ry = 32f * env, rz = 12f * env)
+        add(HumanoidBone.UPPER_ARM_R, ry = -32f * env, rz = -12f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 48f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -48f * env)
+        add(HumanoidBone.UPPER_LEG_L, rx = -4f * env)
+        add(HumanoidBone.UPPER_LEG_R, rx = -4f * env)
     }
 
-    /** 跳跃：蓄力下蹲 → 腾空伸展 → 落地缓冲 */
+    /** 跳跃：蓄力深蹲 → 展翅腾空 → 屈膝平稳落地缓冲 */
     private fun applyJump(p: Float) {
-        // 关键帧：(进度, 骨盆高度, 屈腿量, 举臂量)
         val hipsY: Float
         val legBend: Float
         val armsUp: Float
         when {
-            p < 0.22f -> {
-                val k = smoothIn(p / 0.22f)
-                hipsY = -0.10f * k; legBend = k; armsUp = -0.15f * k
+            p < 0.20f -> {
+                val k = smoothIn(p / 0.20f)
+                hipsY = -0.12f * k; legBend = k; armsUp = -0.18f * k
             }
-            p < 0.50f -> {
-                val k = smoothIn((p - 0.22f) / 0.28f)
-                hipsY = -0.10f + 0.38f * k; legBend = 1f - k; armsUp = -0.15f + 1.15f * k
+            p < 0.48f -> {
+                val k = smoothIn((p - 0.20f) / 0.28f)
+                hipsY = -0.12f + 0.42f * k; legBend = 1f - k; armsUp = -0.18f + 1.25f * k
             }
-            p < 0.66f -> {
-                val k = (p - 0.50f) / 0.16f
-                hipsY = 0.28f * (1f - k) * (1f - k); legBend = k * 0.35f; armsUp = 1.0f * (1f - k)
+            p < 0.65f -> {
+                val k = (p - 0.48f) / 0.17f
+                hipsY = 0.30f * (1f - k) * (1f - k); legBend = k * 0.4f; armsUp = 1.05f * (1f - k)
             }
             p < 0.82f -> {
-                val k = smoothIn((p - 0.66f) / 0.16f)
-                hipsY = -0.075f * k; legBend = 0.35f + 0.65f * k; armsUp = 0.25f * (1f - k)
+                val k = smoothIn((p - 0.65f) / 0.17f)
+                hipsY = -0.09f * k; legBend = 0.4f + 0.6f * k; armsUp = 0.25f * (1f - k)
             }
             else -> {
                 val k = 1f - smoothIn((p - 0.82f) / 0.18f)
-                hipsY = -0.075f * k; legBend = k; armsUp = 0f
+                hipsY = -0.09f * k; legBend = k; armsUp = 0f
             }
         }
         hipsOffsetY += hipsY
-        airborne = (hipsY / 0.28f).coerceIn(0f, 1f)
-        add(HumanoidBone.UPPER_LEG_L, rx = -30f * legBend, rz = -2f * legBend)
-        add(HumanoidBone.UPPER_LEG_R, rx = -30f * legBend, rz = 2f * legBend)
-        add(HumanoidBone.LOWER_LEG_L, rx = 46f * legBend)
-        add(HumanoidBone.LOWER_LEG_R, rx = 46f * legBend)
-        add(HumanoidBone.FOOT_L, rx = -12f * legBend)
-        add(HumanoidBone.FOOT_R, rx = -12f * legBend)
-        // 手臂：蓄力后摆 → 腾空上举
-        add(HumanoidBone.UPPER_ARM_L, rz = -78f * armsUp, ry = 10f * armsUp)
-        add(HumanoidBone.UPPER_ARM_R, rz = 78f * armsUp, ry = -10f * armsUp)
-        add(HumanoidBone.UPPER_ARM_L, rx = 14f * (1f - legBend) * (1f - armsUp))
-        add(HumanoidBone.UPPER_ARM_R, rx = 14f * (1f - legBend) * (1f - armsUp))
-        add(HumanoidBone.HEAD, rx = -4f * armsUp)
+        airborne = (hipsY / 0.30f).coerceIn(0f, 1f)
+        add(HumanoidBone.UPPER_LEG_L, rx = -34f * legBend, rz = -3f * legBend)
+        add(HumanoidBone.UPPER_LEG_R, rx = -34f * legBend, rz = 3f * legBend)
+        add(HumanoidBone.LOWER_LEG_L, rx = 52f * legBend)
+        add(HumanoidBone.LOWER_LEG_R, rx = 52f * legBend)
+        add(HumanoidBone.FOOT_L, rx = -14f * legBend)
+        add(HumanoidBone.FOOT_R, rx = -14f * legBend)
+        // 手臂：下蹲后摆 → 腾空大展双臂
+        add(HumanoidBone.UPPER_ARM_L, rz = -88f * armsUp, ry = 14f * armsUp)
+        add(HumanoidBone.UPPER_ARM_R, rz = 88f * armsUp, ry = -14f * armsUp)
+        add(HumanoidBone.HEAD, rx = -6f * armsUp)
     }
 
-    /** 傲娇噘嘴：扭头 + 下巴微抬 + 萌系双臂抱胸 */
+    /** 傲娇生闷气：身体侧转 + 仰头高高昂起 + 紧抱双胸剪影 + 单脚后点地 */
     private fun applyPout(p: Float) {
-        val env = envelope(p, 0.16f, 0.82f)
+        val env = envelope(p, 0.14f, 0.84f)
         if (env <= 0f) return
-        add(HumanoidBone.HEAD, ry = 18f * env, rx = -7f * env, rz = 6f * env)
-        add(HumanoidBone.NECK, ry = 8f * env, rx = -2f * env)
-        add(HumanoidBone.CHEST, ry = 4f * env, rx = -2f * env)
-        // 双臂抱胸：肩前屈 + 肘部贴合抱紧
-        add(HumanoidBone.UPPER_ARM_L, ry = 42f * env, rz = -4f * env)
-        add(HumanoidBone.UPPER_ARM_R, ry = -42f * env, rz = 4f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 102f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -102f * env)
+        // 躯干侧转，头部朝反方向高傲仰头
+        add(HumanoidBone.HIPS, ry = 14f * env)
+        add(HumanoidBone.SPINE, ry = 10f * env, rx = -3f * env)
+        add(HumanoidBone.CHEST, ry = 8f * env, rx = -4f * env)
+        add(HumanoidBone.HEAD, ry = -24f * env, rx = -12f * env, rz = 8f * env)
+        add(HumanoidBone.NECK, ry = -12f * env, rx = -4f * env)
+        // 极具舞台剪影的双臂抱胸：大臂紧前屈，前臂水平叠抱胸前
+        add(HumanoidBone.UPPER_ARM_L, ry = 48f * env, rz = -8f * env, rx = 10f * env)
+        add(HumanoidBone.UPPER_ARM_R, ry = -48f * env, rz = 8f * env, rx = 10f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 112f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -112f * env)
+        // 单脚略微向后点地（傲娇内八）
+        add(HumanoidBone.UPPER_LEG_L, rz = -4f * env, rx = -4f * env)
+        add(HumanoidBone.UPPER_LEG_R, rz = 4f * env, rx = 6f * env)
     }
 
-    /** 害羞：双手捂脸 + 低头娇羞微颤 + 双腿内八 */
+    /** 害羞娇颤：双手捂脸 + 缩肩娇羞微颤 + 萌系内八字屈膝 */
     private fun applyBlush(p: Float) {
-        val env = envelope(p, 0.20f, 0.78f)
+        val env = envelope(p, 0.18f, 0.80f)
         if (env <= 0f) return
-        val tremble = sin(p * 2f * PI.toFloat() * 3.5f) * 1.8f * env
-        add(HumanoidBone.HEAD, rx = 12f * env, rz = 5f * env, ry = tremble)
-        add(HumanoidBone.NECK, rx = 4f * env)
-        // 双臂的 rx 是沿各自上臂轴（左右分别为 ±X）的轴向扭转：左右臂要转到同一世界方向，
-        // 旋转角的符号必须相同；若写成 ±60 的镜像符号，只有一只手能抬到脸前，另一只停在胸前。
-        add(HumanoidBone.UPPER_ARM_L, rx = -62f * env, rz = 4f * env, ry = 12f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = -62f * env, rz = -4f * env, ry = -12f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 142f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -142f * env)
-        add(HumanoidBone.UPPER_LEG_L, rz = -2.5f * env)
-        add(HumanoidBone.UPPER_LEG_R, rz = 2.5f * env)
+        val tremble = sin(p * 2f * PI.toFloat() * 4.0f) * 2.2f * env
+        add(HumanoidBone.HEAD, rx = 14f * env, rz = 6f * env, ry = tremble)
+        add(HumanoidBone.NECK, rx = 5f * env)
+        add(HumanoidBone.CHEST, rx = 3.5f * env)
+        // 双手上抬捧颊护脸（上臂沿轴旋转 rx 左右同号转至脸前）
+        add(HumanoidBone.UPPER_ARM_L, rx = -68f * env, rz = 6f * env, ry = 16f * env)
+        add(HumanoidBone.UPPER_ARM_R, rx = -68f * env, rz = -6f * env, ry = -16f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 148f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -148f * env)
+        // 双腿明显内八字屈膝并拢
+        add(HumanoidBone.UPPER_LEG_L, rz = -5.0f * env, rx = -6f * env)
+        add(HumanoidBone.UPPER_LEG_R, rz = 5.0f * env, rx = -6f * env)
+        add(HumanoidBone.LOWER_LEG_L, rx = 8f * env)
+        add(HumanoidBone.LOWER_LEG_R, rx = 8f * env)
     }
 
-    /** 打哈欠：仰头张嘴 + 右手掩口 + 伸懒腰 */
+    /** 打哈欠：大幅后仰伸展躯干 + 右手手背掩口 + 慢速伸懒腰 */
     private fun applyYawn(p: Float) {
-        val env = envelope(p, 0.28f, 0.62f)
+        val env = envelope(p, 0.24f, 0.66f)
         if (env <= 0f) return
-        add(HumanoidBone.HEAD, rx = -16f * env, ry = -3f * env)
-        add(HumanoidBone.NECK, rx = -8f * env)
-        add(HumanoidBone.CHEST, rx = -4f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = -60f * env, ry = -40f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -120f * env)
-        add(HumanoidBone.UPPER_ARM_L, rz = -14f * env, ry = 8f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 10f * env)
+        add(HumanoidBone.SPINE, rx = -6f * env)
+        add(HumanoidBone.CHEST, rx = -8f * env)
+        add(HumanoidBone.NECK, rx = -10f * env)
+        add(HumanoidBone.HEAD, rx = -18f * env, ry = -4f * env)
+        // 右手背掩在小圆嘴前
+        add(HumanoidBone.UPPER_ARM_R, rx = -64f * env, ry = -46f * env, rz = -8f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -128f * env)
+        // 左手慵懒微垂伸展
+        add(HumanoidBone.UPPER_ARM_L, rz = -18f * env, ry = 10f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 14f * env)
     }
 
-    /** 打瞌睡：头低垂 + 身体前倾 + 呼吸变慢（保持型） */
+    /** 困倦瞌睡：头沉沉垂下 + 脊柱松弛微曲 + 慢节奏绵软呼吸（保持型） */
     private fun applySleep() {
-        add(HumanoidBone.HEAD, rx = 18f, rz = 6f, ry = -3f)
-        add(HumanoidBone.NECK, rx = 10f)
-        add(HumanoidBone.CHEST, rx = 4.5f)
-        add(HumanoidBone.SPINE, rx = 2f)
-        add(HumanoidBone.UPPER_ARM_L, rz = 3f, ry = 2f)
-        add(HumanoidBone.UPPER_ARM_R, rz = -3f, ry = -2f)
+        add(HumanoidBone.HEAD, rx = 22f, rz = 7f, ry = -4f)
+        add(HumanoidBone.NECK, rx = 12f)
+        add(HumanoidBone.CHEST, rx = 6f)
+        add(HumanoidBone.SPINE, rx = 3.5f)
+        add(HumanoidBone.UPPER_ARM_L, rz = 4f, ry = 3f)
+        add(HumanoidBone.UPPER_ARM_R, rz = -4f, ry = -3f)
     }
 
-    /** 得意：挺胸抬头 + 双手优雅叉腰 */
+    /** 嚣张得意：挺胸后仰 + 侧跨顶胯 + 极具辨识度的双手大弧度叉腰 */
     private fun applySmug(p: Float) {
-        val env = envelope(p, 0.18f, 0.82f)
+        val env = envelope(p, 0.16f, 0.84f)
         if (env <= 0f) return
-        add(HumanoidBone.CHEST, rx = -7f * env)
-        add(HumanoidBone.HEAD, rx = -7f * env, rz = -3f * env)
-        // 同 applyBlush：上臂轴向扭转 rx 左右同号（ry/rz 的镜像才是反号），双手才会对称落在腰侧。
-        add(HumanoidBone.UPPER_ARM_L, rx = 32f * env, ry = 22f * env, rz = 6f * env)
-        add(HumanoidBone.UPPER_ARM_R, rx = 32f * env, ry = -22f * env, rz = -6f * env)
-        add(HumanoidBone.LOWER_ARM_L, ry = 44f * env)
-        add(HumanoidBone.LOWER_ARM_R, ry = -44f * env)
+        // 傲然挺胸后仰与侧跨顶胯
+        add(HumanoidBone.HIPS, rz = 5.0f * env, ry = -3f * env)
+        add(HumanoidBone.SPINE, rx = -9f * env, rz = -3.5f * env)
+        add(HumanoidBone.CHEST, rx = -11f * env)
+        add(HumanoidBone.HEAD, rx = -9f * env, rz = -4f * env, ry = 3f * env)
+        // 标志性舞台双手叉腰（手肘大幅向两侧撑开，双腕搭在后腰胯侧）
+        add(HumanoidBone.UPPER_ARM_L, rx = 38f * env, ry = 28f * env, rz = 10f * env)
+        add(HumanoidBone.UPPER_ARM_R, rx = 38f * env, ry = -28f * env, rz = -10f * env)
+        add(HumanoidBone.LOWER_ARM_L, ry = 52f * env)
+        add(HumanoidBone.LOWER_ARM_R, ry = -52f * env)
     }
 
     // ============================================================ 触摸反应层
@@ -478,37 +503,53 @@ class FigureAnimator(private val rig: GltfRig) {
         val elapsed = input.touchElapsed
         if (elapsed < 0f || elapsed > TOUCH_DURATION) return
         val p = (elapsed / TOUCH_DURATION).coerceIn(0f, 1f)
-        val env = envelope(p, 0.16f, 0.8f)
+        val env = envelope(p, 0.14f, 0.82f)
         if (env <= 0f) return
         when (part) {
             TouchPart.HEAD -> {
-                // 摸头：闭眼享受、头微微低垂并偏向手的方向
-                val purr = sin(p * 2f * PI.toFloat() * 2.4f) * 1.8f * env
-                add(HumanoidBone.HEAD, rx = 7f * env, rz = 8f * env, ry = purr)
-                add(HumanoidBone.NECK, rx = 3f * env, rz = 3f * env)
-                add(HumanoidBone.CHEST, rz = 2f * env)
+                // 摸头：舒服闭眼顺毛享受、缩肩歪头依偎、上身轻柔跟随顺毛两下微回弹
+                val purr = sin(p * 2f * PI.toFloat() * 2.4f) * 2.2f * env
+                add(HumanoidBone.HEAD, rx = 8f * env, rz = 11f * env, ry = purr)
+                add(HumanoidBone.NECK, rx = 4f * env, rz = 4.5f * env)
+                add(HumanoidBone.CHEST, rz = 3.5f * env, rx = (sin(p * 2f * PI.toFloat() * 2.0f) * 1.5f) * env)
+                add(HumanoidBone.UPPER_ARM_L, rz = -6f * env) // 双肩轻耸
+                add(HumanoidBone.UPPER_ARM_R, rz = 6f * env)
             }
             TouchPart.CHEEK -> {
-                // 戳脸：扭头噘嘴抗议 + 身体轻躲
-                add(HumanoidBone.HEAD, ry = 14f * env, rx = -4f * env, rz = 3f * env)
-                add(HumanoidBone.NECK, ry = 6f * env)
-                add(HumanoidBone.CHEST, ry = -4f * env)
+                // 戳脸：迅速侧闪扭头躲避 + 抬肘举爪护脸防戳 + 经典鼓嘴生闷气
+                add(HumanoidBone.HEAD, ry = 22f * env, rx = -6f * env, rz = 5f * env)
+                add(HumanoidBone.NECK, ry = 10f * env)
+                add(HumanoidBone.CHEST, ry = -6f * env, rx = -3f * env)
+                // 双手举在脸前作可爱防御爪爪剪影
+                add(HumanoidBone.UPPER_ARM_L, ry = 36f * env, rz = -16f * env, rx = 14f * env)
+                add(HumanoidBone.UPPER_ARM_R, ry = -36f * env, rz = 16f * env, rx = 14f * env)
+                add(HumanoidBone.LOWER_ARM_L, ry = 92f * env)
+                add(HumanoidBone.LOWER_ARM_R, ry = -92f * env)
             }
             TouchPart.HAND -> {
-                // 牵手：低头看向手 + 手臂微微抬起靠近镜头
-                add(HumanoidBone.HEAD, rx = 6f * env, ry = -5f * env)
-                add(HumanoidBone.UPPER_ARM_R, ry = -26f * env, rz = 14f * env)
-                add(HumanoidBone.LOWER_ARM_R, ry = -42f * env)
-                add(HumanoidBone.CHEST, rx = 1.5f * env)
+                // 牵手：向前探身 + 右臂大大向镜头伸出 + 左手抚裙微倾 + 期待温柔微笑
+                add(HumanoidBone.SPINE, rx = 4f * env, rz = -2.5f * env)
+                add(HumanoidBone.CHEST, rx = 3f * env)
+                add(HumanoidBone.HEAD, rx = 7f * env, ry = -6f * env)
+                // 右臂向前向镜头自然大展探出
+                add(HumanoidBone.UPPER_ARM_R, ry = -34f * env, rz = 24f * env, rx = 18f * env)
+                add(HumanoidBone.LOWER_ARM_R, ry = -58f * env)
+                add(HumanoidBone.HAND_R, rz = -10f * env)
+                // 左手害羞抚裙
+                add(HumanoidBone.UPPER_ARM_L, ry = 12f * env, rz = 6f * env)
+                add(HumanoidBone.LOWER_ARM_L, ry = 18f * env)
             }
             TouchPart.BODY -> {
-                // 拥抱：双臂微环抱至胸前 + 低头娇羞
-                add(HumanoidBone.HEAD, rx = 8f * env, rz = 4f * env)
-                add(HumanoidBone.UPPER_ARM_L, ry = 38f * env, rz = -14f * env)
-                add(HumanoidBone.UPPER_ARM_R, ry = -38f * env, rz = 14f * env)
-                add(HumanoidBone.LOWER_ARM_L, ry = 58f * env)
-                add(HumanoidBone.LOWER_ARM_R, ry = -58f * env)
-                add(HumanoidBone.CHEST, rx = 2.5f * env)
+                // 拥抱：双臂大度环抱至胸前合抱 + 低头娇羞贴近 + 身体微心跳起伏
+                val heartbeat = sin(p * 2f * PI.toFloat() * 3.2f) * 1.2f * env
+                add(HumanoidBone.HEAD, rx = 11f * env, rz = 5f * env)
+                add(HumanoidBone.SPINE, rx = 5f * env)
+                add(HumanoidBone.CHEST, rx = 4f * env + heartbeat)
+                // 双臂在胸前大范围环抱
+                add(HumanoidBone.UPPER_ARM_L, ry = 46f * env, rz = -18f * env, rx = 12f * env)
+                add(HumanoidBone.UPPER_ARM_R, ry = -46f * env, rz = 18f * env, rx = 12f * env)
+                add(HumanoidBone.LOWER_ARM_L, ry = 78f * env)
+                add(HumanoidBone.LOWER_ARM_R, ry = -78f * env)
             }
         }
     }
@@ -566,9 +607,9 @@ class FigureAnimator(private val rig: GltfRig) {
         val touch = input.touchReaction
         if (touch != null && input.touchElapsed in 0f..TOUCH_DURATION) {
             return when (touch) {
-                TouchPart.HEAD -> "SMILE"
+                TouchPart.HEAD -> "JOY"
                 TouchPart.CHEEK -> "POUT"
-                TouchPart.HAND -> "SMILE"
+                TouchPart.HAND -> "WINK"
                 TouchPart.BODY -> "BLUSH_FACE"
             }
         }
@@ -578,11 +619,11 @@ class FigureAnimator(private val rig: GltfRig) {
         val inAction = action != ActionType.IDLE && (duration <= 0f || elapsed <= duration + 0.05f)
         if (!inAction) return null
         return when (action) {
-            ActionType.WAVE -> "SMILE"
+            ActionType.WAVE -> "JOY"
             ActionType.NOD -> "SMILE"
             ActionType.SHAKE_HEAD -> "POUT"
             ActionType.BOW -> "SMILE"
-            ActionType.JUMP -> "SMILE"
+            ActionType.JUMP -> "JOY"
             ActionType.POUT -> "POUT"
             ActionType.BLUSH -> "BLUSH_FACE"
             ActionType.YAWN -> "SLEEPY"

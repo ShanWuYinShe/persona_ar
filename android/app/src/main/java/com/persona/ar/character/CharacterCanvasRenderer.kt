@@ -311,6 +311,8 @@ fun CharacterCanvasRenderer(
             val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
 
             // 优先级：动作精灵表 > 静态立绘 > 矢量兜底
+            val animTime = (nowNanos / 1_000_000_000.0).toFloat()
+
             if (activeClip != null && currentFrameIndex != null) {
                 drawAnimatedFrame(
                     clip = activeClip,
@@ -321,6 +323,7 @@ fun CharacterCanvasRenderer(
                     visualState = visualState,
                     envLight = envLight
                 )
+                drawGameEmoteParticles(cx, cy - 80f * s, s, visualState, animTime)
             } else if (visualState.useHighResolutionModel && hoshinoBitmap != null) {
                 drawHighResolutionHoshino(
                     bitmap = hoshinoBitmap,
@@ -334,7 +337,8 @@ fun CharacterCanvasRenderer(
                     envLight = envLight,
                     drowsyCycle = drowsyCycle,
                     emotePulse = emotePulse,
-                    sparkleAngle = sparkleAngle
+                    sparkleAngle = sparkleAngle,
+                    animTime = animTime
                 )
             } else {
                 drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
@@ -346,7 +350,7 @@ fun CharacterCanvasRenderer(
                 drawChibiHairFront(frontX, frontY, s * headSquishScaleY, ahogeWiggle, visualState)
                 drawFloatingHalo(haloX, haloY, s, visualState)
                 drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
-                drawGameEmoteParticles(frontX, frontY, s, visualState)
+                drawGameEmoteParticles(frontX, frontY, s, visualState, animTime)
             }
 
             // 5. 桌面边缘深度遮挡与水平面切片 (Surface Horizon Edge Occlusion，防止脚底悬空穿模)
@@ -900,44 +904,208 @@ private fun DrawScope.drawChibiHairFront(
     drawPath(ahogePath, strokeColor, style = Stroke(2f * s, cap = StrokeCap.Round))
 }
 
-// 游戏风格情绪特效粒子
+// 游戏风格动态漫画情绪特效粒子（二次元符号浮动层）
 private fun DrawScope.drawGameEmoteParticles(
     cx: Float,
     cy: Float,
     s: Float,
-    state: CharacterVisualState
+    state: CharacterVisualState,
+    animTime: Float = 0f
 ) {
-    when (state.emotion) {
-        EmotionType.JOY -> {
-            drawStar(cx + 80f * s, cy - 60f * s, 16f * s, Color(0xFFFFD54F))
-            drawStar(cx - 75f * s, cy - 50f * s, 12f * s, Color(0xFFFF4081))
+    val isJoy = state.emotion == EmotionType.JOY || state.action == ActionType.WAVE || state.action == ActionType.JUMP
+    val isShy = state.emotion == EmotionType.SHY || state.action == ActionType.BLUSH
+    val isAngry = state.emotion == EmotionType.ANGRY || state.action == ActionType.POUT
+    val isSmug = state.emotion == EmotionType.CONFIDENT || state.action == ActionType.SMUG
+    val isSleepy = state.emotion == EmotionType.SLEEPY || state.action == ActionType.SLEEP || state.action == ActionType.YAWN
+    val isSurprised = state.emotion == EmotionType.SURPRISED
+    val isSad = state.emotion == EmotionType.SAD
+    val isThinking = state.emotion == EmotionType.THINKING
+
+    when {
+        isJoy -> {
+            // 欢快跳跃小音符与金色闪耀小星芒
+            val t1 = (animTime * 3.4f) % (2f * Math.PI.toFloat())
+            val note1Y = cy - 65f * s + kotlin.math.sin(t1) * 8f * s
+            val note2Y = cy - 75f * s + kotlin.math.cos(t1 * 1.2f) * 10f * s
+            drawMusicNote(cx + 82f * s, note1Y, 14f * s, Color(0xFFFFD54F))
+            drawMusicNote(cx - 78f * s, note2Y, 12f * s, Color(0xFFFF6090))
+            drawFourPointStar(cx + 60f * s, cy - 90f * s, 9f * s, (animTime * 90f) % 360f, Color(0xFFFFEB3B))
         }
-        EmotionType.SHY -> {
-            drawHeart(cx + 78f * s, cy - 55f * s, 14f * s, Color(0xFFFF4081))
-            drawHeart(cx - 72f * s, cy - 65f * s, 10f * s, Color(0xFFFF80AB))
+        isShy -> {
+            // 娇羞飘动上升粉心（带柔和正弦漂浮摆动与优雅淡出）
+            val cycle1 = ((animTime * 0.75f) % 1.0f)
+            val heart1Y = cy - 35f * s - cycle1 * 55f * s
+            val heart1X = cx + 75f * s + kotlin.math.sin(cycle1 * 6.28f) * 6f * s
+            val alpha1 = (1f - cycle1).coerceIn(0f, 1f)
+
+            val cycle2 = ((animTime * 0.75f + 0.5f) % 1.0f)
+            val heart2Y = cy - 40f * s - cycle2 * 55f * s
+            val heart2X = cx - 72f * s - kotlin.math.sin(cycle2 * 6.28f) * 6f * s
+            val alpha2 = (1f - cycle2).coerceIn(0f, 1f)
+
+            drawHeart(heart1X, heart1Y, 13f * s, Color(0xFFFF4081).copy(alpha = alpha1))
+            drawHeart(heart2X, heart2Y, 10f * s, Color(0xFFFF80AB).copy(alpha = alpha2))
         }
-        EmotionType.SURPRISED -> {
-            drawStar(cx, cy - 130f * s, 14f * s, Color(0xFFFFEA00))
+        isAngry -> {
+            // 经典二次元 Q 版红怒十字（带脉冲放大）+ 侧边小怒气白云团
+            val pulse = 1.0f + kotlin.math.sin(animTime * 8f) * 0.15f
+            val crossX = cx + 72f * s
+            val crossY = cy - 75f * s
+            drawAngryCross(crossX, crossY, 16f * s * pulse, Color(0xFFFF1744))
+
+            // 侧边可爱冒出的白色小怒气团 (Puff of steam)
+            val steamProgress = (animTime * 1.4f) % 1.0f
+            val steamX = cx - 65f * s - steamProgress * 15f * s
+            val steamY = cy - 60f * s - steamProgress * 12f * s
+            val steamAlpha = (1f - steamProgress) * 0.85f
+            drawPuffCloud(steamX, steamY, (8f + steamProgress * 10f) * s, Color.White.copy(alpha = steamAlpha))
         }
-        EmotionType.SAD -> {
-            drawTearDrop(cx + 42f * s, cy + 15f * s, 8f * s, Color(0xFF00B0FF))
-            drawTearDrop(cx - 42f * s, cy + 15f * s, 8f * s, Color(0xFF00B0FF))
+        isSmug -> {
+            // 闪亮四角金星（Bling Bling 自信星芒，旋转放大）
+            val rot = (animTime * 120f) % 360f
+            val pulse = 1f + kotlin.math.sin(animTime * 6f) * 0.2f
+            drawFourPointStar(cx + 85f * s, cy - 70f * s, 18f * s * pulse, rot, Color(0xFFFFD700))
+            drawFourPointStar(cx - 78f * s, cy - 55f * s, 12f * s, -rot * 0.8f, Color(0xFFFFF176))
         }
-        EmotionType.ANGRY -> {
-            val sx = cx + 70f * s
-            val sy = cy - 70f * s
-            val sColor = Color(0xFFFF1744)
-            drawLine(sColor, Offset(sx - 14f * s, sy - 7f * s), Offset(sx + 14f * s, sy - 7f * s), strokeWidth = 4f * s, cap = StrokeCap.Round)
-            drawLine(sColor, Offset(sx - 14f * s, sy + 7f * s), Offset(sx + 14f * s, sy + 7f * s), strokeWidth = 4f * s, cap = StrokeCap.Round)
-            drawLine(sColor, Offset(sx - 7f * s, sy - 14f * s), Offset(sx - 7f * s, sy + 14f * s), strokeWidth = 4f * s, cap = StrokeCap.Round)
-            drawLine(sColor, Offset(sx + 7f * s, sy - 14f * s), Offset(sx + 7f * s, sy + 14f * s), strokeWidth = 4f * s, cap = StrokeCap.Round)
+        isSleepy -> {
+            // 缓缓升腾放大的 Zzz 困倦半透明微光气泡
+            val zProgress1 = (animTime * 0.55f) % 1.0f
+            val z1X = cx + 65f * s + kotlin.math.sin(zProgress1 * 4f) * 8f * s
+            val z1Y = cy - 45f * s - zProgress1 * 65f * s
+            val z1Alpha = (1f - zProgress1).coerceIn(0f, 1f)
+            drawZzzBubble(z1X, z1Y, (10f + zProgress1 * 8f) * s, z1Alpha)
+
+            val zProgress2 = (animTime * 0.55f + 0.48f) % 1.0f
+            val z2X = cx + 80f * s + kotlin.math.sin(zProgress2 * 5f) * 6f * s
+            val z2Y = cy - 35f * s - zProgress2 * 60f * s
+            val z2Alpha = (1f - zProgress2).coerceIn(0f, 1f)
+            drawZzzBubble(z2X, z2Y, (8f + zProgress2 * 6f) * s, z2Alpha)
         }
-        EmotionType.THINKING -> {
+        isSurprised -> {
+            // 惊叹号气泡与闪光
+            drawExclamationBubble(cx, cy - 110f * s, 18f * s, Color(0xFFFFD54F))
+        }
+        isSad -> {
+            // 缓缓滑落的晶莹泪珠
+            val tearDrop1 = (animTime * 1.8f) % 1.0f
+            drawTearDrop(cx + 42f * s, cy + 5f * s + tearDrop1 * 30f * s, 8f * s, Color(0xFF00B0FF).copy(alpha = 1f - tearDrop1 * 0.5f))
+            drawTearDrop(cx - 42f * s, cy + 8f * s + ((tearDrop1 + 0.3f) % 1f) * 28f * s, 7f * s, Color(0xFF00B0FF).copy(alpha = 1f - tearDrop1 * 0.5f))
+        }
+        isThinking -> {
             drawCircle(Color(0xFF40C4FF), 10f * s, Offset(cx + 80f * s, cy - 55f * s))
             drawCircle(Color(0xFF281C38), 10f * s, Offset(cx + 80f * s, cy - 55f * s), style = Stroke(2.5f * s))
         }
         else -> Unit
     }
+}
+
+// 辅助八分音符绘制 (♪)
+private fun DrawScope.drawMusicNote(x: Float, y: Float, size: Float, color: Color) {
+    val noteHeadRadius = size * 0.35f
+    // 倾斜椭圆音符头
+    drawOval(
+        color = color,
+        topLeft = Offset(x - noteHeadRadius * 1.2f, y - noteHeadRadius),
+        size = Size(noteHeadRadius * 2.2f, noteHeadRadius * 1.6f)
+    )
+    drawOval(
+        color = Color(0xFF281C38),
+        topLeft = Offset(x - noteHeadRadius * 1.2f, y - noteHeadRadius),
+        size = Size(noteHeadRadius * 2.2f, noteHeadRadius * 1.6f),
+        style = Stroke(2f)
+    )
+    // 符杆
+    val stemX = x + noteHeadRadius * 0.8f
+    val stemTopY = y - size * 1.4f
+    drawLine(color, Offset(stemX, y), Offset(stemX, stemTopY), strokeWidth = 2.5f, cap = StrokeCap.Round)
+    drawLine(Color(0xFF281C38), Offset(stemX, y), Offset(stemX, stemTopY), strokeWidth = 1.2f, cap = StrokeCap.Round)
+    // 符尾
+    val flagPath = Path().apply {
+        moveTo(stemX, stemTopY)
+        cubicTo(stemX + size * 0.7f, stemTopY + size * 0.3f, stemX + size * 0.5f, stemTopY + size * 0.8f, stemX + size * 0.8f, stemTopY + size)
+    }
+    drawPath(flagPath, color, style = Stroke(2.5f, cap = StrokeCap.Round))
+}
+
+// 辅助四角星芒绘制 (✦)
+private fun DrawScope.drawFourPointStar(x: Float, y: Float, radius: Float, rotationDegrees: Float, color: Color) {
+    val path = Path().apply {
+        val rad = Math.toRadians(rotationDegrees.toDouble())
+        for (i in 0..7) {
+            val r = if (i % 2 == 0) radius else radius * 0.28f
+            val angle = rad + i * Math.PI / 4.0
+            val px = x + (r * Math.cos(angle)).toFloat()
+            val py = y + (r * Math.sin(angle)).toFloat()
+            if (i == 0) moveTo(px, py) else lineTo(px, py)
+        }
+        close()
+    }
+    drawPath(path, color)
+    drawPath(path, Color(0xFF281C38), style = Stroke(1.8f))
+}
+
+// 辅助二次元 Q 版红怒十字绘制 (💢)
+private fun DrawScope.drawAngryCross(x: Float, y: Float, size: Float, color: Color) {
+    val half = size * 0.5f
+    val thick = size * 0.25f
+    val strokeW = 3f
+    val borderColor = Color(0xFF281C38)
+    // 井字形交错四弧线
+    drawLine(color, Offset(x - half, y - thick), Offset(x + half, y - thick), strokeWidth = thick, cap = StrokeCap.Round)
+    drawLine(borderColor, Offset(x - half, y - thick), Offset(x + half, y - thick), strokeWidth = thick + strokeW, cap = StrokeCap.Round)
+    drawLine(color, Offset(x - half, y - thick), Offset(x + half, y - thick), strokeWidth = thick, cap = StrokeCap.Round)
+
+    drawLine(color, Offset(x - half, y + thick), Offset(x + half, y + thick), strokeWidth = thick, cap = StrokeCap.Round)
+    drawLine(borderColor, Offset(x - half, y + thick), Offset(x + half, y + thick), strokeWidth = thick + strokeW, cap = StrokeCap.Round)
+    drawLine(color, Offset(x - half, y + thick), Offset(x + half, y + thick), strokeWidth = thick, cap = StrokeCap.Round)
+
+    drawLine(color, Offset(x - thick, y - half), Offset(x - thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
+    drawLine(borderColor, Offset(x - thick, y - half), Offset(x - thick, y + half), strokeWidth = thick + strokeW, cap = StrokeCap.Round)
+    drawLine(color, Offset(x - thick, y - half), Offset(x - thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
+
+    drawLine(color, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
+    drawLine(borderColor, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick + strokeW, cap = StrokeCap.Round)
+    drawLine(color, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
+}
+
+// 辅助小气团绘制 (Puff Cloud)
+private fun DrawScope.drawPuffCloud(x: Float, y: Float, radius: Float, color: Color) {
+    drawCircle(color, radius * 0.7f, Offset(x - radius * 0.5f, y))
+    drawCircle(color, radius, Offset(x, y - radius * 0.2f))
+    drawCircle(color, radius * 0.6f, Offset(x + radius * 0.6f, y))
+}
+
+// 辅助 Zzz 气泡绘制
+private fun DrawScope.drawZzzBubble(x: Float, y: Float, radius: Float, alpha: Float) {
+    if (alpha <= 0.02f) return
+    drawCircle(
+        color = Color(0x66B0BEC5).copy(alpha = alpha * 0.4f),
+        radius = radius,
+        center = Offset(x, y)
+    )
+    drawCircle(
+        color = Color(0xFF281C38).copy(alpha = alpha * 0.7f),
+        radius = radius,
+        center = Offset(x, y),
+        style = Stroke(1.5f)
+    )
+    // 气泡内小 Z
+    val zPath = Path().apply {
+        val s = radius * 0.45f
+        moveTo(x - s, y - s)
+        lineTo(x + s, y - s)
+        lineTo(x - s, y + s)
+        lineTo(x + s, y + s)
+    }
+    drawPath(zPath, Color(0xFF37474F).copy(alpha = alpha), style = Stroke(2f, cap = StrokeCap.Round))
+}
+
+// 辅助感叹号气泡绘制
+private fun DrawScope.drawExclamationBubble(x: Float, y: Float, size: Float, color: Color) {
+    drawCircle(color, size, Offset(x, y))
+    drawCircle(Color(0xFF281C38), size, Offset(x, y), style = Stroke(2.5f))
+    drawLine(Color(0xFF281C38), Offset(x, y - size * 0.5f), Offset(x, y + size * 0.1f), strokeWidth = 3.5f, cap = StrokeCap.Round)
+    drawCircle(Color(0xFF281C38), 2.2f, Offset(x, y + size * 0.5f))
 }
 
 // 辅助爱心绘制
@@ -1284,7 +1452,8 @@ private fun DrawScope.drawHighResolutionHoshino(
     envLight: Float,
     drowsyCycle: Float,
     emotePulse: Float,
-    sparkleAngle: Float
+    sparkleAngle: Float,
+    animTime: Float = 0f
 ) {
     val charW = 185f * s
     val charH = charW * (bitmap.height.toFloat() / bitmap.width.toFloat())
@@ -1331,11 +1500,17 @@ private fun DrawScope.drawHighResolutionHoshino(
             visualState.highResPose == "SMUG"
     val smugTiltAngle = if (isSmugMode) -maxOf(visualState.smugTiltDegrees, 4.0f) * 0.8f else 0f
 
-    val totalPoseAngle = visualState.inertialSwayAngle + drowsyNodAngle + poutSwayAngle + smugTiltAngle
+    val isJoyMode = visualState.emotion == EmotionType.JOY || visualState.action == ActionType.WAVE || visualState.action == ActionType.JUMP
+    val joyBounce = if (isJoyMode) kotlin.math.abs(kotlin.math.sin(animTime * 6f)) * 4.5f * s else 0f
+
+    val isShyMode = visualState.emotion == EmotionType.SHY || visualState.action == ActionType.BLUSH
+    val shyTrembleAngle = if (isShyMode) kotlin.math.sin(animTime * 22f) * 1.5f else 0f
+
+    val totalPoseAngle = visualState.inertialSwayAngle + drowsyNodAngle + poutSwayAngle + smugTiltAngle + shyTrembleAngle
 
     val sitP = visualState.sitProgress.coerceIn(0f, 1f)
     val sitDropY = charH * 0.165f * sitP
-    val effectiveTopY = topY + sitDropY
+    val effectiveTopY = topY + sitDropY - joyBounce
     val effectiveLeftX = cx - charW / 2f
 
     // 3. 惯性物理摆动、重力下垂与悬空微摇 (以地面足底接触线或身体重心为旋转原点)
@@ -1469,8 +1644,8 @@ private fun DrawScope.drawHighResolutionHoshino(
         )
     }
 
-    // 9. 情感微粒子
-    drawGameEmoteParticles(cx, topY + 60f * s, s, visualState)
+    // 9. 情感微粒子 (动态漫画情绪符号层)
+    drawGameEmoteParticles(cx, topY + 60f * s, s, visualState, animTime)
 }
 
 /**
