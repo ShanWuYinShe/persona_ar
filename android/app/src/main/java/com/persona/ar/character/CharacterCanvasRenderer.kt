@@ -3,8 +3,6 @@ package com.persona.ar.character
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -46,9 +44,6 @@ fun CharacterCanvasRenderer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val vibrator = remember {
-        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-    }
     val scope = rememberCoroutineScope()
 
     // 高精度立绘：真 3D 手办由 Filament 渲染，此立绘是 2.5D 回退路径的角色贴图。
@@ -205,10 +200,7 @@ fun CharacterCanvasRenderer(
                         else -> TouchPart.BODY
                     }
 
-                    // 1. 部位专属精细触觉震动反馈
-                    triggerHapticFeedback(vibrator, part)
-
-                    // 2. 触发对应部位局部弹性缩放
+                    // 1. 触发对应部位局部弹性缩放
                     activeTouchPart = part
                     scope.launch {
                         delay(240L)
@@ -217,7 +209,7 @@ fun CharacterCanvasRenderer(
                         }
                     }
 
-                    // 3. 传出精准触碰坐标给外部粒子飘字
+                    // 2. 传出精准触碰坐标给外部粒子飘字与统一触感震动反馈
                     onTouchPart(part, normalizedX, normalizedY)
                 }
             }
@@ -344,48 +336,6 @@ fun CharacterCanvasRenderer(
                 drawCameraSensorGrain(cx, cy, s, visualState.sensorGrainIntensity.coerceIn(0.04f, 0.16f))
             }
         }
-    }
-}
-
-/**
- * 针对不同触控部位定制触觉震动波形
- */
-private fun triggerHapticFeedback(vibrator: Vibrator?, part: TouchPart) {
-    if (vibrator == null || !vibrator.hasVibrator()) return
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            when (part) {
-                TouchPart.HEAD -> {
-                    // 摸头：轻柔双脉冲抚摸感
-                    val timings = longArrayOf(0, 15, 35, 18)
-                    val amplitudes = intArrayOf(0, 95, 0, 120)
-                    vibrator.vibrate(VibrationEffect.createWaveform(timings, amplitudes, -1))
-                }
-                TouchPart.CHEEK -> {
-                    // 戳脸：弹性微顿中频震动
-                    vibrator.vibrate(VibrationEffect.createOneShot(42, 170))
-                }
-                TouchPart.HAND -> {
-                    // 牵手：轻巧微点微震
-                    vibrator.vibrate(VibrationEffect.createOneShot(16, 90))
-                }
-                TouchPart.BODY -> {
-                    // 拥抱：温暖充盈长震
-                    vibrator.vibrate(VibrationEffect.createOneShot(65, 190))
-                }
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            val durationMs = when (part) {
-                TouchPart.HEAD -> 25L
-                TouchPart.CHEEK -> 42L
-                TouchPart.HAND -> 16L
-                TouchPart.BODY -> 65L
-            }
-            vibrator.vibrate(durationMs)
-        }
-    } catch (e: Exception) {
-        // 忽略震动服务不可用
     }
 }
 
@@ -1263,6 +1213,35 @@ private fun DrawScope.drawVolumetricDirectionalRimLight(
             color = Color.White.copy(alpha = rimAlpha * 0.8f),
             style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
         )
+    } else {
+        // 光源在正前方或环境漫射：呈现双侧自然细腻的菲涅尔发丝微高光
+        val bilateralAlpha = rimAlpha * 0.5f
+        val leftArcPath = Path().apply {
+            moveTo(cx - 84f * s, cy - 80f * s)
+            cubicTo(
+                cx - 96f * s, cy - 10f * s,
+                cx - 92f * s, cy + 60f * s,
+                cx - 68f * s, cy + 120f * s
+            )
+        }
+        val rightArcPath = Path().apply {
+            moveTo(cx + 84f * s, cy - 80f * s)
+            cubicTo(
+                cx + 96f * s, cy - 10f * s,
+                cx + 92f * s, cy + 60f * s,
+                cx + 68f * s, cy + 120f * s
+            )
+        }
+        drawPath(
+            path = leftArcPath,
+            color = rimBaseColor.copy(alpha = bilateralAlpha),
+            style = Stroke(width = rimWidth * 0.7f, cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = rightArcPath,
+            color = rimBaseColor.copy(alpha = bilateralAlpha),
+            style = Stroke(width = rimWidth * 0.7f, cap = StrokeCap.Round)
+        )
     }
 }
 
@@ -1292,14 +1271,20 @@ private fun DrawScope.drawHighResolutionHoshino(
 
     // 1. 环境光色温调和与局部材质二次漫反射 (Radiosity Tint)
     // 静态立绘自带完整光影，严禁按环境照度整体乘法，暗光下不能被压成黑色剪影（导致粉发边缘露白像长羽毛）。
-    // 采用与动作精灵表一致的柔和色温微调公式，保持二次元伴侣始终清晰明亮。
+    // 采用与动作精灵表一致的柔和色温微调公式，辅以微弱桌面漫反射二次散射，保持二次元伴侣始终通透生动。
+    val radiosityBoost = (visualState.environmentalLighting * 0.05f).coerceIn(0f, 0.07f)
     val colorFilter = ColorFilter.lighting(
         multiply = Color(
             red = (0.92f + (visualState.ambientTintRed - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
             green = (0.92f + (visualState.ambientTintGreen - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
             blue = (0.92f + (visualState.ambientTintBlue - 1f) * 0.3f).coerceIn(0.85f, 1.05f)
         ),
-        add = Color.Transparent
+        add = Color(
+            red = (visualState.ambientTintRed * radiosityBoost * 0.4f).coerceIn(0f, 0.04f),
+            green = (visualState.ambientTintGreen * radiosityBoost * 0.4f).coerceIn(0f, 0.04f),
+            blue = (visualState.ambientTintBlue * radiosityBoost * 0.4f).coerceIn(0f, 0.04f),
+            alpha = 0f
+        )
     )
 
     // 2. 姿态动作姿态角解算 (打瞌睡慢点头、傲娇轻扭头、得意挺胸与惯性摆角融合)

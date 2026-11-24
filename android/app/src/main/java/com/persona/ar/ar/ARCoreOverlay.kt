@@ -133,10 +133,12 @@ fun ARCoreOverlay(
             .fillMaxSize()
             .pointerInput(spatialAnchor.isAnchored) {
                 if (!spatialAnchor.isAnchored) return@pointerInput
+                val touchSlop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     var isTransforming = false
                     var isDraggingModel = false
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val downPos = down.position
 
                     do {
                         val event = awaitPointerEvent()
@@ -153,18 +155,28 @@ fun ARCoreOverlay(
                             val zoom = event.calculateZoom()
                             val pan = event.calculatePan()
                             val rot = event.calculateRotation()
-                            if (zoom != 1f || kotlin.math.abs(pan.x) > 0.8f || kotlin.math.abs(rot) > 0.2f) {
-                                onTransformGesture(zoom, pan.x * 0.35f)
+                            val hasZoom = kotlin.math.abs(zoom - 1f) > 0.005f
+                            val hasRot = kotlin.math.abs(rot) > 0.2f
+                            val hasPan = kotlin.math.abs(pan.x) > 0.8f
+                            if (hasZoom || hasRot || hasPan) {
+                                val rotationDelta = if (hasRot) rot else (pan.x * 0.35f)
+                                onTransformGesture(zoom, rotationDelta)
                                 event.changes.forEach { it.consume() }
                             }
                         } else if (activePointers.size == 1 && !isTransforming) {
                             val change = activePointers.first()
                             val pan = change.position - change.previousPosition
-                            if (pan.getDistance() > 1.2f) {
-                                if (!isDraggingModel) {
-                                    isDraggingModel = true
-                                    onDragStateChanged(true)
+                            val totalDistFromDown = (change.position - downPos).getDistance()
+                            if (isDraggingModel) {
+                                if (pan.getDistance() > 0.3f) {
+                                    val deltaX = (pan.x / size.width) * 0.95f
+                                    val deltaY = (pan.y / size.height) * 0.95f
+                                    onDragAnchor(deltaX, deltaY)
+                                    change.consume()
                                 }
+                            } else if (totalDistFromDown > touchSlop) {
+                                isDraggingModel = true
+                                onDragStateChanged(true)
                                 val deltaX = (pan.x / size.width) * 0.95f
                                 val deltaY = (pan.y / size.height) * 0.95f
                                 onDragAnchor(deltaX, deltaY)

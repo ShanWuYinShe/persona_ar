@@ -93,6 +93,8 @@ class FigureAnimator(private val rig: GltfRig) {
 
     // ---- 内部状态 ----
     private var sitBlend = 0f
+    /** 当前坐姿混合权重 0..1（供外部场景与拾取平滑插值） */
+    val currentSitBlend: Float get() = sitBlend
     private var smoothMouth = 0f
     private var blinkCountdown = 2.2f
     private var blinkClock = -1f
@@ -117,8 +119,9 @@ class FigureAnimator(private val rig: GltfRig) {
         applyEmotion(input.emotion)
         // 4) 坐姿
         if (sitBlend > 0.001f) applySitting(sitBlend)
-        // 5) 动作层
-        actionActive = applyAction(input)
+        // 5) 动作层 (若当前正在播放专属触摸反应，动作层暂避，防止骨骼角度叠加产生关节过屈)
+        val hasTouchReaction = input.touchReaction != null && input.touchElapsed in 0f..TOUCH_DURATION
+        actionActive = if (hasTouchReaction) false else applyAction(input)
         // 6) 触摸反应层
         applyTouchReaction(input)
         // 7) 面部表情 / 眨眼 / 口型
@@ -499,13 +502,13 @@ class FigureAnimator(private val rig: GltfRig) {
                 add(HumanoidBone.CHEST, rx = 1.5f * env)
             }
             TouchPart.BODY -> {
-                // 拥抱：双臂环抱到胸前 + 低头害羞
+                // 拥抱：双臂微环抱至胸前 + 低头娇羞
                 add(HumanoidBone.HEAD, rx = 8f * env, rz = 4f * env)
-                add(HumanoidBone.UPPER_ARM_L, ry = 52f * env)
-                add(HumanoidBone.UPPER_ARM_R, ry = -52f * env)
-                add(HumanoidBone.LOWER_ARM_L, ry = 74f * env)
-                add(HumanoidBone.LOWER_ARM_R, ry = -74f * env)
-                add(HumanoidBone.CHEST, rx = 2f * env)
+                add(HumanoidBone.UPPER_ARM_L, ry = 38f * env, rz = -14f * env)
+                add(HumanoidBone.UPPER_ARM_R, ry = -38f * env, rz = 14f * env)
+                add(HumanoidBone.LOWER_ARM_L, ry = 58f * env)
+                add(HumanoidBone.LOWER_ARM_R, ry = -58f * env)
+                add(HumanoidBone.CHEST, rx = 2.5f * env)
             }
         }
     }
@@ -585,8 +588,7 @@ class FigureAnimator(private val rig: GltfRig) {
             ActionType.YAWN -> "SLEEPY"
             ActionType.SLEEP -> "SLEEPY"
             ActionType.SMUG -> "SMUG"
-            ActionType.SIT -> null
-            else -> null
+            ActionType.SIT, ActionType.IDLE -> null
         }
     }
 

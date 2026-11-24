@@ -134,6 +134,19 @@ class FigureAnimatorTest {
     }
 
     @Test
+    fun `touch reaction does not double stack arm angles when action is simultaneously active`() {
+        val i = input(ActionType.BLUSH, 1.2f)
+        i.touchReaction = TouchPart.BODY
+        i.touchElapsed = 1.0f
+        animator.update(i)
+        // 肘关节弯曲角不能超过解剖学安全上限 120° (此前叠加导致超过 216°)
+        val elbowBendL = angle(HumanoidBone.LOWER_ARM_L, 1)
+        val elbowBendR = angle(HumanoidBone.LOWER_ARM_R, 1)
+        assertTrue("左肘关节弯曲不应过屈变形: $elbowBendL", elbowBendL < 120f)
+        assertTrue("右肘关节弯曲不应过屈变形: $elbowBendR", elbowBendR > -120f)
+    }
+
+    @Test
     fun `blush action overrides expression`() {
         animator.update(input(ActionType.BLUSH, 1.2f))
         assertTrue(animator.faceExpression == "BLUSH_FACE")
