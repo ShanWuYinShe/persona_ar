@@ -62,6 +62,7 @@ class FrameAnimator(
         ActionType.BOW to ActionClipSpec("bow", 6, 3.0f, false),
         ActionType.YAWN to ActionClipSpec("yawn", 6, 2.4f, false),
         ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
+        ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false),
         ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
         ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false)
     )

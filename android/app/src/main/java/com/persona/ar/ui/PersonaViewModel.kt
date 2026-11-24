@@ -48,6 +48,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
 
+    private var filteredShiftX = 0f
+    private var filteredShiftY = 0f
+
     init {
         setupAudioPlayer()
         setupVoiceRecorder()
@@ -339,8 +342,21 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             universalTracker.spatialAnchor.collect { tracked ->
                 val pitchDeg = tracked.cameraPitchDegrees
                 val rollDeg = tracked.cameraRollDegrees
-                val shiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
-                val shiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
+                val rawShiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
+                val rawShiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
+
+                // 传感器白噪声死区与低通滤波：变化小于 0.35dp 判定为静止，避免手机放置桌面时角色小范围随机位移抖动
+                val deltaX = kotlin.math.abs(rawShiftX - filteredShiftX)
+                val deltaY = kotlin.math.abs(rawShiftY - filteredShiftY)
+                if (deltaX > 0.35f) {
+                    filteredShiftX = filteredShiftX * 0.75f + rawShiftX * 0.25f
+                }
+                if (deltaY > 0.35f) {
+                    filteredShiftY = filteredShiftY * 0.75f + rawShiftY * 0.25f
+                }
+                val shiftX = filteredShiftX
+                val shiftY = filteredShiftY
+
                 val gazeX = tracked.cameraGazeOffsetX
                 val gazeY = tracked.cameraGazeOffsetY
 
@@ -596,6 +612,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             TouchPart.HAND -> TouchReaction(pose = "DEFAULT", blush = 0f, pout = 0f, smug = 0f)
             TouchPart.BODY -> TouchReaction(pose = "SMUG", blush = 0f, pout = 0f, smug = 4.5f)
         }
+        val touchAction = when (part) {
+            TouchPart.HEAD -> ActionType.BLUSH
+            TouchPart.CHEEK -> ActionType.POUT
+            TouchPart.HAND -> ActionType.NOD
+            TouchPart.BODY -> ActionType.BLUSH
+        }
 
         _uiState.update { current ->
             current.copy(
@@ -604,11 +626,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     blushIntensity = reaction.blush,
                     poutIntensity = reaction.pout,
                     smugTiltDegrees = reaction.smug,
-                    // 触摸唤醒：从打瞌睡（保持型 SLEEP 动作）中被触碰时立即结束睡眠动作，避免睡眠姿态盖住触摸反应
-                    action = if (current.visualState.action == ActionType.SLEEP) ActionType.IDLE
-                             else current.visualState.action,
-                    actionStartedAtNanos = if (current.visualState.action == ActionType.SLEEP)
-                        0L else current.visualState.actionStartedAtNanos,
+                    action = touchAction,
+                    actionStartedAtNanos = touchReactionStartNanos,
                     sleepinessFactor = 0f,
                     touchReaction = part,
                     touchReactionStartedAtNanos = touchReactionStartNanos
@@ -624,7 +643,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 else current.copy(
                     visualState = current.visualState.copy(
                         touchReaction = null,
-                        touchReactionStartedAtNanos = 0L
+                        touchReactionStartedAtNanos = 0L,
+                        action = if (current.visualState.action == touchAction) ActionType.IDLE else current.visualState.action,
+                        actionStartedAtNanos = if (current.visualState.action == touchAction) 0L else current.visualState.actionStartedAtNanos
                     )
                 )
             }

@@ -222,13 +222,16 @@ fun CharacterCanvasRenderer(
                 }
             }
     ) {
+        // 精灵动画自带完整的动作与呼吸起伏，动作播放期间不叠加外层弹跳，消除动作不连贯与位移撕裂
+        val effectiveBounce = if (actionClip != null) 0f else breathBounce
+
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .offset {
                     IntOffset(
                         (offsetX + visualState.tiltOffsetX).roundToInt(),
-                        (offsetY + visualState.tiltOffsetY + breathBounce + jumpAnim + bodySquishOffset).roundToInt()
+                        (offsetY + visualState.tiltOffsetY + effectiveBounce + jumpAnim + bodySquishOffset).roundToInt()
                     )
                 }
         ) {
@@ -1288,13 +1291,15 @@ private fun DrawScope.drawHighResolutionHoshino(
     val leftX = cx - charW / 2f
 
     // 1. 环境光色温调和与局部材质二次漫反射 (Radiosity Tint)
+    // 静态立绘自带完整光影，严禁按环境照度整体乘法，暗光下不能被压成黑色剪影（导致粉发边缘露白像长羽毛）。
+    // 采用与动作精灵表一致的柔和色温微调公式，保持二次元伴侣始终清晰明亮。
     val colorFilter = ColorFilter.lighting(
         multiply = Color(
-            red = (visualState.ambientTintRed * envLight).coerceIn(0.25f, 1.35f),
-            green = (visualState.ambientTintGreen * envLight).coerceIn(0.25f, 1.35f),
-            blue = (visualState.ambientTintBlue * envLight).coerceIn(0.25f, 1.35f)
+            red = (0.92f + (visualState.ambientTintRed - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
+            green = (0.92f + (visualState.ambientTintGreen - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
+            blue = (0.92f + (visualState.ambientTintBlue - 1f) * 0.3f).coerceIn(0.85f, 1.05f)
         ),
-        add = if (visualState.isLowLight) Color(0x15101A) else Color.Transparent
+        add = Color.Transparent
     )
 
     // 2. 姿态动作姿态角解算 (打瞌睡慢点头、傲娇轻扭头、得意挺胸与惯性摆角融合)
