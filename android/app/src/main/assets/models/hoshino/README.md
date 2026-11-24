@@ -33,9 +33,15 @@ otherLicenseUrl: https://hub.vroid.com/license?allowed_to_use_user=everyone&char
 
 `android/tools/prepare_model.py`（仅 Python 3 标准库）：
 
-1. **剥离 `KHR_materials_unlit`**：VRM/MToon 惯例给所有材质打 unlit，防止标准查看器对已烘焙明暗的贴图双重打光；
-   但本项目的目标是让 Filament 用**真实 PBR 光照**渲染手办（迎光面高光随光源流动、有真实体积感），因此必须剥离。
-   例外：眼睛材质（名称含 `EYE`：EyeWhite / EyeIris / EyeHighlight / EyeExtra）保留 unlit，维持手绘虹膜的锐利度。
+1. **PBR 手办材质分层与剥离 `KHR_materials_unlit`**：
+   - VRM/MToon 惯例给所有材质打 unlit，防止标准查看器对已烘焙明暗贴图双重打光；
+   - 本项目通过 Filament PBR 表现二次元真实实体手办（PVC/树脂/漆面）质感：
+     - **头发 (`HAIR`)**：半光泽树脂漆面（roughness=0.38, metallic=0.02），呈现迎光流动的"天使之环"发丝高光；
+     - **皮肤 (`SKIN`/`FACE`/`BODY`)**：细腻磨砂树脂（roughness=0.68, metallic=0.0），温润透光，避免塑料油光与死白；
+     - **鞋子 (`SHOES`)**：注塑高光小皮鞋（roughness=0.28, metallic=0.08），反光清晰扎实；
+     - **常服织物 (`CLOTH`/`ONEPICE`)**：细微纤维散射（roughness=0.82, metallic=0.0）；
+     - **唇口 (`FaceMouth`)**：微润半透（roughness=0.48）；
+     - **眼睛/睫毛 (`EYE`)**：保留 unlit，维持二次元手绘眼神光与睫毛的锐利清晰。
 2. **删除 `extensions.VRM`**（表情、弹簧骨、MToon 定义、humanoid 表）：对 Filament 是死数据。
 3. **可达性裁剪**：删除不再被任何材质引用的 texture / image（自然剔除 1.85 MB 的 `Thumbnail` 与 `Shader_None*` 孤儿）。
 4. **重建 BIN chunk**：只保留仍被 accessor / image 引用的 bufferView，紧凑排列并重新映射索引。

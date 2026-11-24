@@ -15,9 +15,9 @@
 ## 3D 手办渲染管线（Filament）
 - 渲染层：`com.persona.ar.character.filament` — `FilamentEngineHolder`（进程级 Engine）、`FigureScene`（每视图场景/相机/双光源/IBL/接触阴影）、`FilamentFigureView`（Compose + TextureView + Choreographer 渲染循环 + GPU 拾取）。
 - 选 **Filament 1.81.0**（`filament-android` / `gltfio-android` / `filament-utils-android`）：其绑定依赖 `kotlin-stdlib 2.4.0`，须配 Kotlin ≥ 2.3。
-- 光照：**方向光**（台灯，唯一投影光源）+ **相机同轴点光源**（闪光灯，物理 1/r² 衰减，不投影）+ **IBL 单频带**（环境色渗）；曝光按环境照度映射 EV100。
+- 光照：**方向光**（台灯，唯一投影光源）+ **相机同轴点光源**（闪光灯，物理 1/r² 衰减，不投影）+ **IBL 2-Band 球谐定向光照**（天顶顶光与桌面底面反射色渗）；曝光按环境照度映射 EV100；光学后处理集成 **ACES 电影级色彩分级**、**Bloom 高光微晕**、**DPCF 接触硬化柔和阴影** 与 **时间性抖动抗色带**。
 - 接触阴影：`android/app/src/main/materials/shadow_catcher.mat` 经 matc 编译为 `assets/materials/shadow_catcher.filamat`（`unlit` + `shadowMultiplier` + `transparent`），**仅支持方向光阴影**；顶点需 `position` + `tangents`。
-- 3D 资产：`assets/models/<persona>/figure.glb`，由 `android/tools/prepare_model.py` 从 VRM 转换（剥离 `KHR_materials_unlit` 走 PBR 受光，眼睛材质保留 unlit；删 VRM 扩展与孤儿贴图）。模型清单用 `PersonaModelManifest.modelAsset` 声明；无 3D 资产的人格自动回退 2.5D Canvas 渲染。
+- 3D 资产：`assets/models/<persona>/figure.glb`，由 `android/tools/prepare_model.py` 从 VRM 转换（剥离非眼睛 `KHR_materials_unlit` 注入头发/皮肤/鞋履/常服分层 PBR 粗糙度与金属度，眼睛材质保留 unlit；删 VRM 扩展与孤儿贴图）。模型清单用 `PersonaModelManifest.modelAsset` 声明；无 3D 资产的人格自动回退 2.5D Canvas 渲染。
 - 模型入库前必须核实并记录许可证（见 `assets/models/hoshino/README.md`）；禁止提交未核实许可证的模型。
 - 骨骼姿态修正：Filament `TransformManager` 矩阵是相对父节点的完整 4×4，旋转必须按 `T · R` 重组（不能 `R · restMatrix`，否则绕原点旋转把骨骼甩飞）。
 - 骨骼动画（`com.persona.ar.character.animation`）：`GltfRigParser` 从 GLB 读取节点层级 / skins / inverseBindMatrices；`FigureAnimator` 叠加体态（站姿 / 桌沿垂腿坐）、待机呼吸、情绪体态、全部 `ActionType`（WAVE/NOD/SHAKE_HEAD/BOW/JUMP/POUT/BLUSH/YAWN/SLEEP/SMUG/SIT）、4 种触摸反应与面部表情；`PoseSolver` 做 FK 并按 gltfio 同款公式算蒙皮矩阵。
