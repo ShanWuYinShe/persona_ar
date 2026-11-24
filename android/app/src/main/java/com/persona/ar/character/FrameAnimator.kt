@@ -20,6 +20,7 @@ import com.persona.ar.data.model.ActionType
  *
  * 约定：`assets/animations/<动作名>.png` 是一张横向 N 等分的透明 PNG 精灵表。
  * 动作名 = ActionType 的小写（idle / wave / bow / yawn / shy / nod / sit）。
+ * 例外：BLUSH 与 POUT（捏脸/害羞/噘嘴）共用 shy 序列帧。
  */
 class FrameAnimator(
     private val context: Context
@@ -48,37 +49,47 @@ class FrameAnimator(
 
     private val cache = HashMap<String, Clip?>()
 
-    /**
-     * 动作 → (精灵表文件名, 帧数, fps, 是否循环)。
-     *
-     * fps 按「每个动作应有的自然时长」反推：fps = 帧数 / 目标时长。6 帧素材下，
-     * 若按直觉设成 7-9fps，一个动作只播 0.7-0.9 秒，快得看不清（实测用户反馈「根本就看不清」）。
-     * 这里按动作语义定目标时长：待机呼吸最慢（4s，呼吸本就是缓慢的），
-     * 点头最快（1.5s，回应动作要干脆），其余在 2s 左右。
-     */
-    private val actionSpec: Map<ActionType, ActionClipSpec> = mapOf(
-        ActionType.IDLE to ActionClipSpec("idle", 6, 1.5f, true),
-        ActionType.WAVE to ActionClipSpec("wave", 6, 3.3f, false),
-        ActionType.BOW to ActionClipSpec("bow", 6, 3.0f, false),
-        ActionType.YAWN to ActionClipSpec("yawn", 6, 2.4f, false),
-        ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
-        ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false),
-        ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
-        ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false)
-    )
-
-    private class ActionClipSpec(
+    /** 单个动作的精灵表规格：文件名、横向帧数、播放帧率、是否循环。 */
+    internal class ActionClipSpec(
         val fileName: String,
         val frameCount: Int,
         val fps: Float,
         val loop: Boolean
     )
 
+    companion object {
+        /**
+         * 动作 → (精灵表文件名, 帧数, fps, 是否循环)。
+         *
+         * fps 按「每个动作应有的自然时长」反推：fps = 帧数 / 目标时长。6 帧素材下，
+         * 若按直觉设成 7-9fps，一个动作只播 0.7-0.9 秒，快得看不清（实测用户反馈「根本就看不清」）。
+         * 这里按动作语义定目标时长：待机呼吸最慢（1.5fps ≈ 4s），点头最快（4fps ≈ 1.5s），其余在 2s 左右。
+         *
+         * 放在 companion 里是为了让 JVM 单测在不启动 Android Context / BitmapFactory 的情况下
+         * 直接断言「捏脸动作一定有预渲染序列帧」。
+         */
+        internal val ACTION_CLIP_SPECS: Map<ActionType, ActionClipSpec> = mapOf(
+            ActionType.IDLE to ActionClipSpec("idle", 6, 1.5f, true),
+            ActionType.WAVE to ActionClipSpec("wave", 6, 3.3f, false),
+            ActionType.BOW to ActionClipSpec("bow", 6, 3.0f, false),
+            ActionType.YAWN to ActionClipSpec("yawn", 6, 2.4f, false),
+            // 捏脸/害羞/噘嘴共用 shy 序列帧。POUT 必须在这里保留映射：
+            // 一旦缺失，渲染层会回退到非精灵路径，旧版「白色羽毛」伪影就是从这里复现的。
+            ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
+            ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false),
+            ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
+            ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false)
+        )
+
+        /** 查询动作对应的精灵表规格；null 表示该动作没有预渲染序列帧。 */
+        internal fun specFor(action: ActionType): ActionClipSpec? = ACTION_CLIP_SPECS[action]
+    }
+
     /** 读取某个动作的精灵表；不存在则返回 null（调用方回退到矢量立绘） */
     fun clipFor(action: ActionType): Clip? {
         val key = action.name
         if (cache.containsKey(key)) return cache[key]
-        val spec = actionSpec[action]
+        val spec = specFor(action)
         val clip: Clip? = if (spec == null) {
             null
         } else {

@@ -262,10 +262,6 @@ fun CharacterCanvasRenderer(
             val frontX = cx + kotlin.math.sin(rollRad) * 7.5f * s
             val frontY = cy + kotlin.math.sin(pitchRad) * 6.5f * s
 
-            // 4) 头顶契约光环 Z >>> 0 (高高悬浮在头顶上方最前层)
-            val haloX = cx + kotlin.math.sin(rollRad) * 12f * s
-            val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
-
             // 优先级：动作精灵表 > 矢量兜底（历史截图静态立绘已移除）
             val animTime = (nowNanos / 1_000_000_000.0).toFloat()
 
@@ -288,8 +284,9 @@ fun CharacterCanvasRenderer(
                 drawChibiBlush(faceX, faceY, s, visualState)
                 drawChibiMouth(faceX, faceY, s, visualState.lipSyncAmplitude, visualState)
                 drawChibiHairFront(frontX, frontY, s * headSquishScaleY, ahogeWiggle, visualState)
-                drawFloatingHalo(haloX, haloY, s, visualState)
-                drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
+                // 矢量兜底不再绘制悬浮光环与双侧白色菲涅尔轮廓光：
+                // 这两层就是旧版「角色两侧长出发光白羽毛」伪影的原始绘制源（光环白核 + 两条白色贝塞尔弧线）。
+                // 精灵表路径本身不画它们；这里同步移除，保证精灵解码失败/动作无映射时也不会重新长出白羽毛。
                 drawGameEmoteParticles(frontX, frontY, s, visualState, animTime)
             }
 
@@ -887,18 +884,14 @@ private fun DrawScope.drawGameEmoteParticles(
             drawHeart(heart2X, heart2Y, 10f * s, Color(0xFFFF80AB).copy(alpha = alpha2))
         }
         isAngry -> {
-            // 经典二次元 Q 版红怒十字（带脉冲放大）+ 侧边小怒气白云团
+            // 经典二次元 Q 版红怒十字（带脉冲放大）。
+            // 注意：这里严禁再叠加任何白色/半透明白色粒子（旧版「侧边怒气白云团」就是用户多次捏脸时
+            // 看到的「白色羽毛」来源之一）。红怒符号本身已足够表达傲娇，白色软边团在暗光与浅色背景下
+            // 会与角色轮廓叠成羽毛状伪影，2.5D 全状态都不允许出现。
             val pulse = 1.0f + kotlin.math.sin(animTime * 8f) * 0.15f
             val crossX = cx + 72f * s
             val crossY = cy - 75f * s
             drawAngryCross(crossX, crossY, 16f * s * pulse, Color(0xFFFF1744))
-
-            // 侧边可爱冒出的白色小怒气团 (Puff of steam)
-            val steamProgress = (animTime * 1.4f) % 1.0f
-            val steamX = cx - 65f * s - steamProgress * 15f * s
-            val steamY = cy - 60f * s - steamProgress * 12f * s
-            val steamAlpha = (1f - steamProgress) * 0.85f
-            drawPuffCloud(steamX, steamY, (8f + steamProgress * 10f) * s, Color.White.copy(alpha = steamAlpha))
         }
         isSmug -> {
             // 闪亮四角金星（Bling Bling 自信星芒，旋转放大）
@@ -1006,13 +999,6 @@ private fun DrawScope.drawAngryCross(x: Float, y: Float, size: Float, color: Col
     drawLine(color, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
     drawLine(borderColor, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick + strokeW, cap = StrokeCap.Round)
     drawLine(color, Offset(x + thick, y - half), Offset(x + thick, y + half), strokeWidth = thick, cap = StrokeCap.Round)
-}
-
-// 辅助小气团绘制 (Puff Cloud)
-private fun DrawScope.drawPuffCloud(x: Float, y: Float, radius: Float, color: Color) {
-    drawCircle(color, radius * 0.7f, Offset(x - radius * 0.5f, y))
-    drawCircle(color, radius, Offset(x, y - radius * 0.2f))
-    drawCircle(color, radius * 0.6f, Offset(x + radius * 0.6f, y))
 }
 
 // 辅助 Zzz 气泡绘制
@@ -1215,165 +1201,6 @@ private fun DrawScope.drawSurfaceEdgeOcclusion(
         topLeft = Offset(cx - occlusionWidth * 0.5f, footBaseY - occlusionHeight),
         size = Size(occlusionWidth, occlusionHeight + 12f * s)
     )
-}
-
-/**
- * 二游专属头顶立体悬浮契约光环 (Floating Halo)
- * 具有最高 Z 轴视差位移，随视角在头顶前后呈现真实的 3D 浮动错位
- */
-private fun DrawScope.drawFloatingHalo(
-    hx: Float,
-    hy: Float,
-    s: Float,
-    state: CharacterVisualState
-) {
-    val haloY = hy - 138f * s
-    val haloWidth = 92f * s
-    val haloHeight = 24f * s
-
-    val isSleepy = state.sleepinessFactor > 0.05f || state.emotion == EmotionType.SLEEPY || state.action == ActionType.SLEEP || state.highResPose == "SLEEPY"
-    val isShy = state.blushIntensity > 0.05f || state.emotion == EmotionType.SHY || state.action == ActionType.BLUSH || state.highResPose == "SHY"
-    val isAngry = state.poutIntensity > 0.05f || state.emotion == EmotionType.ANGRY || state.action == ActionType.POUT || state.highResPose == "POUT"
-    val isSmug = state.smugTiltDegrees > 0.5f || state.emotion == EmotionType.CONFIDENT || state.action == ActionType.SMUG || state.highResPose == "SMUG"
-
-    val (haloColor, haloAlphaMult) = when {
-        isSleepy -> Pair(Color(0xFF80DEEA), 0.35f) // 瞌睡暗蓝
-        isShy -> Pair(Color(0xFFFF80AB), 0.85f)    // 害羞樱粉
-        isAngry -> Pair(Color(0xFFFF5252), 0.90f)  // 傲娇赤红
-        isSmug -> Pair(Color(0xFFFFD54F), 1.25f)   // 得意耀金
-        else -> Pair(Color(0xFF00E5FF), 1.0f)      // 经典青蓝
-    }
-
-    val baseGlowAlpha = if (state.isLowLight) 0.65f else 0.35f
-    val haloGlowAlpha = (baseGlowAlpha * haloAlphaMult).coerceIn(0.12f, 0.95f)
-    val glowSpread = if (isSmug) 1.35f else 1.15f
-
-    // 1) 悬浮光环发光微光晕
-    drawOval(
-        color = haloColor.copy(alpha = haloGlowAlpha * 0.45f),
-        topLeft = Offset(hx - haloWidth * 0.5f * glowSpread, haloY - haloHeight * 0.5f * glowSpread),
-        size = Size(haloWidth * glowSpread, haloHeight * glowSpread)
-    )
-
-    // 2) 契约光环椭圆外环
-    drawOval(
-        color = haloColor.copy(alpha = haloGlowAlpha),
-        topLeft = Offset(hx - haloWidth * 0.5f, haloY - haloHeight * 0.5f),
-        size = Size(haloWidth, haloHeight),
-        style = Stroke((if (isSmug) 4.2f else 3.5f) * s)
-    )
-
-    // 3) 内圈高亮星芒核心点
-    val coreColor = if (isSmug) Color(0xFFFFF9C4) else Color.White
-    drawCircle(
-        color = coreColor.copy(alpha = (0.85f * haloAlphaMult).coerceIn(0.2f, 1.0f)),
-        radius = (if (isSmug) 3.2f else 2.5f) * s,
-        center = Offset(hx - haloWidth * 0.4f, haloY)
-    )
-    drawCircle(
-        color = coreColor.copy(alpha = (0.85f * haloAlphaMult).coerceIn(0.2f, 1.0f)),
-        radius = (if (isSmug) 3.2f else 2.5f) * s,
-        center = Offset(hx + haloWidth * 0.4f, haloY)
-    )
-}
-
-/**
- * 立体菲涅尔边缘轮廓光与主光源定向漫反射 (Volumetric Directional Fresnel Rim Light)
- * 根据 CameraX 帧分析解算出的真实主光源 (台灯/显示器/窗户) 入射矢量与强度，
- * 在伴侣迎光一侧渲染晶莹剔透的高光轮廓，背光一侧叠加微妙景深阴影，产生概念图级别的立体真实感。
- */
-private fun DrawScope.drawVolumetricDirectionalRimLight(
-    cx: Float,
-    cy: Float,
-    s: Float,
-    state: CharacterVisualState
-) {
-    val lightStrength = state.lightDirectionalStrength.coerceIn(0.1f, 1.0f)
-    val lightDirX = state.lightDirectionX
-
-    // 迎光轮廓光颜色：吸收环境色温 (暖光偏金黄，冷光偏冰蓝，暗光带微弱夜景冷光)
-    val rimBaseColor = when {
-        state.ambientColorTemp > 0.2f -> Color(0xFFFFD54F) // 暖色台灯金光
-        state.ambientColorTemp < -0.2f -> Color(0xFF80D8FF) // 冷色屏幕蓝光
-        state.isLowLight -> Color(0xFFB388FF) // 暗光夜景微光
-        else -> Color.White
-    }
-
-    val rimAlpha = (0.28f * lightStrength * (if (state.isLowLight) 0.65f else 1.0f)).coerceIn(0.06f, 0.45f)
-    val rimWidth = (6.0f * s * lightStrength).coerceIn(2.5f * s, 10f * s)
-
-    // 若光源来自左侧 (lightDirX < -0.15f)，则左侧为迎光面
-    if (lightDirX < -0.15f) {
-        val leftArcPath = Path().apply {
-            moveTo(cx - 84f * s, cy - 80f * s)
-            cubicTo(
-                cx - 96f * s, cy - 10f * s,
-                cx - 92f * s, cy + 60f * s,
-                cx - 68f * s, cy + 120f * s
-            )
-        }
-        drawPath(
-            path = leftArcPath,
-            color = rimBaseColor.copy(alpha = rimAlpha),
-            style = Stroke(width = rimWidth, cap = StrokeCap.Round)
-        )
-        // 发丝边缘高光细线
-        drawPath(
-            path = leftArcPath,
-            color = Color.White.copy(alpha = rimAlpha * 0.8f),
-            style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
-        )
-    } else if (lightDirX > 0.15f) {
-        // 若光源来自右侧 (lightDirX > 0.15f)，则右侧为迎光面
-        val rightArcPath = Path().apply {
-            moveTo(cx + 84f * s, cy - 80f * s)
-            cubicTo(
-                cx + 96f * s, cy - 10f * s,
-                cx + 92f * s, cy + 60f * s,
-                cx + 68f * s, cy + 120f * s
-            )
-        }
-        drawPath(
-            path = rightArcPath,
-            color = rimBaseColor.copy(alpha = rimAlpha),
-            style = Stroke(width = rimWidth, cap = StrokeCap.Round)
-        )
-        // 发丝边缘高光细线
-        drawPath(
-            path = rightArcPath,
-            color = Color.White.copy(alpha = rimAlpha * 0.8f),
-            style = Stroke(width = rimWidth * 0.4f, cap = StrokeCap.Round)
-        )
-    } else {
-        // 光源在正前方或环境漫射：呈现双侧自然细腻的菲涅尔发丝微高光
-        val bilateralAlpha = rimAlpha * 0.5f
-        val leftArcPath = Path().apply {
-            moveTo(cx - 84f * s, cy - 80f * s)
-            cubicTo(
-                cx - 96f * s, cy - 10f * s,
-                cx - 92f * s, cy + 60f * s,
-                cx - 68f * s, cy + 120f * s
-            )
-        }
-        val rightArcPath = Path().apply {
-            moveTo(cx + 84f * s, cy - 80f * s)
-            cubicTo(
-                cx + 96f * s, cy - 10f * s,
-                cx + 92f * s, cy + 60f * s,
-                cx + 68f * s, cy + 120f * s
-            )
-        }
-        drawPath(
-            path = leftArcPath,
-            color = rimBaseColor.copy(alpha = bilateralAlpha),
-            style = Stroke(width = rimWidth * 0.7f, cap = StrokeCap.Round)
-        )
-        drawPath(
-            path = rightArcPath,
-            color = rimBaseColor.copy(alpha = bilateralAlpha),
-            style = Stroke(width = rimWidth * 0.7f, cap = StrokeCap.Round)
-        )
-    }
 }
 
 /**
@@ -1861,74 +1688,6 @@ private fun DrawScope.drawToonCelShadingAndHairAnisotropy(
             size = Size(shadowW, charH * 0.65f),
             blendMode = BlendMode.SrcOver
         )
-    }
-}
-
-/**
- * 绘制星野标志性双马尾柔体弹簧物理骨骼 (Spring-Bone Pigtails)
- */
-private fun DrawScope.draw3DSpringPigtails(
-    cx: Float,
-    topY: Float,
-    charW: Float,
-    s: Float,
-    visualState: CharacterVisualState,
-    drowsyCycle: Float
-) {
-    val pigtailBaseY = topY + 85f * s
-    val swayAngle = visualState.inertialSwayAngle + kotlin.math.sin(drowsyCycle * 1.2f) * 3.5f
-
-    val pinkBase = Color(0xFFFFB6C8)
-    val pinkTip = Color(0xFFFF8DA1)
-    val ribbonColor = Color(0xFF1E2842)
-
-    for (dir in listOf(-1f, 1f)) {
-        val baseX = cx + dir * 38f * s
-        val pigtailSway = swayAngle * dir * 0.6f + (if (dir < 0) visualState.pigtailSwayAngleLeft else visualState.pigtailSwayAngleRight)
-
-        withTransform({
-            rotate(
-                degrees = pigtailSway,
-                pivot = Offset(baseX, pigtailBaseY)
-            )
-        }) {
-            // 蝴蝶结发饰
-            drawOval(
-                color = ribbonColor,
-                topLeft = Offset(baseX - 6f * s, pigtailBaseY - 4f * s),
-                size = Size(12f * s, 8f * s)
-            )
-
-            // 马尾发流贝塞尔曲线
-            val hairPath = Path().apply {
-                moveTo(baseX, pigtailBaseY)
-                cubicTo(
-                    baseX + dir * 22f * s, pigtailBaseY + 45f * s,
-                    baseX + dir * 18f * s, pigtailBaseY + 95f * s,
-                    baseX + dir * 12f * s, pigtailBaseY + 130f * s
-                )
-                cubicTo(
-                    baseX + dir * 6f * s, pigtailBaseY + 105f * s,
-                    baseX + dir * 8f * s, pigtailBaseY + 55f * s,
-                    baseX, pigtailBaseY
-                )
-                close()
-            }
-            drawPath(
-                path = hairPath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(pinkBase, pinkTip),
-                    startY = pigtailBaseY,
-                    endY = pigtailBaseY + 130f * s
-                )
-            )
-            // 发丝柔和轮廓细线
-            drawPath(
-                path = hairPath,
-                color = Color(0xFFE88A9E).copy(alpha = 0.7f),
-                style = Stroke(width = 1.0f * s)
-            )
-        }
     }
 }
 
