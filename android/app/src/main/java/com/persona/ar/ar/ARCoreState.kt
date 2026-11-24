@@ -158,7 +158,22 @@ data class ARSpatialAnchor(
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
     /** 物理平面类型名称 (例如 "桌面"、"地面") */
-    val planeTypeDescription: String = "书桌实景 (零 GMS 通用视差)"
+    val planeTypeDescription: String = "书桌实景 (零 GMS 通用视差)",
+    /** 真实 3D 物理世界空间锚定与姿态追踪 */
+    val isWorldAnchored: Boolean = true,
+    val worldAnchorX: Float = 0f,
+    val worldAnchorY: Float = -0.12f,
+    val worldAnchorZ: Float = -0.65f,
+    val cameraForwardX: Float = 0f,
+    val cameraForwardY: Float = 0f,
+    val cameraForwardZ: Float = -1f,
+    val cameraUpX: Float = 0f,
+    val cameraUpY: Float = 1f,
+    val cameraUpZ: Float = 0f,
+    /** 手办是否处于当前相机视锥体范围内（移开镜头自然出画，移回重现） */
+    val isInView: Boolean = true,
+    /** 当手办处于视锥体外时，相对相机中心的水平方位偏角（负为左，正为右，用于边缘雷达寻回指示） */
+    val azimuthDeltaDegrees: Float = 0f
 )
 
 /**

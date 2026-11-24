@@ -1,6 +1,7 @@
 package com.persona.ar.ar
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -337,13 +339,25 @@ fun ARCoreOverlay(
                         inertialSwayAngle = spatialAnchor.inertialSwayAngle,
                         touchReaction = visualState.touchReaction,
                         touchReactionStartedAtNanos = visualState.touchReactionStartedAtNanos,
-                        lipSyncAmplitude = visualState.lipSyncAmplitude
+                        lipSyncAmplitude = visualState.lipSyncAmplitude,
+                        isWorldAnchored = spatialAnchor.isWorldAnchored,
+                        worldAnchorX = spatialAnchor.worldAnchorX,
+                        worldAnchorY = spatialAnchor.worldAnchorY,
+                        worldAnchorZ = spatialAnchor.worldAnchorZ,
+                        cameraForwardX = spatialAnchor.cameraForwardX,
+                        cameraForwardY = spatialAnchor.cameraForwardY,
+                        cameraForwardZ = spatialAnchor.cameraForwardZ,
+                        cameraUpX = spatialAnchor.cameraUpX,
+                        cameraUpY = spatialAnchor.cameraUpY,
+                        cameraUpZ = spatialAnchor.cameraUpZ,
+                        isInView = spatialAnchor.isInView,
+                        azimuthDeltaDegrees = spatialAnchor.azimuthDeltaDegrees
                     ),
                     modelAssetPath = activeModel.modelAsset,
                     onTapPart = onTouchPart,
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
+            } else if (spatialAnchor.isInView) {
                 val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
                 val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
 
@@ -460,122 +474,100 @@ fun ARCoreOverlay(
                     )
                 }
                 ARTrackingStatus.ANCHORED -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // 极简 AR 悬浮控制岛：站姿 / 坐姿清晰切换 + 重新放置
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xCC1A1A2E),
+                        border = BorderStroke(1.2.dp, Color.White.copy(alpha = 0.25f)),
+                        shadowElevation = 6.dp
                     ) {
-                        val pillText = when {
-                            spatialAnchor.skeletonStance == SkeletonStance.SITTING || animatedSitProgress > 0.6f ->
-                                "🪑 桌面边缘垂腿坐姿 · 3D 骨骼下肢折叠与双足悬垂物理 ✨"
-                            multiViewProj.profile == MultiViewProfile.BACK_LOOK_BACK ->
-                                "🌸 3D 背面回眸视角 (${multiViewProj.normalizedYaw.toInt()}°) · 柔顺长发与回首注视 ✨"
-                            multiViewProj.profile == MultiViewProfile.THREE_QUARTER_LEFT || multiViewProj.profile == MultiViewProfile.THREE_QUARTER_RIGHT ->
-                                "✨ 3D 侧身视角 (${multiViewProj.normalizedYaw.toInt()}°) · 多层空间视差与立体着色 ✨"
-                            multiViewProj.profile == MultiViewProfile.PROFILE_LEFT || multiViewProj.profile == MultiViewProfile.PROFILE_RIGHT ->
-                                "💫 3D 正侧面剖面 (${multiViewProj.normalizedYaw.toInt()}°) · 侧颜与柔体马尾弹簧链 ✨"
-                            visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" ->
-                                "💤 星野正在打瞌睡打哈欠... (大叔休眠模式，轻触唤醒) ✨"
-                            visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" ->
-                                "💕 星野面颊泛起羞涩微红晕 · 眼神羞怯微闪 ✨"
-                            visualState.poutIntensity > 0.4f || visualState.highResPose == "POUT" ->
-                                "💢 戳脸颊惹怒了星野！鼓起腮帮子傲娇中 ✨"
-                            visualState.smugTiltDegrees > 1.5f || visualState.highResPose == "SMUG" ->
-                                "⭐ 受到指挥官夸奖！星野前辈叉腰得意中 ✨"
-                            spatialAnchor.isDanglingOverCliff ->
-                                "🎈 桌面边缘悬空脱离 · 重力悬摆与虚化半影物理已激活 ✨"
-                            spatialAnchor.isNearCliffEdge ->
-                                "⚠️ 逼近桌面边缘悬崖 · 重心后仰自平衡与警觉立起 ✨"
-                            spatialAnchor.surfaceStepHeightOffset > 1.0f ->
-                                "⌨️ 踏上机械键盘阶梯 · 物理碰撞台阶抬升 (+14mm) ✨"
-                            spatialAnchor.isCameraFocusing ->
-                                "🎯 物理镜头硬件对焦中 · 桌面局部曝光测光与微纹理锁死 ✨"
-                            spatialAnchor.isDragging ->
-                                "📍 正在自由移动 (X: ${(spatialAnchor.screenX * 100).toInt()}%, Y: ${(spatialAnchor.screenY * 100).toInt()}%) · 局部光照自适应 ✨"
-                            spatialAnchor.deskTextureConfidence > 0.65f && (kotlin.math.abs(spatialAnchor.visualFlowOffsetX) > 0.4f || kotlin.math.abs(spatialAnchor.visualFlowOffsetY) > 0.4f) ->
-                                "桌面物理纹理光流吸附锁死 · 零漂移稳固 ⚓"
-                            spatialAnchor.isMacroProximity ->
-                                "微距特写已就绪 (${(spatialAnchor.scaleFactor * 100).toInt()}%) · 瞳孔镜头反光与心跳红晕 ✨"
-                            spatialAnchor.lightDirectionalStrength > 0.40f ->
-                                "主光源定向拉伸阴影已就绪 (${if (spatialAnchor.lightDirectionX < 0) "左侧" else "右侧"}光源) · 3D 立体轮廓光 ☀️"
-                            spatialAnchor.bloomIntensity > 0.35f ->
-                                "环境强光漫射 · 边缘光晕溢出与光影融合 (Bloom Bleed) ☀️"
-                            spatialAnchor.chromaticAberrationIntensity > 0.40f ->
-                                "边缘广角透镜色散校准中 · 真实物理光学嵌入 🌈"
-                            spatialAnchor.isLowLight ->
-                                "已锁定于${spatialAnchor.planeTypeDescription} · 现实暗光与 CMOS 噪点调和 🌙"
-                            else ->
-                                "已锁定于${spatialAnchor.planeTypeDescription} · 3D 骨骼透视与姿态引擎激活"
-                        }
-                        val pillBgColor = when {
-                            spatialAnchor.skeletonStance == SkeletonStance.SITTING || animatedSitProgress > 0.6f -> Color(0xE6E65100)
-                            multiViewProj.profile == MultiViewProfile.BACK_LOOK_BACK -> Color(0xE66A1B9A)
-                            multiViewProj.profile == MultiViewProfile.THREE_QUARTER_LEFT || multiViewProj.profile == MultiViewProfile.THREE_QUARTER_RIGHT -> Color(0xE600838F)
-                            visualState.sleepinessFactor > 0.4f || visualState.highResPose == "SLEEPY" -> Color(0xE6283593) // 深夜幽蓝
-                            visualState.blushIntensity > 0.4f || visualState.highResPose == "SHY" -> Color(0xE6AD1457) // 害羞绯红
-                            visualState.poutIntensity > 0.4f || visualState.highResPose == "POUT" -> Color(0xE6C2185B) // 傲娇玫红
-                            visualState.smugTiltDegrees > 1.5f || visualState.highResPose == "SMUG" -> Color(0xE6F57F17) // 耀金得意
-                            spatialAnchor.isDanglingOverCliff -> Color(0xE67B1FA2)
-                            spatialAnchor.isNearCliffEdge -> Color(0xE6E65100)
-                            spatialAnchor.surfaceStepHeightOffset > 1.0f -> Color(0xE600897B)
-                            spatialAnchor.isDragging -> Color(0xE60288D1)
-                            spatialAnchor.isMacroProximity -> Color(0xE6D81B60)
-                            spatialAnchor.bloomIntensity > 0.35f -> Color(0xE6E65100)
-                            spatialAnchor.chromaticAberrationIntensity > 0.40f -> Color(0xE600838F)
-                            spatialAnchor.isLowLight -> Color(0xE61A237E)
-                            else -> Color(0xE61B5E20)
-                        }
-                        ARGuidePill(
-                            icon = Icons.Filled.AutoAwesome,
-                            text = pillText,
-                            bgColor = pillBgColor
-                        )
-                        // 3D 体态快速切换胶囊 (站立 / 桌沿坐姿)
-                        Box(
-                            modifier = Modifier
-                                .height(30.dp)
-                                .clip(RoundedCornerShape(15.dp))
-                                .background(
-                                    if (animatedSitProgress > 0.5f) Color(0xE6E65100) else Color(0xE6281C38)
-                                )
-                                .border(1.2.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(15.dp))
-                                .clickable { onToggleStance() }
-                                .padding(horizontal = 8.dp),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            // 站姿切换
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        if (animatedSitProgress <= 0.5f) Color(0xFF6750A4) else Color.Transparent
+                                    )
+                                    .clickable {
+                                        if (animatedSitProgress > 0.5f) onToggleStance()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AccessibilityNew,
+                                        contentDescription = "站立姿态",
+                                        tint = if (animatedSitProgress <= 0.5f) Color.White else Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "站姿",
+                                        color = if (animatedSitProgress <= 0.5f) Color.White else Color.White.copy(alpha = 0.6f),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (animatedSitProgress <= 0.5f) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+
+                            // 坐姿切换
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        if (animatedSitProgress > 0.5f) Color(0xFFE65100) else Color.Transparent
+                                    )
+                                    .clickable {
+                                        if (animatedSitProgress <= 0.5f) onToggleStance()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AirlineSeatReclineNormal,
+                                        contentDescription = "坐姿姿态",
+                                        tint = if (animatedSitProgress > 0.5f) Color.White else Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "坐姿",
+                                        color = if (animatedSitProgress > 0.5f) Color.White else Color.White.copy(alpha = 0.6f),
+                                        fontSize = 12.sp,
+                                        fontWeight = if (animatedSitProgress > 0.5f) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(2.dp))
+
+                            // 一键重新放置按钮
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.12f))
+                                    .clickable { onResetAnchor() },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = if (animatedSitProgress > 0.5f) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
-                                    contentDescription = "切换站立/坐姿",
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = "重新放置",
                                     tint = Color.White,
                                     modifier = Modifier.size(16.dp)
                                 )
-                                Text(
-                                    text = if (animatedSitProgress > 0.5f) "坐姿" else "站姿",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
-                        }
-                        // 一键复位按钮
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xE6281C38))
-                                .border(1.2.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                                .clickable { onResetAnchor() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = "重新放置",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
                         }
                     }
                 }
@@ -585,6 +577,45 @@ fun ARCoreOverlay(
                         text = "空间视差受限，请对准书桌平坦表面",
                         bgColor = Color(0xE6C62828)
                     )
+                }
+            }
+        }
+
+        // 4. 出画寻回方位雷达指示器（当手办离开当前相机视野时，在屏幕边缘柔和指示其方位与距离角度）
+        if (spatialAnchor.isAnchored && !spatialAnchor.isInView) {
+            val delta = spatialAnchor.azimuthDeltaDegrees
+            val isLeft = delta < 0
+            val absDeg = kotlin.math.abs(delta).toInt()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentAlignment = if (isLeft) Alignment.CenterStart else Alignment.CenterEnd
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xD92A1A40),
+                    border = BorderStroke(1.2.dp, Color(0xFFB388FF)),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isLeft) {
+                            Text(text = "◂", color = Color(0xFFFFD54F), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            text = if (absDeg > 110) "星野在身后 ↺" else if (isLeft) "星野在左侧 ${absDeg}°" else "星野在右侧 ${absDeg}°",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (!isLeft) {
+                            Text(text = "▸", color = Color(0xFFFFD54F), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
