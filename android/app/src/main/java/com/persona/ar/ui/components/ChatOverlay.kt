@@ -146,9 +146,9 @@ private fun AnimeGameStreamingDialogueItem(
     val infiniteTransition = rememberInfiniteTransition(label = "cursor")
     val cursorAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = 0.1f,
+        targetValue = 0.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(450, easing = LinearEasing),
+            animation = tween(420, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "cursor"
@@ -160,7 +160,11 @@ private fun AnimeGameStreamingDialogueItem(
             modifier = Modifier
                 .padding(start = 12.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(partnerColor)
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(partnerColor, Color(0xFFFF7597))
+                    )
+                )
                 .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
                 .padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
@@ -183,12 +187,16 @@ private fun AnimeGameStreamingDialogueItem(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // 打字机流式正文框
+        // 打字机流式正文框（毛玻璃高光微质感）
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFFFFFDF9).copy(alpha = 0.98f))
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(0xFFFFFDF9), Color(0xFFFFF7F9))
+                    )
+                )
                 .border(2.dp, strokeColor, RoundedCornerShape(18.dp))
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
@@ -221,6 +229,18 @@ private fun AnimeGameDialogueItem(
     val isUser = msg.sender == MessageSender.USER
     val strokeColor = Color(0xFF281C38) // 饱满卡通深紫黑描边
 
+    // 翻页小指示标上下微跳跃动画
+    val infiniteTransition = rememberInfiniteTransition(label = "dialogueIndicator")
+    val arrowBounce by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 3.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "arrowBounce"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -233,7 +253,11 @@ private fun AnimeGameDialogueItem(
                     modifier = Modifier
                         .padding(start = 12.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(partnerColor)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(partnerColor, Color(0xFFFF7597))
+                            )
+                        )
                         .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
@@ -252,7 +276,11 @@ private fun AnimeGameDialogueItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFFFFFDF9).copy(alpha = 0.98f))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Color(0xFFFFFDF9), Color(0xFFFFF7F9))
+                            )
+                        )
                         .border(2.dp, strokeColor, RoundedCornerShape(18.dp))
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
@@ -267,13 +295,14 @@ private fun AnimeGameDialogueItem(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        // 矢量翻页小箭头（右下角指示，避免 Emoji）
+                        // 矢量翻页小箭头（微跳跃指示）
                         Icon(
                             imageVector = Icons.Filled.ArrowDropDown,
                             contentDescription = "继续",
                             tint = Color(0xFFFFB300),
                             modifier = Modifier
                                 .align(Alignment.End)
+                                .offset(y = arrowBounce.dp)
                                 .size(16.dp)
                         )
                     }
@@ -290,7 +319,11 @@ private fun AnimeGameDialogueItem(
                     modifier = Modifier
                         .padding(end = 12.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF00B0FF))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Color(0xFF00B0FF), Color(0xFF0091EA))
+                            )
+                        )
                         .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                 ) {
@@ -314,7 +347,11 @@ private fun AnimeGameDialogueItem(
                                 bottomEnd = 18.dp
                             )
                         )
-                        .background(Color(0xFF7B61FF))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Color(0xFF7B61FF), Color(0xFF6750A4))
+                            )
+                        )
                         .border(2.dp, strokeColor, RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp))
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {

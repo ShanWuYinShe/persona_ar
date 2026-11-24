@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Favorite
@@ -22,7 +23,6 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -172,7 +172,7 @@ fun VoiceInputBar(
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Send,
+                            imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "发送消息",
                             tint = brandPink,
                             modifier = Modifier.size(18.dp)
@@ -234,10 +234,22 @@ fun VoiceInputBar(
                     .clip(RoundedCornerShape(26.dp))
                     .background(
                         when {
-                            voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive -> brandGreen
-                            voiceMode == VoiceMode.HOLD_TO_TALK && isRecording -> brandPink
-                            voiceMode == VoiceMode.HOLD_TO_TALK -> brandPink
-                            else -> Color(0xFFFFB300) // 连麦未开启时：活力金黄
+                            voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive ->
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color(0xFF00E676), Color(0xFF00C853))
+                                )
+                            voiceMode == VoiceMode.HOLD_TO_TALK && isRecording ->
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color(0xFFFF5277), Color(0xFFFF2A6D))
+                                )
+                            voiceMode == VoiceMode.HOLD_TO_TALK ->
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color(0xFFFF7597), Color(0xFFFF4E8E))
+                                )
+                            else ->
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    listOf(Color(0xFFFFCA28), Color(0xFFFF9800))
+                                )
                         }
                     )
                     .border(2.dp, borderColor, RoundedCornerShape(26.dp))
@@ -258,6 +270,19 @@ fun VoiceInputBar(
                     ),
                 contentAlignment = Alignment.Center
             ) {
+                // 顶部晶莹反光层（二次元果冻微质感）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp)
+                        .align(Alignment.TopCenter)
+                        .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                listOf(Color.White.copy(alpha = 0.35f), Color.Transparent)
+                            )
+                        )
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center

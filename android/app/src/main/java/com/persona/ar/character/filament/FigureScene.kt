@@ -242,8 +242,8 @@ class FigureScene(
         colorGrading = ColorGrading.Builder()
             .quality(ColorGrading.QualityLevel.HIGH)
             .toneMapper(ACESToneMapper())
-            .contrast(1.04f)
-            .vibrance(1.05f)
+            .contrast(1.05f)
+            .vibrance(1.08f)
             .build(engine)
         view.colorGrading = colorGrading
 
@@ -697,6 +697,7 @@ class FigureScene(
         val k = if (f.anchored && (!f.isWorldAnchored || f.isInView)) assetScale * f.scale else 0f
         lastScale = f.scale
         lastScreenX = f.screenX
+        lastStance = f.stance
         // M = T(foot) · Ry(yaw + 180°) · S(k) · T(-pivot)
         // 逐条 translate/rotate/scale 调用等价于 M = T1·R·S·T2（左乘右序），故必须先 T 再 R 再 S 最后 -pivot
         Matrix.setIdentityM(mModel, 0)
@@ -793,24 +794,31 @@ class FigureScene(
         }
     }
 
-    /** 按命中网格与屏幕位置推断触碰部位：头部网格上下半区区分摸头 / 戳脸；身体网格靠外侧为手 */
+    /** 按命中网格与屏幕位置推断触碰部位：结合站姿与坐姿体态自适应判断摸头、戳脸、牵手与抱抱 */
     private fun classifyPart(entity: Int, px: Int, py: Int): TouchPart {
-        // 手办顶部与头部中心（约身高 88% 处）投影到屏幕
-        val topY = projectY(footWorld[0], footWorld[1] + DEFAULT_FIGURE_HEIGHT_METERS * lastScale, footWorld[2])
-        val headCenterY = projectY(footWorld[0], footWorld[1] + DEFAULT_FIGURE_HEIGHT_METERS * 0.88f * lastScale, footWorld[2])
+        val isSitting = lastStance == com.persona.ar.character.skeleton.SkeletonStance.SITTING
+        val effectiveHeightRatio = if (isSitting) 0.78f else 1.0f
+        val headRatio = if (isSitting) 0.68f else 0.88f
+
+        // 手办顶部与头部中心投影到屏幕
+        val topY = projectY(footWorld[0], footWorld[1] + DEFAULT_FIGURE_HEIGHT_METERS * effectiveHeightRatio * lastScale, footWorld[2])
+        val headCenterY = projectY(footWorld[0], footWorld[1] + DEFAULT_FIGURE_HEIGHT_METERS * headRatio * lastScale, footWorld[2])
         val footScreenY = projectY(footWorld[0], footWorld[1], footWorld[2])
         if (entity in headEntities) {
-            return if (py > (headCenterY + topY) / 2f + (footScreenY - topY) * 0.05f) TouchPart.CHEEK else TouchPart.HEAD
+            return if (py > (headCenterY + topY) / 2f + (footScreenY - topY) * 0.04f) TouchPart.CHEEK else TouchPart.HEAD
         }
         val height = (footScreenY - topY).coerceAtLeast(1f)
         val relativeY = (py - topY) / height
         val centerX = viewportWidth * lastScreenX
         val relativeX = kotlin.math.abs(px - centerX) / height
-        return if (relativeY in 0.42f..0.70f && relativeX > 0.16f) TouchPart.HAND else TouchPart.BODY
+        val handYRange = if (isSitting) 0.32f..0.62f else 0.42f..0.70f
+        val handXMin = if (isSitting) 0.12f else 0.16f
+        return if (relativeY in handYRange && relativeX > handXMin) TouchPart.HAND else TouchPart.BODY
     }
 
     private var lastScale = 1f
     private var lastScreenX = 0.5f
+    private var lastStance = com.persona.ar.character.skeleton.SkeletonStance.STANDING
 
     // 诊断计数（每秒节流输出一次，便于现场排查「模型不显示」类问题）
     private var diagFramesSubmitted = 0

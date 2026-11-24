@@ -6,6 +6,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -127,17 +132,50 @@ fun ARCoreOverlay(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(spatialAnchor.isAnchored) {
-                detectTransformGestures { _, pan, zoom, rotation ->
-                    if (spatialAnchor.isAnchored) {
-                        if (zoom != 1.0f || kotlin.math.abs(rotation) > 0.4f) {
-                            // 双指手势：双指捏合缩放与偏航旋转
-                            onTransformGesture(zoom, pan.x * 0.4f)
-                        } else if (pan.getDistance() > 1.0f) {
-                            // 单指滑动：在现实桌面物理平面上自由拖拽模型平滑滑行到新位置
-                            val deltaX = pan.x / size.width
-                            val deltaY = pan.y / size.height
-                            onDragAnchor(deltaX, deltaY)
+                if (!spatialAnchor.isAnchored) return@pointerInput
+                awaitEachGesture {
+                    var isTransforming = false
+                    var isDraggingModel = false
+                    awaitFirstDown(requireUnconsumed = false)
+
+                    do {
+                        val event = awaitPointerEvent()
+                        val canceled = event.changes.any { it.isConsumed }
+                        if (canceled) break
+
+                        val activePointers = event.changes.filter { it.pressed }
+                        if (activePointers.size >= 2) {
+                            if (isDraggingModel) {
+                                isDraggingModel = false
+                                onDragStateChanged(false)
+                            }
+                            isTransforming = true
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            val rot = event.calculateRotation()
+                            if (zoom != 1f || kotlin.math.abs(pan.x) > 0.8f || kotlin.math.abs(rot) > 0.2f) {
+                                onTransformGesture(zoom, pan.x * 0.35f)
+                                event.changes.forEach { it.consume() }
+                            }
+                        } else if (activePointers.size == 1 && !isTransforming) {
+                            val change = activePointers.first()
+                            val pan = change.position - change.previousPosition
+                            if (pan.getDistance() > 1.2f) {
+                                if (!isDraggingModel) {
+                                    isDraggingModel = true
+                                    onDragStateChanged(true)
+                                }
+                                val deltaX = (pan.x / size.width) * 0.95f
+                                val deltaY = (pan.y / size.height) * 0.95f
+                                onDragAnchor(deltaX, deltaY)
+                                change.consume()
+                            }
                         }
+                    } while (event.changes.any { it.pressed })
+
+                    if (isDraggingModel) {
+                        isDraggingModel = false
+                        onDragStateChanged(false)
                     }
                 }
             }
@@ -171,13 +209,16 @@ fun ARCoreOverlay(
             if (!spatialAnchor.isAnchored) {
                 val rx = w * 0.5f
                 val ry = h * 0.65f
-                val baseRadius = 60f * pulseScale
+                val baseRadius = 65f * pulseScale
+                val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.25, 1.45)
+                val pitchAspect = sin(groundPitchRad).toFloat()
+                val radiusY = baseRadius * 0.52f * pitchAspect
 
-                // 1) 贴地透视压扁外环 (45° 俯视视差透视)
+                // 1) 贴地透视压扁外环 (随俯仰角自适应压扁)
                 drawOval(
-                    color = Color(0x4400E5FF),
-                    topLeft = Offset(rx - baseRadius * 1.5f, ry - baseRadius * 0.55f),
-                    size = Size(baseRadius * 3.0f, baseRadius * 1.1f),
+                    color = Color(0x5500E5FF),
+                    topLeft = Offset(rx - baseRadius * 1.5f, ry - radiusY * 1.5f),
+                    size = Size(baseRadius * 3.0f, radiusY * 3.0f),
                     style = Stroke(width = 2.5f)
                 )
 
@@ -185,12 +226,13 @@ fun ARCoreOverlay(
                 rotate(degrees = runeRotationCW, pivot = Offset(rx, ry)) {
                     for (i in 0 until 12) {
                         val angle = (i * 30f) * PI / 180.0
-                        val tickLen = if (i % 3 == 0) 8f else 4f
+                        val isCardinal = i % 3 == 0
+                        val tickLen = if (isCardinal) 9f else 4f
                         val ox = rx + (cos(angle) * baseRadius * 1.35f).toFloat()
-                        val oy = ry + (sin(angle) * baseRadius * 0.5f).toFloat()
+                        val oy = ry + (sin(angle) * radiusY * 1.35f).toFloat()
                         drawCircle(
-                            color = Color(0x8800E5FF),
-                            radius = tickLen * 0.4f,
+                            color = if (isCardinal) Color(0xCC00E5FF) else Color(0x7700E5FF),
+                            radius = tickLen * 0.35f,
                             center = Offset(ox, oy)
                         )
                     }
@@ -199,14 +241,19 @@ fun ARCoreOverlay(
                 // 3) 逆时针旋转内圈星芒阵法
                 rotate(degrees = runeRotationCCW, pivot = Offset(rx, ry)) {
                     drawOval(
-                        color = Color(0x66FF5277),
-                        topLeft = Offset(rx - baseRadius * 0.9f, ry - baseRadius * 0.35f),
-                        size = Size(baseRadius * 1.8f, baseRadius * 0.7f),
+                        color = Color(0x88FF5277),
+                        topLeft = Offset(rx - baseRadius * 0.95f, ry - radiusY * 0.95f),
+                        size = Size(baseRadius * 1.9f, radiusY * 1.9f),
                         style = Stroke(width = 1.8f)
                     )
                 }
 
-                // 4) 核心定位聚焦星点
+                // 4) 核心定位聚焦星点与光晕脉冲
+                drawCircle(
+                    color = Color(0x4400E5FF),
+                    radius = 12f * pulseScale,
+                    center = Offset(rx, ry)
+                )
                 drawCircle(
                     color = Color(0xFF00E5FF),
                     radius = 4.5f,
@@ -266,13 +313,38 @@ fun ARCoreOverlay(
                     style = Stroke(width = 1.5f)
                 )
 
-                // 自由滑动中：高亮贴地滑行瞄准光圈
+                // 自由滑动中：高亮贴地滑行瞄准光盘与十字准星
                 if (spatialAnchor.isDragging) {
                     drawOval(
-                        color = Color(0x8800E5FF),
-                        topLeft = Offset(shadowCenterX - shadowWidth * 0.58f, shadowCenterY - shadowHeight * 0.58f),
-                        size = Size(shadowWidth * 1.16f, shadowHeight * 1.16f),
-                        style = Stroke(width = 2.0f)
+                        color = Color(0x9900E5FF),
+                        topLeft = Offset(shadowCenterX - shadowWidth * 0.62f, shadowCenterY - shadowHeight * 0.62f),
+                        size = Size(shadowWidth * 1.24f, shadowHeight * 1.24f),
+                        style = Stroke(width = 2.2f)
+                    )
+                    // 十字准星瞄准辅助线
+                    drawLine(
+                        color = Color(0xAA00E5FF),
+                        start = Offset(shadowCenterX - shadowWidth * 0.72f, shadowCenterY),
+                        end = Offset(shadowCenterX - shadowWidth * 0.35f, shadowCenterY),
+                        strokeWidth = 1.8f
+                    )
+                    drawLine(
+                        color = Color(0xAA00E5FF),
+                        start = Offset(shadowCenterX + shadowWidth * 0.35f, shadowCenterY),
+                        end = Offset(shadowCenterX + shadowWidth * 0.72f, shadowCenterY),
+                        strokeWidth = 1.8f
+                    )
+                    drawLine(
+                        color = Color(0xAA00E5FF),
+                        start = Offset(shadowCenterX, shadowCenterY - shadowHeight * 0.72f),
+                        end = Offset(shadowCenterX, shadowCenterY - shadowHeight * 0.35f),
+                        strokeWidth = 1.8f
+                    )
+                    drawLine(
+                        color = Color(0xAA00E5FF),
+                        start = Offset(shadowCenterX, shadowCenterY + shadowHeight * 0.35f),
+                        end = Offset(shadowCenterX, shadowCenterY + shadowHeight * 0.72f),
+                        strokeWidth = 1.8f
                     )
                 }
 
@@ -450,7 +522,7 @@ fun ARCoreOverlay(
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 96.dp),
+                .padding(top = 110.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             when (trackingStatus) {
