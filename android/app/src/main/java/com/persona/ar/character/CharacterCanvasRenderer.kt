@@ -60,12 +60,18 @@ fun CharacterCanvasRenderer(
 
     // 逐帧精灵动画：动作有预渲染序列帧时优先播放（真抬手/真弯腰），否则回退静态立绘
     val animator = remember { FrameAnimator(context.applicationContext) }
-    val actionClip = remember(visualState.action) { animator.clipFor(visualState.action) }
-    // 动作开始时间戳：动作变化时重置，用于计算当前帧
-    var actionStartNanos by remember(visualState.action) { mutableLongStateOf(0L) }
+    val requestedClip = remember(visualState.action) { animator.clipFor(visualState.action) }
+    val idleClip = remember { animator.clipFor(ActionType.IDLE) }
+
+    // 动作开始时间戳：当 action 或 actionStartedAtNanos 变化时同步更新，确保连续点击时从第 0 帧平滑重播
+    var actionStartNanos by remember(visualState.action, visualState.actionStartedAtNanos) {
+        mutableLongStateOf(
+            if (visualState.actionStartedAtNanos > 0L) visualState.actionStartedAtNanos else System.nanoTime()
+        )
+    }
     var nowNanos by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(visualState.action) {
-        actionStartNanos = System.nanoTime()
+    LaunchedEffect(visualState.action, visualState.actionStartedAtNanos) {
+        actionStartNanos = if (visualState.actionStartedAtNanos > 0L) visualState.actionStartedAtNanos else System.nanoTime()
     }
     // 用无限动画驱动重绘，保证帧刷新
     LaunchedEffect(Unit) {
@@ -74,11 +80,28 @@ fun CharacterCanvasRenderer(
             kotlinx.coroutines.delay(16L)
         }
     }
+
+    val elapsedSeconds = if (actionStartNanos > 0L && nowNanos >= actionStartNanos) {
+        (nowNanos - actionStartNanos) / 1_000_000_000f
+    } else 0f
+
+    // 一次性动作播完后自动平滑切回待机呼吸，避免定格在最后一帧；再次点击时立即从第 0 帧重新响应
+    val (activeClip, activeElapsed) = remember(requestedClip, idleClip, elapsedSeconds) {
+        if (requestedClip != null) {
+            if (requestedClip.loop || elapsedSeconds < animator.durationSeconds(requestedClip)) {
+                Pair(requestedClip, elapsedSeconds)
+            } else {
+                Pair(idleClip ?: requestedClip, elapsedSeconds)
+            }
+        } else {
+            Pair(idleClip, elapsedSeconds)
+        }
+    }
+
     // 当前帧序号：整张精灵表不切分，绘制时按网格取第 index 格
-    val currentFrameIndex = remember(actionClip, nowNanos) {
-        actionClip?.let { clip ->
-            val elapsed = (nowNanos - actionStartNanos) / 1_000_000_000f
-            animator.frameIndexAt(clip, elapsed)
+    val currentFrameIndex = remember(activeClip, activeElapsed) {
+        activeClip?.let { clip ->
+            animator.frameIndexAt(clip, activeElapsed)
         }
     }
 
@@ -214,8 +237,8 @@ fun CharacterCanvasRenderer(
                 }
             }
     ) {
-        // 精灵动画自带完整的动作与呼吸起伏，动作播放期间不叠加外层弹跳，消除动作不连贯与位移撕裂
-        val effectiveBounce = if (actionClip != null) 0f else breathBounce
+        // 精灵动画自带完整的动作与呼吸起伏，动作播放期间与高精立绘模式下不叠加外层弹跳，消除动作不连贯与位移撕裂
+        val effectiveBounce = if (activeClip != null || visualState.useHighResolutionModel) 0f else breathBounce
 
         Canvas(
             modifier = Modifier
@@ -288,9 +311,9 @@ fun CharacterCanvasRenderer(
             val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
 
             // 优先级：动作精灵表 > 静态立绘 > 矢量兜底
-            if (actionClip != null && currentFrameIndex != null) {
+            if (activeClip != null && currentFrameIndex != null) {
                 drawAnimatedFrame(
-                    clip = actionClip,
+                    clip = activeClip,
                     frameIndex = currentFrameIndex,
                     cx = cx,
                     cy = cy,
@@ -982,8 +1005,8 @@ private fun DrawScope.drawChromaticAberrationFringe(
     angleRad: Float
 ) {
     val fringeDistance = (2.6f * intensity * s).coerceIn(1.0f, 4.2f)
-    val redOffsetX = (kotlin.math.cos(angleRad) * fringeDistance).toFloat()
-    val redOffsetY = (kotlin.math.sin(angleRad) * fringeDistance).toFloat()
+    val redOffsetX = kotlin.math.cos(angleRad) * fringeDistance
+    val redOffsetY = kotlin.math.sin(angleRad) * fringeDistance
     val cyanOffsetX = -redOffsetX
     val cyanOffsetY = -redOffsetY
 
@@ -1417,37 +1440,7 @@ private fun DrawScope.drawHighResolutionHoshino(
             sparkleAngle = sparkleAngle
         )
 
-        // 6. 3D 二次元卡通明暗着色阶梯 (Cel-Shading Shadow Ramp) 与头发天使光环高光 (Anisotropic Specular)
-        drawToonCelShadingAndHairAnisotropy(
-            cx = cx,
-            topY = effectiveTopY,
-            charW = charW,
-            charH = charH,
-            s = s,
-            visualState = visualState
-        )
-
-        // 7. 双马尾柔体弹簧物理骨骼 (Spring-Bone Pigtails)
-        draw3DSpringPigtails(
-            cx = cx,
-            topY = effectiveTopY,
-            charW = charW,
-            s = s,
-            visualState = visualState,
-            drowsyCycle = drowsyCycle
-        )
     }
-
-    // 8. 头顶独立发光星穹光环 (随体态高度下移与三维视差浮动)
-    drawFloatingHalo(
-        hx = haloX + totalPoseAngle * 1.5f + visualState.depthDisparityHead * s * 0.5f,
-        hy = effectiveTopY + 138f * s,
-        s = s * 0.95f,
-        state = visualState
-    )
-
-    // 9. 迎光面立体菲涅尔边缘高光 (模拟现场闪光灯直射在发丝边缘的闪耀感)
-    drawVolumetricDirectionalRimLight(cx, cy, s, visualState)
 
     // 7. 前景物理遮挡保护 (例如被近处机械键盘键帽遮挡脚部，避免逆向穿模)
     if (visualState.foregroundOcclusionRatio > 0.02f) {
@@ -2037,18 +2030,6 @@ private fun DrawScope.drawHighResFacialExpressions(
             topLeft = Offset(cx - 3.5f * s, mouthY - 2.5f * s),
             size = Size(7f * s, 5f * s)
         )
-
-        // 额角二次元 💢 十字青筋符文 (带心跳轻微缩放)
-        val angerMarkX = cx + 38f * s
-        val angerMarkY = topY + 95f * s
-        val markSize = 7f * s * emotePulse
-        val veinColor = Color(0xFFFF1744).copy(alpha = poutAlpha)
-        // 横向弧
-        drawLine(veinColor, Offset(angerMarkX - markSize, angerMarkY - markSize * 0.4f), Offset(angerMarkX + markSize, angerMarkY - markSize * 0.4f), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
-        drawLine(veinColor, Offset(angerMarkX - markSize, angerMarkY + markSize * 0.4f), Offset(angerMarkX + markSize, angerMarkY + markSize * 0.4f), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
-        // 纵向弧
-        drawLine(veinColor, Offset(angerMarkX - markSize * 0.4f, angerMarkY - markSize), Offset(angerMarkX - markSize * 0.4f, angerMarkY + markSize), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
-        drawLine(veinColor, Offset(angerMarkX + markSize * 0.4f, angerMarkY - markSize), Offset(angerMarkX + markSize * 0.4f, angerMarkY + markSize), strokeWidth = 2.0f * s, cap = StrokeCap.Round)
     }
 
     // 3. 打瞌睡与打哈欠 (Sleepy Half-closed Eyes & Yawn Mouth & Zzz Bubbles)

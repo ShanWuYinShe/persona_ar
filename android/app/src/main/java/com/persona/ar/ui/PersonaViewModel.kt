@@ -395,23 +395,36 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     } else {
                         base.copy(
+                            parallaxShiftX = shiftX,
+                            parallaxShiftY = shiftY,
                             cameraGazeOffsetX = gazeX,
                             cameraGazeOffsetY = gazeY,
                             cameraPitchDegrees = pitchDeg,
                             cameraRollDegrees = rollDeg
                         )
                     }
-                    current.copy(
-                        spatialAnchor = updatedSpatialAnchor,
-                        visualState = current.visualState.copy(
-                            tiltOffsetX = shiftX,
-                            tiltOffsetY = shiftY,
-                            gazeShiftX = gazeX,
-                            gazeShiftY = gazeY,
-                            cameraPitchDegrees = pitchDeg,
-                            cameraRollDegrees = rollDeg
+                    if (current.spatialAnchor == updatedSpatialAnchor &&
+                        current.visualState.tiltOffsetX == shiftX &&
+                        current.visualState.tiltOffsetY == shiftY &&
+                        current.visualState.gazeShiftX == gazeX &&
+                        current.visualState.gazeShiftY == gazeY &&
+                        current.visualState.cameraPitchDegrees == pitchDeg &&
+                        current.visualState.cameraRollDegrees == rollDeg
+                    ) {
+                        current
+                    } else {
+                        current.copy(
+                            spatialAnchor = updatedSpatialAnchor,
+                            visualState = current.visualState.copy(
+                                tiltOffsetX = shiftX,
+                                tiltOffsetY = shiftY,
+                                gazeShiftX = gazeX,
+                                gazeShiftY = gazeY,
+                                cameraPitchDegrees = pitchDeg,
+                                cameraRollDegrees = rollDeg
+                            )
                         )
-                    )
+                    }
                 }
 
                 // 空间声场方位实时联动（随镜头平移/出画同步平移声相）
@@ -644,7 +657,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 3D 触摸反应 2.6 秒后自动复位（以开始时间戳为令牌，避免连点误清）
+        // 触摸反应动作与微表情 2.6 秒后自动同步复位（以开始时间戳为令牌，避免连点误清）
         viewModelScope.launch {
             delay(2700L)
             _uiState.update { current ->
@@ -654,28 +667,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         touchReaction = null,
                         touchReactionStartedAtNanos = 0L,
                         action = if (current.visualState.action == touchAction) ActionType.IDLE else current.visualState.action,
-                        actionStartedAtNanos = if (current.visualState.action == touchAction) 0L else current.visualState.actionStartedAtNanos
+                        actionStartedAtNanos = if (current.visualState.action == touchAction) 0L else current.visualState.actionStartedAtNanos,
+                        highResPose = if (current.visualState.highResPose == reaction.pose) "DEFAULT" else current.visualState.highResPose,
+                        blushIntensity = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.blushIntensity,
+                        poutIntensity = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.poutIntensity,
+                        smugTiltDegrees = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.smugTiltDegrees
                     )
                 )
-            }
-        }
-
-        // 3.5 秒后表情平滑自然恢复
-        viewModelScope.launch {
-            delay(3500L)
-            _uiState.update { current ->
-                if (current.visualState.highResPose == reaction.pose) {
-                    current.copy(
-                        visualState = current.visualState.copy(
-                            highResPose = "DEFAULT",
-                            blushIntensity = 0f,
-                            poutIntensity = 0f,
-                            smugTiltDegrees = 0f
-                        )
-                    )
-                } else {
-                    current
-                }
             }
         }
 
