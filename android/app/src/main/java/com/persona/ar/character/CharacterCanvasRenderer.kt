@@ -2261,12 +2261,15 @@ private fun DrawScope.drawAnimatedFrame(
     val topY = footY - charH
     val leftX = cx - charW / 2f
 
-    // 环境光调和：与静态立绘相同的 tint 与亮度因子
+    // 环境光调和：精灵表自带完整的画好光影，**不能再按环境照度整体乘法**。
+    // 曾经这里沿用静态立绘的 (tint × envLight) 公式，暗光下 envLight 被压到 ~0.2，
+    // 人物 RGB 直接被乘成深色剪影，只剩抠图残边（粉色头发边）在暗底上显眼，看起来像「两侧长了羽毛」。
+    // 正确做法：只做极轻的色温融合（0.85~1.0），不做亮度衰减，人物始终清晰可见。
     val tint = ColorFilter.lighting(
         multiply = Color(
-            red = (visualState.ambientTintRed * envLight).coerceIn(0.25f, 1.35f),
-            green = (visualState.ambientTintGreen * envLight).coerceIn(0.25f, 1.35f),
-            blue = (visualState.ambientTintBlue * envLight).coerceIn(0.25f, 1.35f)
+            red = (0.92f + (visualState.ambientTintRed - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
+            green = (0.92f + (visualState.ambientTintGreen - 1f) * 0.3f).coerceIn(0.85f, 1.05f),
+            blue = (0.92f + (visualState.ambientTintBlue - 1f) * 0.3f).coerceIn(0.85f, 1.05f)
         ),
         add = Color(0f, 0f, 0f, 0f)
     )

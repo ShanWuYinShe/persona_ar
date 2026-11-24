@@ -48,16 +48,22 @@ class FrameAnimator(
 
     private val cache = HashMap<String, Clip?>()
 
-    /** 动作 → (精灵表文件名, 帧数, fps, 是否循环) */
+    /**
+     * 动作 → (精灵表文件名, 帧数, fps, 是否循环)。
+     *
+     * fps 按「每个动作应有的自然时长」反推：fps = 帧数 / 目标时长。6 帧素材下，
+     * 若按直觉设成 7-9fps，一个动作只播 0.7-0.9 秒，快得看不清（实测用户反馈「根本就看不清」）。
+     * 这里按动作语义定目标时长：待机呼吸最慢（4s，呼吸本就是缓慢的），
+     * 点头最快（1.5s，回应动作要干脆），其余在 2s 左右。
+     */
     private val actionSpec: Map<ActionType, ActionClipSpec> = mapOf(
-        ActionType.IDLE to ActionClipSpec("idle", 6, 6f, true),
-        ActionType.WAVE to ActionClipSpec("wave", 6, 9f, false),
-        ActionType.BOW to ActionClipSpec("bow", 6, 7f, false),
-        ActionType.YAWN to ActionClipSpec("yawn", 6, 6f, false),
-        ActionType.BLUSH to ActionClipSpec("shy", 6, 7f, false),
-        ActionType.NOD to ActionClipSpec("nod", 6, 9f, false),
-        ActionType.SHAKE_HEAD to ActionClipSpec("shake", 6, 9f, false),
-        ActionType.SIT to ActionClipSpec("sit", 6, 6f, false)
+        ActionType.IDLE to ActionClipSpec("idle", 6, 1.5f, true),
+        ActionType.WAVE to ActionClipSpec("wave", 6, 3.3f, false),
+        ActionType.BOW to ActionClipSpec("bow", 6, 3.0f, false),
+        ActionType.YAWN to ActionClipSpec("yawn", 6, 2.4f, false),
+        ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
+        ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
+        ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false)
     )
 
     private class ActionClipSpec(
