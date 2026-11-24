@@ -216,9 +216,9 @@ fun ARCoreOverlay(
                 // B. 已放置角色时：贴地 AR 引导层 (契约光环 / 透视网格 / 悬崖警戒 / 拖拽光圈)
                 //    脚下的接触阴影与 AO 不再由 Canvas 伪造 —— 3D 手办由 Filament 方向光投射真实阴影到 shadow catcher 平面；
                 //    2.5D Canvas 回退路径 (无 3D 资产的人格) 继续沿用原有视差偏移
-                val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX
+                val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX
                 // 2.5D Canvas 角色盒的足底在盒中心下方 135dp；3D 手办落脚点精确等于锚点
-                val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY
+                val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
 
                 // 贴地引导环随俯视角压扁 (平视时压成细线)
                 val groundPitchRad = (spatialAnchor.cameraPitchDegrees * PI / 180.0).coerceIn(0.18, 1.55)
@@ -360,8 +360,8 @@ fun ARCoreOverlay(
                     modifier = Modifier.fillMaxSize()
                 )
             } else if (spatialAnchor.isInView) {
-                val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX).dp
-                val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY - spatialAnchor.surfaceStepHeightOffset).dp
+                val offsetX = ((spatialAnchor.screenX - 0.5f) * 300f + spatialAnchor.parallaxShiftX).dp
+                val offsetY = ((spatialAnchor.screenY - 0.5f) * 200f + spatialAnchor.parallaxShiftY - spatialAnchor.surfaceStepHeightOffset).dp
 
                 Box(
                     modifier = Modifier
@@ -694,8 +694,8 @@ private fun CameraFocusBracketOverlay(
         if (!spatialAnchor.isCameraFocusing && focusAge >= 1600L) return@Canvas
         val w = size.width
         val h = size.height
-        val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX + spatialAnchor.visualFlowOffsetX
-        val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY + spatialAnchor.visualFlowOffsetY
+        val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX
+        val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
 
         val focusProgress = (focusAge.toFloat() / 1600f).coerceIn(0f, 1f)
         val focusAlpha = if (spatialAnchor.isCameraFocusing) 0.90f else (1.0f - focusProgress).coerceIn(0f, 1f)

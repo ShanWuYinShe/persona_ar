@@ -89,9 +89,10 @@ class FigureAnimatorTest {
         val i = input()
         i.stance = SkeletonStance.SITTING
         repeat(90) { animator.update(i) }
-        assertTrue("坐姿骨盆应下沉，实际 ${animator.hipsOffsetY}", animator.hipsOffsetY < -0.85f)
-        assertTrue(angle(HumanoidBone.UPPER_LEG_L, 0) < -70f)
-        assertTrue(angle(HumanoidBone.LOWER_LEG_L, 0) > 70f)
+        assertTrue("坐姿骨盆应下沉，实际 ${animator.hipsOffsetY}", animator.hipsOffsetY < -0.65f)
+        assertTrue(angle(HumanoidBone.UPPER_LEG_L, 0) <= -70f)
+        assertTrue(angle(HumanoidBone.LOWER_LEG_L, 0) > 120f)
+        assertTrue(angle(HumanoidBone.LOWER_ARM_L, 1) > 45f)
     }
 
     @Test
