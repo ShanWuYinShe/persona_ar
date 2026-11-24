@@ -1,7 +1,6 @@
 package com.persona.ar.character
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -46,19 +45,9 @@ fun CharacterCanvasRenderer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 高精度立绘：真 3D 手办由 Filament 渲染，此立绘是 2.5D 回退路径的角色贴图。
-    // 加载后统一做一次「白底自动抠除」——即使素材本身是不带透明通道的白底图（JPEG/纯白 PNG），
-    // 也能在运行时转成干净人物，避免把背景方块贴到相机画面上。
-    val hoshinoBitmap = remember(context) {
-        try {
-            val raw = BitmapFactory.decodeResource(context.resources, com.persona.ar.R.drawable.hoshino_high_res)
-            raw?.let { CutoutHelper.applyWhiteBackgroundCutout(it)?.asImageBitmap() }
-        } catch (e: Throwable) {
-            null
-        }
-    }
-
-    // 逐帧精灵动画：动作有预渲染序列帧时优先播放（真抬手/真弯腰），否则回退静态立绘
+    // 逐帧精灵动画：动作有预渲染序列帧时优先播放（真抬手/真弯腰）。
+    // 历史 hoshino_high_res 静态立绘是从截图里抠出来的，白衬衫/白裙区域被误抠成透明空洞，
+    // 叠到相机画面上会透出现实背景；该资产已删除，2.5D 只使用透明精灵表，缺失时回退矢量立绘。
     val animator = remember { FrameAnimator(context.applicationContext) }
     val requestedClip = remember(visualState.action) { animator.clipFor(visualState.action) }
     val idleClip = remember { animator.clipFor(ActionType.IDLE) }
@@ -147,39 +136,6 @@ fun CharacterCanvasRenderer(
         label = "wiggle"
     )
 
-    // 打瞌睡困倦呼吸与点头周期 (周期 3.6 秒平滑循环)
-    val drowsyCycle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(3600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "drowsyCycle"
-    )
-
-    // 害羞面颊微脉冲与傲娇心跳
-    val emotePulse by infiniteTransition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1.12f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(850, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "emotePulse"
-    )
-
-    // 得意星芒闪耀旋转动画
-    val sparkleAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "sparkleAngle"
-    )
-
     // 周期性自然眨眼
     var isBlinking by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -237,8 +193,8 @@ fun CharacterCanvasRenderer(
                 }
             }
     ) {
-        // 精灵动画自带完整的动作与呼吸起伏，动作播放期间与高精立绘模式下不叠加外层弹跳，消除动作不连贯与位移撕裂
-        val effectiveBounce = if (activeClip != null || visualState.useHighResolutionModel) 0f else breathBounce
+        // 精灵动画自带完整动作与呼吸起伏，播放期间不叠加外层弹跳；无精灵时由矢量立绘接管呼吸弹跳
+        val effectiveBounce = if (activeClip != null) 0f else breathBounce
 
         Canvas(
             modifier = Modifier
@@ -310,7 +266,7 @@ fun CharacterCanvasRenderer(
             val haloX = cx + kotlin.math.sin(rollRad) * 12f * s
             val haloY = cy + kotlin.math.sin(pitchRad) * 14f * s
 
-            // 优先级：动作精灵表 > 静态立绘 > 矢量兜底
+            // 优先级：动作精灵表 > 矢量兜底（历史截图静态立绘已移除）
             val animTime = (nowNanos / 1_000_000_000.0).toFloat()
 
             if (activeClip != null && currentFrameIndex != null) {
@@ -324,22 +280,6 @@ fun CharacterCanvasRenderer(
                     envLight = envLight
                 )
                 drawGameEmoteParticles(cx, cy - 80f * s, s, visualState, animTime)
-            } else if (visualState.useHighResolutionModel && hoshinoBitmap != null) {
-                drawHighResolutionHoshino(
-                    bitmap = hoshinoBitmap,
-                    cx = cx,
-                    cy = cy,
-                    s = s,
-                    headSquishY = headSquishScaleY,
-                    haloX = haloX,
-                    haloY = haloY,
-                    visualState = visualState,
-                    envLight = envLight,
-                    drowsyCycle = drowsyCycle,
-                    emotePulse = emotePulse,
-                    sparkleAngle = sparkleAngle,
-                    animTime = animTime
-                )
             } else {
                 drawChibiHairBack(backX, backY, s * headSquishScaleY, visualState)
                 drawChibiBody(cx, cy, s, visualState)
@@ -2380,10 +2320,6 @@ private fun DrawScope.drawHighResFacialExpressions(
 }
 
 /**
- * 绘制动作序列中的某一帧。与静态立绘共用同一套环境光调和与呼吸/倾斜变换，
- * 保证动画帧与静态立绘在视觉上无缝衔接。
- */
-/**
  * 绘制精灵表中的某一帧。
  *
  * 不做离线切片：整张精灵表按 [FrameAnimator.Clip.frameCount] 横向等分，
@@ -2399,7 +2335,7 @@ private fun DrawScope.drawAnimatedFrame(
     visualState: CharacterVisualState,
     envLight: Float
 ) {
-    // 尺寸基准与静态立绘对齐：立绘宽 185dp、脚底在 cy + 245dp。
+    // 尺寸基准与矢量立绘对齐：立绘宽 185dp、脚底在 cy + 245dp。
     // 精灵表单帧宽高比决定实际高度，所有帧共用同一比例，所以帧间不会跳动。
     val charW = 185f * s
     val charH = charW * (clip.frameHeight.toFloat() / clip.frameWidth.toFloat())
