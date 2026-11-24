@@ -1,9 +1,7 @@
 package com.persona.ar.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -15,15 +13,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -66,7 +68,7 @@ fun PersonaMainScreen(
     var isShutterFlashing by remember { mutableStateOf(false) } // 快门白闪效果
     var showSnapshotToast by remember { mutableStateOf(false) }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -136,7 +138,7 @@ fun PersonaMainScreen(
             }
         }
 
-        // 3. 拟人思考态反馈泡泡 (当后端 AI 推理延迟时展示，化解用户等待焦虑)
+        // 3. 拟人思考态反馈泡泡 (当后端 AI 推理延迟时展示，化解用户等待焦虑，带韵律思考光点)
         AnimatedVisibility(
             visible = uiState.isLoading,
             enter = fadeIn(animationSpec = tween(250)),
@@ -145,27 +147,86 @@ fun PersonaMainScreen(
                 .align(Alignment.Center)
                 .offset(y = (-150).dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xF2FFFDF9))
-                    .border(1.5.dp, Color(0xFF281C38), RoundedCornerShape(16.dp))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            val thinkTransition = rememberInfiniteTransition(label = "thinkDots")
+            val dot1Offset by thinkTransition.animateFloat(
+                initialValue = 0f, targetValue = -3.5f,
+                animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                label = "d1"
+            )
+            val dot2Offset by thinkTransition.animateFloat(
+                initialValue = 0f, targetValue = -3.5f,
+                animationSpec = infiniteRepeatable(tween(380, delayMillis = 120, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                label = "d2"
+            )
+            val dot3Offset by thinkTransition.animateFloat(
+                initialValue = 0f, targetValue = -3.5f,
+                animationSpec = infiniteRepeatable(tween(380, delayMillis = 240, easing = FastOutSlowInEasing), repeatMode = RepeatMode.Reverse),
+                label = "d3"
+            )
+
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = Color.Transparent,
+                shadowElevation = 5.dp
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Psychology,
-                    contentDescription = null,
-                    tint = Color(0xFFFF5277),
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "唔... 让星野想想看哦...",
-                    color = Color(0xFF281C38),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xF5FFFDF9), Color(0xEEF8F0FF))
+                            )
+                        )
+                        .border(
+                            1.5.dp,
+                            Brush.linearGradient(
+                                listOf(Color(0xFFFF5277), Color(0xFF9C27B0))
+                            ),
+                            RoundedCornerShape(18.dp)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Psychology,
+                        contentDescription = null,
+                        tint = Color(0xFFFF5277),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "唔... 让星野想想看哦",
+                        color = Color(0xFF281C38),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .offset(y = dot1Offset.dp)
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF5277))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .offset(y = dot2Offset.dp)
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF7597))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .offset(y = dot3Offset.dp)
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFB300))
+                        )
+                    }
+                }
             }
         }
 
@@ -356,31 +417,49 @@ fun PersonaMainScreen(
             }
         }
 
-        // 9. 触碰互动即时浮空动画粒子 (Floating Touch & Bond FX)
+        // 9. 触碰互动即时浮空动画粒子 (Floating Touch & Bond FX - 严格在点击处绽放并随风浮空)
         uiState.floatingTouchFx.forEach { fx ->
             val animProgress = remember(fx.id) { Animatable(0f) }
             LaunchedEffect(fx.id) {
-                animProgress.animateTo(1f, animationSpec = tween(1200, easing = LinearOutSlowInEasing))
+                animProgress.animateTo(1f, animationSpec = tween(1100, easing = LinearOutSlowInEasing))
             }
-            val offsetY = -animProgress.value * 75f
+            val targetX = (maxWidth * fx.x).coerceIn(50.dp, maxWidth - 50.dp)
+            val baseY = (maxHeight * fx.y).coerceIn(80.dp, maxHeight - 120.dp)
+            val offsetY = baseY - (70.dp * animProgress.value)
             val alpha = (1f - animProgress.value).coerceIn(0f, 1f)
+            val scale = (0.7f + (1f - animProgress.value) * 0.35f).coerceIn(0.5f, 1.05f)
 
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .offset(y = offsetY.dp)
+                    .offset(x = targetX - 45.dp, y = offsetY)
                     .alpha(alpha)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFFF5277))
-                    .border(1.8.dp, Color(0xFF281C38), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .scale(scale)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFFFF5277), Color(0xFFFF2A6D))
+                        )
+                    )
+                    .border(1.5.dp, Color(0xFF281C38), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text(
-                    text = fx.text,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Black
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Favorite,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = fx.text,
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
             }
         }
 

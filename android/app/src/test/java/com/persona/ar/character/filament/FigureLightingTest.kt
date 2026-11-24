@@ -79,4 +79,15 @@ class FigureLightingTest {
         val eyeline = FigureLighting.resolvePbrProfile("F00_000_00_FaceEyeline_00_FACE")
         assertTrue(eyeline.isUnlit)
     }
+
+    @Test
+    fun `compute2BandSH clamps extreme values safely`() {
+        val sh = FigureLighting.compute2BandSH(ambientColorTemp = -5f, tintRed = -1f, tintGreen = 10f, tintBlue = 0f)
+        assertEquals(FigureLighting.SH_2BAND_COEFFICIENT_COUNT, sh.size)
+        for (coef in sh) {
+            assertFalse("系数不应为 NaN 或无穷大", coef.isNaN() || coef.isInfinite())
+        }
+        // 红通道增益 clamp 到了 0.2f
+        assertEquals(0.2f, sh[0], 1e-4f)
+    }
 }

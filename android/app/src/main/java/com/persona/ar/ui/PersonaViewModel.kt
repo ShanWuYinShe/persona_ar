@@ -44,6 +44,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val universalTracker = UniversalSensorSurfaceTracker(application)
     private val modelManager = PersonaModelManager(application)
     private val wsClient = PersonaWebSocketClient()
+    private val vibrator = application.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
 
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
@@ -603,6 +604,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             TouchPart.BODY -> Pair(5, "+5 羁绊 拥抱 💕")
         }
 
+        // 触感微震动联动
+        triggerHapticFeedback(part)
+
         // 1. 端侧即时高精微表情与姿态反馈 (Zero GMS 毫秒级零延迟触发)
         //    3D 手办额外记录触摸反应开始时刻，由 FigureAnimator 播放专属全身反应动作
         val touchReactionStartNanos = System.nanoTime()
@@ -725,6 +729,25 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 addBondExp(expGain)
             }
         }
+    }
+
+    private fun triggerHapticFeedback(part: TouchPart) {
+        try {
+            if (vibrator?.hasVibrator() == true) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val effect = when (part) {
+                        TouchPart.HEAD -> android.os.VibrationEffect.createOneShot(18L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                        TouchPart.CHEEK -> android.os.VibrationEffect.createOneShot(14L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                        TouchPart.HAND -> android.os.VibrationEffect.createWaveform(longArrayOf(0, 15, 35, 18), -1)
+                        TouchPart.BODY -> android.os.VibrationEffect.createOneShot(32L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                    }
+                    vibrator.vibrate(effect)
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(25L)
+                }
+            }
+        } catch (_: Throwable) {}
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.persona.ar.ui.components
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,20 +9,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HistoryEdu
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.SentimentVerySatisfied
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,8 +35,8 @@ import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 
 /**
- * 极简通透的二游顶部 HUD 状态栏
- * 包含萌系羁绊经验条（Bond EXP Bar）与手账快捷入口，纯矢量图标。
+ * 极简通透且充满二次元精致感的顶部 HUD 状态栏
+ * 包含萌系羁绊经验条（Bond EXP Bar）、心跳微律动与手账/工坊/设置快捷入口，全纯矢量图标。
  */
 @Composable
 fun StatusBadge(
@@ -53,6 +57,28 @@ fun StatusBadge(
     val borderColor = Color(0xFF281C38)
     val progress = (bondExp.toFloat() / bondExpNext.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
 
+    // 心跳微律动动画（羁绊爱心平缓呼吸）
+    val infiniteTransition = rememberInfiniteTransition(label = "hudBreathing")
+    val heartScale by infiniteTransition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "heartScale"
+    )
+
+    val arGlowPulse by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "arGlowPulse"
+    )
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -61,107 +87,156 @@ fun StatusBadge(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧：极简萌系角色身份与经验胶囊（点击可呼出回忆手账）
-        Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xE6FFFDF9)) // 90% 不透明奶油暖白
-                .border(1.5.dp, borderColor, RoundedCornerShape(18.dp))
-                .clickable { onOpenMemoryNotebook() }
-                .padding(horizontal = 10.dp, vertical = 5.dp)
+        // 左侧：萌系角色身份与微光羁绊胶囊（点击呼出心语回忆手账）
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.Transparent,
+            shadowElevation = 4.dp,
+            modifier = Modifier.clip(RoundedCornerShape(20.dp))
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                Color(0xF5FFFDF9), // 96% 暖奶油
+                                Color(0xEEFFF3F6)  // 柔和微粉渐变
+                            )
+                        )
+                    )
+                    .border(
+                        1.5.dp,
+                        Brush.linearGradient(
+                            listOf(
+                                borderColor.copy(alpha = 0.90f),
+                                Color(0xFF5A4470).copy(alpha = 0.70f)
+                            )
+                        ),
+                        RoundedCornerShape(20.dp)
+                    )
+                    .clickable { onOpenMemoryNotebook() }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                // 心情表情矢量小图标
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFE0E8)),
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 心情表情矢量小图标
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFE0E8)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.SentimentVerySatisfied,
+                            contentDescription = "角色心情",
+                            tint = Color(0xFFFF4E8E),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // 角色名与等级称号
+                    Text(
+                        text = "$charName · Lv.$bondLevel",
+                        color = borderColor,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Black
+                    )
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // 好感爱心律动图标
                     Icon(
-                        imageVector = Icons.Filled.SentimentVerySatisfied,
-                        contentDescription = "角色心情",
-                        tint = Color(0xFFFF5277),
-                        modifier = Modifier.size(14.dp)
+                        imageVector = Icons.Filled.Favorite,
+                        contentDescription = "好感度",
+                        tint = Color(0xFFFF4E8E),
+                        modifier = Modifier
+                            .size(12.dp)
+                            .scale(heartScale)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // 角色名与等级称号
-                Text(
-                    text = "$charName · Lv.$bondLevel",
-                    color = borderColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black
-                )
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // 好感爱心矢量图标
-                Icon(
-                    imageVector = Icons.Filled.Favorite,
-                    contentDescription = "好感度",
-                    tint = Color(0xFFFF5277),
-                    modifier = Modifier.size(12.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            // 萌系羁绊经验条
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.width(100.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color(0xFFE8DFD0))
+                // 萌系羁绊经验条（双层渐变 + 进度端点微高光）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.width(115.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(progress)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFFFF4E8E))
+                            .weight(1f)
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(2.5.dp))
+                            .background(Color(0xFFEAE2D5))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(progress)
+                                .clip(RoundedCornerShape(2.5.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(
+                                            Color(0xFFFF7597),
+                                            Color(0xFFFF4E8E),
+                                            Color(0xFFFF2A6D)
+                                        )
+                                    )
+                                )
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "$bondExp/$bondExpNext",
+                        fontSize = 8.5.sp,
+                        color = Color(0xFF7A6888),
+                        fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "$bondExp/$bondExpNext",
-                    fontSize = 8.sp,
-                    color = Color.Gray,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
 
-        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标）
+        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标，二次元通透微质感）
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // AR 现实模式 / 3D 纯净桌面 快速切换快捷键
             val isARActive = arMode == ARMode.ARCORE_3D
+
+            // AR 现实相机 / 3D 纯净桌面 快速切换快捷键
             IconButton(
                 onClick = onToggleARMode,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(if (isARActive) Color(0xFFFF5277) else Color(0xE6FFFDF9))
-                    .border(1.5.dp, borderColor, CircleShape)
+                    .background(
+                        if (isARActive) {
+                            Brush.linearGradient(
+                                listOf(Color(0xFFFF5277), Color(0xFFFF2A6D))
+                            )
+                        } else {
+                            Brush.linearGradient(
+                                listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
+                            )
+                        }
+                    )
+                    .border(
+                        1.5.dp,
+                        if (isARActive) Color(0xFFFF8DA1) else borderColor.copy(alpha = 0.85f),
+                        CircleShape
+                    )
+                    .shadow(elevation = if (isARActive) 4.dp else 2.dp, shape = CircleShape)
+                    .scale(if (isARActive) arGlowPulse else 1f)
             ) {
                 Icon(
                     imageVector = Icons.Filled.ViewInAr,
                     contentDescription = if (isARActive) "切换至 3D 虚拟空间" else "切换至 AR 现实相机",
                     tint = if (isARActive) Color.White else borderColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
@@ -169,16 +244,21 @@ fun StatusBadge(
             IconButton(
                 onClick = onOpenMemoryNotebook,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color(0xE6FFFDF9))
-                    .border(1.5.dp, borderColor, CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
+                        )
+                    )
+                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
+                    .shadow(elevation = 2.dp, shape = CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Filled.HistoryEdu,
                     contentDescription = "心语回忆手账",
                     tint = Color(0xFFFF4E8E),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
@@ -186,16 +266,21 @@ fun StatusBadge(
             IconButton(
                 onClick = onOpenStore,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color(0xE6FFFDF9))
-                    .border(1.5.dp, borderColor, CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
+                        )
+                    )
+                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
+                    .shadow(elevation = 2.dp, shape = CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Filled.AutoAwesome,
                     contentDescription = "契约工坊与伙伴图鉴",
                     tint = Color(0xFFFFB300),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
 
@@ -203,18 +288,24 @@ fun StatusBadge(
             IconButton(
                 onClick = onOpenSettings,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color(0xE6FFFDF9))
-                    .border(1.5.dp, borderColor, CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
+                        )
+                    )
+                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
+                    .shadow(elevation = 2.dp, shape = CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "系统与互动设置",
                     tint = borderColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(19.dp)
                 )
             }
         }
     }
 }
+
