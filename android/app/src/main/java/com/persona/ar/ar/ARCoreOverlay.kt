@@ -146,17 +146,19 @@ fun ARCoreOverlay(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull()
-                            if (change != null && change.pressed) {
-                                val normX = (change.position.x / size.width).coerceIn(0f, 1f)
-                                val normY = (change.position.y / size.height).coerceIn(0f, 1f)
-                                // 无论是首次放置还是已放置后重新选点，用户点击桌面任意位置均可自由重定位！
-                                onTapPlace(normX, normY)
-                                change.consume()
+                .pointerInput(spatialAnchor.isAnchored) {
+                    // 仅在未锚定状态下监听点击选点放置；已锚定时由重放按钮 [ ⟳ ] 显式重置，避免误触漂移
+                    if (!spatialAnchor.isAnchored) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull()
+                                if (change != null && change.pressed) {
+                                    val normX = (change.position.x / size.width).coerceIn(0f, 1f)
+                                    val normY = (change.position.y / size.height).coerceIn(0f, 1f)
+                                    onTapPlace(normX, normY)
+                                    change.consume()
+                                }
                             }
                         }
                     }

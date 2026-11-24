@@ -8,7 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.persona.ar.ar.ARMode
 import com.persona.ar.ar.ARSpatialAnchor
 import com.persona.ar.ar.ARTrackingStatus
-import com.persona.ar.ar.SensorTiltHelper
+import com.persona.ar.ar.UniversalSensorSurfaceTracker
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.character.animation.ActionTiming
@@ -41,7 +41,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val repository = PersonaRepository()
     private val audioPlayer = AudioPlayer(application)
     private val voiceRecorder = VoiceRecorder()
-    private val sensorTiltHelper = SensorTiltHelper(application)
+    private val universalTracker = UniversalSensorSurfaceTracker(application)
     private val modelManager = PersonaModelManager(application)
     private val wsClient = PersonaWebSocketClient()
 
@@ -334,45 +334,78 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun setupSensors() {
-        sensorTiltHelper.onTiltChanged = { pitch, roll ->
-            val pitchDeg = Math.toDegrees(pitch.toDouble()).toFloat()
-            val rollDeg = Math.toDegrees(roll.toDouble()).toFloat()
-            val shiftX = (roll * 25f).coerceIn(-30f, 30f)
-            val shiftY = (pitch * 25f).coerceIn(-30f, 30f)
-            val gazeX = (roll * 1.2f).coerceIn(-1f, 1f)
-            val gazeY = (pitch * 1.2f).coerceIn(-1f, 1f)
-            _uiState.update { current ->
-                val updatedSpatialAnchor = if (current.spatialAnchor.isAnchored) {
-                    current.spatialAnchor.copy(
-                        parallaxShiftX = shiftX * 0.75f,
-                        parallaxShiftY = shiftY * 0.75f,
-                        cameraGazeOffsetX = gazeX,
-                        cameraGazeOffsetY = gazeY,
-                        cameraPitchDegrees = pitchDeg,
-                        cameraRollDegrees = rollDeg
-                    )
-                } else {
-                    current.spatialAnchor.copy(
-                        cameraGazeOffsetX = gazeX,
-                        cameraGazeOffsetY = gazeY,
-                        cameraPitchDegrees = pitchDeg,
-                        cameraRollDegrees = rollDeg
+        universalTracker.start()
+        viewModelScope.launch {
+            universalTracker.spatialAnchor.collect { tracked ->
+                val pitchDeg = tracked.cameraPitchDegrees
+                val rollDeg = tracked.cameraRollDegrees
+                val shiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
+                val shiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
+                val gazeX = tracked.cameraGazeOffsetX
+                val gazeY = tracked.cameraGazeOffsetY
+
+                _uiState.update { current ->
+                    val base = current.spatialAnchor
+                    val isAnchored = base.isAnchored && tracked.isWorldAnchored
+
+                    val updatedSpatialAnchor = if (isAnchored) {
+                        base.copy(
+                            screenX = tracked.screenX,
+                            screenY = tracked.screenY,
+                            isWorldAnchored = true,
+                            worldAnchorX = tracked.worldAnchorX,
+                            worldAnchorY = tracked.worldAnchorY,
+                            worldAnchorZ = tracked.worldAnchorZ,
+                            cameraForwardX = tracked.cameraForwardX,
+                            cameraForwardY = tracked.cameraForwardY,
+                            cameraForwardZ = tracked.cameraForwardZ,
+                            cameraUpX = tracked.cameraUpX,
+                            cameraUpY = tracked.cameraUpY,
+                            cameraUpZ = tracked.cameraUpZ,
+                            parallaxShiftX = shiftX,
+                            parallaxShiftY = shiftY,
+                            cameraGazeOffsetX = gazeX,
+                            cameraGazeOffsetY = gazeY,
+                            cameraPitchDegrees = pitchDeg,
+                            cameraRollDegrees = rollDeg,
+                            isInView = tracked.isInView,
+                            azimuthDeltaDegrees = tracked.azimuthDeltaDegrees
+                        )
+                    } else {
+                        base.copy(
+                            cameraGazeOffsetX = gazeX,
+                            cameraGazeOffsetY = gazeY,
+                            cameraPitchDegrees = pitchDeg,
+                            cameraRollDegrees = rollDeg
+                        )
+                    }
+                    current.copy(
+                        spatialAnchor = updatedSpatialAnchor,
+                        visualState = current.visualState.copy(
+                            tiltOffsetX = shiftX,
+                            tiltOffsetY = shiftY,
+                            gazeShiftX = gazeX,
+                            gazeShiftY = gazeY,
+                            cameraPitchDegrees = pitchDeg,
+                            cameraRollDegrees = rollDeg
+                        )
                     )
                 }
-                current.copy(
-                    spatialAnchor = updatedSpatialAnchor,
-                    visualState = current.visualState.copy(
-                        tiltOffsetX = shiftX,
-                        tiltOffsetY = shiftY,
-                        gazeShiftX = gazeX,
-                        gazeShiftY = gazeY,
-                        cameraPitchDegrees = pitchDeg,
-                        cameraRollDegrees = rollDeg
+
+                // 空间声场方位实时联动（随镜头平移/出画同步平移声相）
+                if (_uiState.value.spatialAnchor.isAnchored) {
+                    val pan = if (tracked.isInView) {
+                        ((tracked.screenX - 0.5f) * 2f).coerceIn(-1f, 1f)
+                    } else {
+                        (tracked.azimuthDeltaDegrees / 45f).coerceIn(-1f, 1f)
+                    }
+                    audioPlayer.updateSpatialAudio(
+                        normalizedScreenX = (pan + 1f) / 2f,
+                        scaleFactor = _uiState.value.spatialAnchor.scaleFactor
                     )
-                )
+                }
             }
         }
-        sensorTiltHelper.start()
     }
 
     private fun loadInitialStatus() {
@@ -872,6 +905,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     fun onTapPlaceAnchor(screenX: Float, screenY: Float) {
         audioPlayer.updateSpatialAudio(screenX, 1.0f)
+        universalTracker.anchorToDesktop(screenX, screenY)
+        val tracked = universalTracker.spatialAnchor.value
         _uiState.update { current ->
             val optical = calculateOpticalParams(
                 screenX = screenX,
@@ -885,6 +920,18 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     screenX = screenX,
                     screenY = screenY,
                     isAnchored = true,
+                    isWorldAnchored = true,
+                    worldAnchorX = tracked.worldAnchorX,
+                    worldAnchorY = tracked.worldAnchorY,
+                    worldAnchorZ = tracked.worldAnchorZ,
+                    cameraForwardX = tracked.cameraForwardX,
+                    cameraForwardY = tracked.cameraForwardY,
+                    cameraForwardZ = tracked.cameraForwardZ,
+                    cameraUpX = tracked.cameraUpX,
+                    cameraUpY = tracked.cameraUpY,
+                    cameraUpZ = tracked.cameraUpZ,
+                    isInView = true,
+                    azimuthDeltaDegrees = 0f,
                     distanceMeters = 0.65f,
                     chromaticAberrationIntensity = optical.chromaticAberration,
                     chromaticAngleRad = optical.chromaticAngle,
@@ -894,7 +941,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     surfaceOcclusionBottomCutoff = optical.bottomCutoff,
                     cameraFocusTimestamp = System.currentTimeMillis(),
                     isCameraFocusing = true,
-                    planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
+                    planeTypeDescription = "书桌实景 (真实 3D 空间锁定)"
                 ),
                 visualState = current.visualState.copy(
                     chromaticAberrationIntensity = optical.chromaticAberration,
@@ -910,6 +957,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onTransformAnchor(scaleMultiplier: Float, rotationYawDelta: Float) {
+        universalTracker.updateScale(scaleMultiplier)
+        universalTracker.updateRotation(rotationYawDelta)
         var triggeredMacroCare = false
         _uiState.update { current ->
             val anchor = current.spatialAnchor
@@ -974,12 +1023,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onResetAnchor() {
+        universalTracker.resetAnchor()
         audioPlayer.updateSpatialAudio(0.5f, 1.0f)
         _uiState.update { current ->
             current.copy(
                 arTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
                 spatialAnchor = current.spatialAnchor.copy(
                     isAnchored = false,
+                    isWorldAnchored = false,
+                    isInView = true,
+                    azimuthDeltaDegrees = 0f,
                     scaleFactor = 1.0f,
                     rotationYaw = 0f,
                     parallaxShiftX = 0f,
@@ -989,7 +1042,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     depthOfFieldBlur = 0f,
                     isMacroProximity = false,
                     surfaceOcclusionBottomCutoff = 0f,
-                    planeTypeDescription = "书桌实景 (零 GMS 通用视差)"
+                    planeTypeDescription = "书桌实景 (零 GMS)"
                 ),
                 visualState = current.visualState.copy(
                     chromaticAberrationIntensity = 0f,
@@ -1049,6 +1102,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             val anchor = current.spatialAnchor
             val nextX = (anchor.screenX + deltaNormX).coerceIn(0.06f, 0.94f)
             val nextY = (anchor.screenY + deltaNormY).coerceIn(0.20f, 0.92f)
+
+            if (anchor.isWorldAnchored) {
+                universalTracker.anchorToDesktop(nextX, nextY)
+            }
 
             // 透视几何：Y 坐标越小 (靠近画面上方远端)，距离越远 (0.8m ~ 1.5m)
             val depthFactor = (1.0f + (0.65f - nextY) * 0.5f).coerceIn(0.55f, 1.4f)
@@ -1506,7 +1563,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         wsClient.disconnect()
         audioPlayer.release()
         voiceRecorder.release()
-        sensorTiltHelper.stop()
+        universalTracker.stop()
     }
 }
 
