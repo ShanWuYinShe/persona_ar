@@ -41,34 +41,45 @@ class FaceRig(morphTargetNames: Array<String>) {
     }
 
     private fun buildPresets() {
+        // 开怀欢笑：飞扬眉毛 + 弯月笑眼 + 露齿大笑 + 可爱小虎牙
         presets["JOY"] = buildPreset(
-            "ALL_Joy" to 0.85f, "BRW_Joy" to 0.45f, "EYE_Joy" to 0.9f, "MTH_Joy" to 0.65f
+            "ALL_Joy" to 0.95f, "BRW_Joy" to 0.75f, "EYE_Joy" to 0.95f, "MTH_Joy" to 0.85f, "HA_Fung1" to 0.70f
         )
-        // SMILE 用柔和版 Joy（避免过度咧嘴）
+        // 治愈微笑：柔和明媚笑颜
         presets["SMILE"] = buildPreset(
-            "ALL_Joy" to 0.5f, "BRW_Joy" to 0.28f, "EYE_Joy" to 0.55f, "MTH_Joy" to 0.35f, "MTH_Neutral" to 0.12f
+            "ALL_Joy" to 0.65f, "BRW_Joy" to 0.45f, "EYE_Joy" to 0.65f, "MTH_Joy" to 0.50f, "MTH_Neutral" to 0.15f
         )
+        // 俏皮眨眼：单眼完全闭合 + 另一眼弯笑 + 调皮小虎牙
         presets["WINK"] = buildPreset(
-            "EYE_Close_R" to 0.85f, "ALL_Joy" to 0.45f, "MTH_Joy" to 0.4f, "BRW_Joy" to 0.25f
+            "EYE_Close_R" to 1.0f, "EYE_Joy" to 0.85f, "ALL_Joy" to 0.65f, "BRW_Joy" to 0.55f, "MTH_Fun" to 0.70f, "HA_Fung1" to 0.85f
         )
+        // 害羞娇颤：八字怜弱眉 + 半阖笑眼 + 羞涩小抿嘴
         presets["BLUSH_FACE"] = buildPreset(
-            "ALL_Joy" to 0.38f, "BRW_Sorrow" to 0.45f, "EYE_Joy" to 0.4f, "MTH_Fun" to 0.34f
+            "ALL_Joy" to 0.45f, "BRW_Sorrow" to 0.85f, "EYE_Joy" to 0.65f, "EYE_Close" to 0.35f, "MTH_Fun" to 0.45f, "MTH_I" to 0.30f
         )
+        // 委屈难过：垂眉 + 嘴角下撇哭脸
         presets["CRY"] = buildPreset(
-            "ALL_Sorrow" to 0.75f, "BRW_Sorrow" to 0.65f, "EYE_Sorrow" to 0.5f, "MTH_Sorrow" to 0.5f
+            "ALL_Sorrow" to 0.90f, "BRW_Sorrow" to 0.95f, "EYE_Sorrow" to 0.75f, "MTH_Sorrow" to 0.80f, "MTH_Down" to 0.50f
         )
+        // 好奇探究：挑眉 + 微张小圆嘴
         presets["CURIOUS"] = buildPreset(
-            "ALL_Surprised" to 0.22f, "BRW_Surprised" to 0.5f, "EYE_Surprised" to 0.3f, "MTH_Neutral" to 0.25f
+            "ALL_Surprised" to 0.35f, "BRW_Surprised" to 0.75f, "EYE_Surprised" to 0.45f, "MTH_Neutral" to 0.30f, "MTH_O" to 0.25f
         )
+        // 经典傲娇鼓颊：气呼呼倒竖眉 + 瞪视 + 经典小鸭子嘟嘴 (MTH_U)
         presets["POUT"] = buildPreset(
-            "ALL_Angry" to 0.5f, "BRW_Angry" to 0.55f, "EYE_Angry" to 0.25f, "MTH_Angry" to 0.55f
+            "ALL_Angry" to 0.85f, "BRW_Angry" to 0.95f, "EYE_Angry" to 0.65f, "MTH_Angry" to 0.75f, "MTH_U" to 0.85f
         )
+        // 惊惶瞪大：圆滚滚眼瞳 + 张大嘴巴
         presets["SURPRISED"] = buildPreset(
-            "ALL_Surprised" to 0.6f, "BRW_Surprised" to 0.7f, "EYE_Surprised" to 0.6f, "MTH_Surprised" to 0.45f
+            "ALL_Surprised" to 0.95f, "BRW_Surprised" to 1.0f, "EYE_Surprised" to 1.0f, "MTH_Surprised" to 0.85f, "MTH_O" to 0.75f
         )
-        presets["SLEEPY"] = buildPreset("ALL_Sorrow" to 0.16f, "MTH_Neutral" to 0.28f)
+        // 困意朦胧：眼皮重重垂落 + 困倦眉 + 微张打小哈欠
+        presets["SLEEPY"] = buildPreset(
+            "ALL_Sorrow" to 0.30f, "BRW_Sorrow" to 0.55f, "EYE_Close" to 0.75f, "MTH_O" to 0.40f, "MTH_Down" to 0.25f
+        )
+        // 嚣张得意：猫咪嘴微笑 + 经典自信小虎牙 (HA_Fung1 顶格)
         presets["SMUG"] = buildPreset(
-            "ALL_Fun" to 0.6f, "BRW_Fun" to 0.5f, "EYE_Joy" to 0.5f, "MTH_Fun" to 0.45f
+            "ALL_Fun" to 0.90f, "BRW_Fun" to 0.85f, "EYE_Joy" to 0.80f, "MTH_Fun" to 0.85f, "HA_Fung1" to 1.0f
         )
         presets["NEUTRAL"] = buildPreset("MTH_Neutral" to 0.4f)
         presets["ANGRY"] = presets["POUT"]!!

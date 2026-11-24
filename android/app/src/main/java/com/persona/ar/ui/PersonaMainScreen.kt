@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.AirlineSeatReclineNormal
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Psychology
@@ -241,6 +243,7 @@ fun PersonaMainScreen(
                 status = uiState.personaStatus,
                 activeModel = uiState.activeModel,
                 arMode = uiState.arMode,
+                currentEmotion = uiState.visualState.emotion,
                 bondLevel = uiState.bondLevel,
                 bondExp = uiState.bondExp,
                 bondExpNext = uiState.bondExpNext,
@@ -252,7 +255,7 @@ fun PersonaMainScreen(
             )
         }
 
-        // 5. 右侧悬浮功能组：实景视野感知 (Vision AI) 与纯净 AR 合影
+        // 5. 右侧悬浮功能组：3D姿态切换、实景视野感知 (Vision AI) 与纯净 AR 合影
         AnimatedVisibility(
             visible = isUiVisible,
             enter = fadeIn(),
@@ -265,6 +268,27 @@ fun PersonaMainScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // S. 3D 手办姿态切换纽扣 (站姿 ↔ 优雅少女坐姿平滑切换)
+                if (uiState.arMode == ARMode.ARCORE_3D) {
+                    val isSitting = uiState.spatialAnchor.skeletonStance == SkeletonStance.SITTING
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(if (isSitting) Color(0xFFFF8F00) else Color(0xE6FFFDF9))
+                            .border(1.8.dp, if (isSitting) Color(0xFFFFB300) else Color(0xFF281C38), CircleShape)
+                            .clickable { viewModel.onToggleSkeletonStance() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSitting) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
+                            contentDescription = if (isSitting) "当前坐姿 (点击切换站姿)" else "当前站姿 (点击切换坐姿)",
+                            tint = if (isSitting) Color.White else Color(0xFF281C38),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
                 // A. 实景视野多模态交互纽扣 (让二次元伴侣看懂眼前真实的桌面与物体)
                 Box(
                     modifier = Modifier

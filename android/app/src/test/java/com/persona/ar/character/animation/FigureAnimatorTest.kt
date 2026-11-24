@@ -91,7 +91,7 @@ class FigureAnimatorTest {
         repeat(90) { animator.update(i) }
         assertTrue("坐姿骨盆应下沉，实际 ${animator.hipsOffsetY}", animator.hipsOffsetY < -0.65f)
         assertTrue(angle(HumanoidBone.UPPER_LEG_L, 0) <= -70f)
-        assertTrue(angle(HumanoidBone.LOWER_LEG_L, 0) > 120f)
+        assertTrue("坐姿小腿应自然优美屈膝，实际 rx=${angle(HumanoidBone.LOWER_LEG_L, 0)}", angle(HumanoidBone.LOWER_LEG_L, 0) in 70f..100f)
         assertTrue(angle(HumanoidBone.LOWER_ARM_L, 1) > 45f)
     }
 

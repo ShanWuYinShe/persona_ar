@@ -635,10 +635,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             TouchPart.BODY -> TouchReaction(pose = "SMUG", blush = 0f, pout = 0f, smug = 4.5f)
         }
         val touchAction = when (part) {
-            TouchPart.HEAD -> ActionType.BLUSH
+            TouchPart.HEAD -> ActionType.WAVE
             TouchPart.CHEEK -> ActionType.POUT
-            TouchPart.HAND -> ActionType.NOD
+            TouchPart.HAND -> ActionType.WAVE
             TouchPart.BODY -> ActionType.BLUSH
+        }
+        val touchEmotion = when (part) {
+            TouchPart.HEAD -> EmotionType.JOY
+            TouchPart.CHEEK -> EmotionType.ANGRY
+            TouchPart.HAND -> EmotionType.CONFIDENT
+            TouchPart.BODY -> EmotionType.SHY
         }
 
         _uiState.update { current ->
@@ -649,6 +655,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     poutIntensity = reaction.pout,
                     smugTiltDegrees = reaction.smug,
                     action = touchAction,
+                    emotion = touchEmotion,
                     actionStartedAtNanos = touchReactionStartNanos,
                     sleepinessFactor = 0f,
                     touchReaction = part,
@@ -666,6 +673,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     visualState = current.visualState.copy(
                         touchReaction = null,
                         touchReactionStartedAtNanos = 0L,
+                        emotion = EmotionType.NEUTRAL,
                         action = if (current.visualState.action == touchAction) ActionType.IDLE else current.visualState.action,
                         actionStartedAtNanos = if (current.visualState.action == touchAction) 0L else current.visualState.actionStartedAtNanos,
                         highResPose = if (current.visualState.highResPose == reaction.pose) "DEFAULT" else current.visualState.highResPose,
@@ -739,10 +747,30 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             if (vibrator?.hasVibrator() == true) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     val effect = when (part) {
-                        TouchPart.HEAD -> android.os.VibrationEffect.createOneShot(18L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
-                        TouchPart.CHEEK -> android.os.VibrationEffect.createOneShot(14L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
-                        TouchPart.HAND -> android.os.VibrationEffect.createWaveform(longArrayOf(0, 15, 35, 18), -1)
-                        TouchPart.BODY -> android.os.VibrationEffect.createOneShot(32L, android.os.VibrationEffect.DEFAULT_AMPLITUDE)
+                        // 摸头：顺毛轻抚柔波微振
+                        TouchPart.HEAD -> android.os.VibrationEffect.createWaveform(
+                            longArrayOf(0, 18, 45, 14),
+                            intArrayOf(0, 110, 0, 75),
+                            -1
+                        )
+                        // 戳脸：如果冻般弹性双弹跳微颤
+                        TouchPart.CHEEK -> android.os.VibrationEffect.createWaveform(
+                            longArrayOf(0, 15, 30, 22),
+                            intArrayOf(0, 180, 0, 130),
+                            -1
+                        )
+                        // 牵手：指尖持续温热微颤
+                        TouchPart.HAND -> android.os.VibrationEffect.createWaveform(
+                            longArrayOf(0, 24, 38, 24),
+                            intArrayOf(0, 130, 0, 130),
+                            -1
+                        )
+                        // 拥抱：双拍心跳律动 (Lub-dub 心跳感)
+                        TouchPart.BODY -> android.os.VibrationEffect.createWaveform(
+                            longArrayOf(0, 32, 70, 48),
+                            intArrayOf(0, 210, 0, 190),
+                            -1
+                        )
                     }
                     vibrator.vibrate(effect)
                 } else {
