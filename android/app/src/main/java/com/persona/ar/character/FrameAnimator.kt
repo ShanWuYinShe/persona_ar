@@ -74,7 +74,7 @@ class FrameAnimator(
         val loop: Boolean
     )
 
-    /** 读取某个动作的精灵表；不存在则返回 null（调用方回退到静态立绘） */
+    /** 读取某个动作的精灵表；不存在则返回 null（调用方回退到矢量立绘） */
     fun clipFor(action: ActionType): Clip? {
         val key = action.name
         if (cache.containsKey(key)) return cache[key]

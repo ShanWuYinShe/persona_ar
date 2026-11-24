@@ -70,8 +70,6 @@ data class CharacterVisualState(
     val lensVignetteFactor: Float = 1.0f,
     /** 物理相机是否正在自动对焦中 */
     val isCameraFocusing: Boolean = false,
-    /** 是否启用高精度二次元角色全模渲染 (彻底替代简易几何 Chibi，达到商业级精细画质) */
-    val useHighResolutionModel: Boolean = true,
     /** 镜头注视微偏移 (视线跟踪 Eye Contact，基于相机与角色的空间几何相对夹角) */
     val gazeTrackingEyeX: Float = 0f,
     val gazeTrackingEyeY: Float = 0f,
