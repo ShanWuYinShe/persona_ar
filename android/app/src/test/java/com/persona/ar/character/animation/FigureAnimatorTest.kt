@@ -220,4 +220,74 @@ class FigureAnimatorTest {
         val headYawRight = angle(HumanoidBone.HEAD, 1)
         assertTrue("gazeX < 0 应当向另一侧偏航，实际 headYaw=$headYawRight", headYawRight < -12f)
     }
+
+    @Test
+    fun `wave keeps right hand clearly outside head silhouette without ear collision`() {
+        val (left, right, head) = handWorld(ActionType.WAVE)
+        assertTrue("挥手右掌应处于头部右外侧且不撞头，实际 R=(${right[0]},${right[1]}) head=(${head[0]},${head[1]})",
+            right[0] - head[0] > 0.14f && right[1] > head[1] + 0.15f)
+        assertTrue("左臂应安稳垂落，实际 L.y=${left[1]}", left[1] < head[1] - 0.30f)
+    }
+
+    @Test
+    fun `touch cheek raises right hand to cheek height rather than belly`() {
+        val rig = TestRigs.armRig()
+        val anim = FigureAnimator(rig)
+        val solver = PoseSolver(rig)
+        val i = input()
+        i.touchReaction = TouchPart.CHEEK
+        i.touchElapsed = 1.0f
+        anim.update(i)
+        solver.solve(anim.angles, 0f, 0f, 0f)
+        val right = FloatArray(3)
+        val head = FloatArray(3)
+        solver.worldPosition(rig.humanoid[HumanoidBone.HAND_R]!!, right)
+        solver.worldPosition(rig.humanoid[HumanoidBone.HEAD]!!, head)
+        assertTrue("戳脸右手应举至面颊高度附近而非垂入腹前，实际 R.y=${right[1]} head.y=${head[1]}",
+            abs(right[1] - head[1]) < 0.12f && right[2] < -0.15f)
+    }
+
+    @Test
+    fun `yawn raises right hand cleanly toward mouth`() {
+        val (_, right, head) = handWorld(ActionType.YAWN)
+        assertTrue("打哈欠右手应举至口鼻前方，实际 R=(${right[0]},${right[1]},${right[2]}) head.y=${head[1]}",
+            abs(right[1] - head[1]) < 0.12f && right[2] < -0.06f)
+    }
+
+    @Test
+    fun `sitting compensates skirt chains to drape over thighs`() {
+        val base = TestRigs.flatHumanoid()
+        val front1 = base.nodeCount
+        val back1 = base.nodeCount + 1
+        val side1 = base.nodeCount + 2
+        val total = base.nodeCount + 3
+        val names = base.names + arrayOf("J_Sec_L_SkirtFront1", "J_Sec_L_SkirtBack1", "J_Sec_L_SkirtSide1")
+        val skirtRig = GltfRig(
+            nodeCount = total,
+            names = names,
+            parent = IntArray(total) { -1 },
+            order = IntArray(total) { it },
+            restT = FloatArray(total * 3),
+            restR = FloatArray(total * 4) { if (it % 4 == 3) 1f else 0f },
+            restS = FloatArray(total * 3) { 1f },
+            humanoid = base.humanoid,
+            skins = emptyArray(),
+            meshNodes = emptyArray(),
+            fingerJoints = emptyArray(),
+            hairChains = emptyArray(),
+            skirtFrontChains = arrayOf(intArrayOf(front1)),
+            skirtBackChains = arrayOf(intArrayOf(back1)),
+            skirtSideChains = arrayOf(intArrayOf(side1))
+        )
+        val anim = FigureAnimator(skirtRig)
+        val i = input()
+        i.stance = SkeletonStance.SITTING
+        repeat(90) { anim.update(i) }
+        assertTrue("坐姿前裙摆应微向下压覆于大腿上方 (rx < 0)，实际 ${anim.angles[front1 * 3]}",
+            anim.angles[front1 * 3] < -5f)
+        assertTrue("坐姿后裙摆应反向回收避免穿地 (rx < -90)，实际 ${anim.angles[back1 * 3]}",
+            anim.angles[back1 * 3] < -90f)
+        assertTrue("坐姿侧裙摆应顺大腿前倾垂落 (rx > 50)，实际 ${anim.angles[side1 * 3]}",
+            anim.angles[side1 * 3] > 50f)
+    }
 }

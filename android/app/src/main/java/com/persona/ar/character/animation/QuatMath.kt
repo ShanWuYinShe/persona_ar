@@ -78,12 +78,74 @@ object QuatMath {
 
     /** 角度 (rx, ry, rz) → 四元数，旋转顺序：先 Z，再 Y，最后 X（与动作库数值标定口径一致） */
     fun fromEulerDegrees(out: FloatArray, rx: Float, ry: Float, rz: Float) {
-        val qx = FloatArray(4); val qy = FloatArray(4); val qz = FloatArray(4); val tmp = FloatArray(4)
-        setAxisAngle(qx, 1f, 0f, 0f, rx)
-        setAxisAngle(qy, 0f, 1f, 0f, ry)
-        setAxisAngle(qz, 0f, 0f, 1f, rz)
-        multiply(tmp, qy, qz)
-        multiply(out, qx, tmp)
+        val hx = Math.toRadians(rx.toDouble()).toFloat() * 0.5f
+        val hy = Math.toRadians(ry.toDouble()).toFloat() * 0.5f
+        val hz = Math.toRadians(rz.toDouble()).toFloat() * 0.5f
+        val cx = cos(hx); val sx = sin(hx)
+        val cy = cos(hy); val sy = sin(hy)
+        val cz = cos(hz); val sz = sin(hz)
+        // q = Qx * Qy * Qz
+        out[0] = sx * cy * cz + cx * sy * sz
+        out[1] = cx * sy * cz - sx * cy * sz
+        out[2] = cx * cy * sz + sx * sy * cz
+        out[3] = cx * cy * cz - sx * sy * sz
+    }
+
+    /** 最短路径球面线性插值 out = slerp(a, b, t)，零分配 */
+    fun slerp(out: FloatArray, a: FloatArray, b: FloatArray, t: Float) {
+        val u = t.coerceIn(0f, 1f)
+        var dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+        var bx = b[0]; var by = b[1]; var bz = b[2]; var bw = b[3]
+        if (dot < 0f) {
+            dot = -dot
+            bx = -bx; by = -by; bz = -bz; bw = -bw
+        }
+        if (dot > 0.9995f) {
+            out[0] = a[0] + u * (bx - a[0])
+            out[1] = a[1] + u * (by - a[1])
+            out[2] = a[2] + u * (bz - a[2])
+            out[3] = a[3] + u * (bw - a[3])
+            normalize(out)
+            return
+        }
+        val clampedDot = dot.coerceIn(-1f, 1f)
+        val theta0 = kotlin.math.acos(clampedDot)
+        val sinTheta0 = sin(theta0)
+        val theta = theta0 * u
+        val s0 = cos(theta) - clampedDot * sin(theta) / sinTheta0
+        val s1 = sin(theta) / sinTheta0
+        out[0] = s0 * a[0] + s1 * bx
+        out[1] = s0 * a[1] + s1 * by
+        out[2] = s0 * a[2] + s1 * bz
+        out[3] = s0 * a[3] + s1 * bw
+    }
+
+    /** 四元数 → 欧拉角 (rx, ry, rz) 度，与 fromEulerDegrees (先 Z 再 Y 最后 X) 互逆 */
+    fun toEulerDegrees(q: FloatArray, out3: FloatArray, outOffset: Int = 0) {
+        val x = q[0]; val y = q[1]; val z = q[2]; val w = q[3]
+        val r00 = 1f - 2f * (y * y + z * z)
+        val r01 = 2f * (x * y - w * z)
+        val r02 = 2f * (x * z + w * y)
+        val r11 = 1f - 2f * (x * x + z * z)
+        val r12 = 2f * (y * z - w * x)
+        val r21 = 2f * (y * z + w * x)
+        val r22 = 1f - 2f * (x * x + y * y)
+
+        val sy = r02.coerceIn(-1f, 1f)
+        val ry = kotlin.math.asin(sy)
+        val rx: Float
+        val rz: Float
+        if (kotlin.math.abs(r02) < 0.9999f) {
+            rx = kotlin.math.atan2(-r12, r22)
+            rz = kotlin.math.atan2(-r01, r00)
+        } else {
+            rx = kotlin.math.atan2(r21, r11)
+            rz = 0f
+        }
+        val rad2deg = (180.0 / Math.PI).toFloat()
+        out3[outOffset] = rx * rad2deg
+        out3[outOffset + 1] = ry * rad2deg
+        out3[outOffset + 2] = rz * rad2deg
     }
 }
 

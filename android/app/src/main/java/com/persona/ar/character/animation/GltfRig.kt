@@ -30,7 +30,11 @@ class GltfRig(
     /** 手指关节（待机/动作时统一做自然弯曲，避免 T-pose 手指张开） */
     val fingerJoints: Array<FingerJoint>,
     /** 头发关节链（从发根到发梢），用于惯性甩发次级动力学 */
-    val hairChains: Array<IntArray>
+    val hairChains: Array<IntArray>,
+    /** 裙摆前/后/侧链（每链按根到梢排序），用于在坐姿/跳跃/鞠躬时反向补偿防穿模 */
+    val skirtFrontChains: Array<IntArray> = emptyArray(),
+    val skirtBackChains: Array<IntArray> = emptyArray(),
+    val skirtSideChains: Array<IntArray> = emptyArray()
 ) {
     /** 单个 glTF skin：joints 为节点索引数组；inverseBind 为 16 个 float / 关节（列主序） */
     class Skin(val joints: IntArray, val inverseBind: FloatArray)
