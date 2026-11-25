@@ -228,8 +228,14 @@ object GltfRigParser {
             }
         }
 
+        // 裙摆骨骼链（VRoid 常见命名：J_Sec_{L,R}_Skirt{Front,Back,Side}1 -> 2）
+        val skirtFrontChains = extractNamedChains(names, children, listOf("J_Sec_L_SkirtFront1", "J_Sec_R_SkirtFront1"))
+        val skirtBackChains = extractNamedChains(names, children, listOf("J_Sec_L_SkirtBack1", "J_Sec_R_SkirtBack1"))
+        val skirtSideChains = extractNamedChains(names, children, listOf("J_Sec_L_SkirtSide1", "J_Sec_R_SkirtSide1"))
+
         Log.i(TAG, "rig parsed: nodes=$nodeCount skins=${skins.size} meshNodes=${meshNodes.size} " +
-                "humanoid=${humanoid.size}/${HumanoidBone.values().size} fingers=${fingerJoints.size} hairChains=${hairChains.size}")
+                "humanoid=${humanoid.size}/${HumanoidBone.values().size} fingers=${fingerJoints.size} " +
+                "hairChains=${hairChains.size} skirt=${skirtFrontChains.size}/${skirtBackChains.size}/${skirtSideChains.size}")
         return GltfRig(
             nodeCount = nodeCount,
             names = names,
@@ -242,8 +248,29 @@ object GltfRigParser {
             skins = skins.toTypedArray(),
             meshNodes = meshNodes.toTypedArray(),
             fingerJoints = fingerJoints.toTypedArray(),
-            hairChains = hairChains.toTypedArray()
+            hairChains = hairChains.toTypedArray(),
+            skirtFrontChains = skirtFrontChains,
+            skirtBackChains = skirtBackChains,
+            skirtSideChains = skirtSideChains
         )
+    }
+
+    private fun extractNamedChains(names: Array<String>, children: List<List<Int>>, roots: List<String>): Array<IntArray> {
+        val out = ArrayList<IntArray>(roots.size)
+        for (rootName in roots) {
+            val start = names.indexOfFirst { it == rootName || it.endsWith("_$rootName") }
+            if (start < 0) continue
+            val chain = ArrayList<Int>(3)
+            var cur = start
+            var guard = 0
+            while (guard++ < 4) {
+                chain.add(cur)
+                val next = children[cur].firstOrNull { !names[it].endsWith("_end") } ?: break
+                cur = next
+            }
+            if (chain.isNotEmpty()) out.add(chain.toIntArray())
+        }
+        return out.toTypedArray()
     }
 
     private fun readMat4Accessor(root: JSONObject, bin: ByteBuffer, accessorIndex: Int, count: Int): FloatArray {

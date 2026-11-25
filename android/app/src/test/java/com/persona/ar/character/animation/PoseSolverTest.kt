@@ -54,4 +54,20 @@ class PoseSolverTest {
         assertTrue(abs(out[0] + 1f) < 1e-3f)
         assertTrue(abs(out[1]) < 1e-3f)
     }
+
+    @Test
+    fun `slerp and toEulerDegrees roundtrip preserves rotation`() {
+        val a = FloatArray(4)
+        val b = FloatArray(4)
+        val mid = FloatArray(4)
+        val euler = FloatArray(3)
+        val qBack = FloatArray(4)
+        QuatMath.fromEulerDegrees(a, 0f, 0f, -72f)
+        QuatMath.fromEulerDegrees(b, 8f, 16f, 46f)
+        QuatMath.slerp(mid, a, b, 0.5f)
+        QuatMath.toEulerDegrees(mid, euler)
+        QuatMath.fromEulerDegrees(qBack, euler[0], euler[1], euler[2])
+        val dot = abs(mid[0] * qBack[0] + mid[1] * qBack[1] + mid[2] * qBack[2] + mid[3] * qBack[3])
+        assertTrue("SLERP + 欧拉逆解四元数应一致，实际 dot=$dot", dot > 0.9999f)
+    }
 }
