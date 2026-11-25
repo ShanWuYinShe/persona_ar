@@ -30,18 +30,22 @@ class FrameAnimator(
      * @param sheet 整张精灵表位图（含全部帧）
      * @param frameCount 横向帧数（等分份数）
      * @param fps 播放帧率
-     * @param loop 是否循环（待机为 true；挥手/鞠躬等一次性动作为 false）
+     * @param loop 是否循环（待机/睡觉为 true；挥手/鞠躬等一次性动作为 false）
+     * @param frameSequence 逻辑播放序列（可跳过首尾回归待机的多余帧或悬浮异常帧，null 则按 0..frameCount-1 顺序播放）
      */
     class Clip(
         val sheet: ImageBitmap,
         val frameCount: Int,
         val fps: Float,
-        val loop: Boolean
+        val loop: Boolean,
+        val frameSequence: IntArray? = null
     ) {
         /** 单帧在源图中的宽度（像素）：整表宽 / 帧数，各帧完全一致 */
         val frameWidth: Int = sheet.width / frameCount
         /** 单帧在源图中的高度（像素）：取整表高度 */
         val frameHeight: Int = sheet.height
+        /** 实际播放步数 */
+        val stepCount: Int get() = frameSequence?.size ?: frameCount
 
         override fun equals(other: Any?): Boolean = this === other
         override fun hashCode(): Int = System.identityHashCode(this)
@@ -49,41 +53,34 @@ class FrameAnimator(
 
     private val cache = HashMap<String, Clip?>()
 
-    /** 单个动作的精灵表规格：文件名、横向帧数、播放帧率、是否循环。 */
+    /** 单个动作的精灵表规格：文件名、横向帧数、播放帧率、是否循环及逻辑帧序号表。 */
     internal class ActionClipSpec(
         val fileName: String,
         val frameCount: Int,
         val fps: Float,
-        val loop: Boolean
+        val loop: Boolean,
+        val frameSequence: IntArray? = null
     )
 
     companion object {
-        /**
-         * 动作 → (精灵表文件名, 帧数, fps, 是否循环)。
-         *
-         * fps 按「每个动作应有的自然时长」反推：fps = 帧数 / 目标时长。6 帧素材下，
-         * 若按直觉设成 7-9fps，一个动作只播 0.7-0.9 秒，快得看不清（实测用户反馈「根本就看不清」）。
-         * 这里按动作语义定目标时长：待机呼吸最慢（1.5fps ≈ 4s），点头最快（4fps ≈ 1.5s），其余在 2s 左右。
-         *
-         * 放在 companion 里是为了让 JVM 单测在不启动 Android Context / BitmapFactory 的情况下
-         * 直接断言「捏脸动作一定有预渲染序列帧」。
-         */
         internal val ACTION_CLIP_SPECS: Map<ActionType, ActionClipSpec> = mapOf(
-            ActionType.IDLE to ActionClipSpec("idle", 6, 1.5f, true),
-            ActionType.WAVE to ActionClipSpec("wave", 6, 3.3f, false),
-            ActionType.BOW to ActionClipSpec("bow", 6, 3.0f, false),
-            ActionType.YAWN to ActionClipSpec("yawn", 6, 2.4f, false),
-            // 捏脸/害羞/噘嘴共用 shy 序列帧。POUT 必须在这里保留映射：
-            // 一旦缺失，渲染层会回退到非精灵路径，旧版「白色羽毛」伪影就是从这里复现的。
-            ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
-            ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false),
-            ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
-            ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false),
-            // 其余动作同样绑定精灵表，搭配 Canvas 动态偏移与情绪粒子构成完整 2.5D 演出，永不跌回静态矢量兜底
-            ActionType.JUMP to ActionClipSpec("wave", 6, 3.8f, false),
-            ActionType.SMUG to ActionClipSpec("idle", 6, 2.2f, false),
-            ActionType.SHAKE_HEAD to ActionClipSpec("nod", 6, 4.0f, false),
-            ActionType.SLEEP to ActionClipSpec("yawn", 6, 1.2f, true)
+            // IDLE 跳过第 2 帧垂直上跳 37px 的异常帧，消除手机静止时的无故浮动
+            ActionType.IDLE to ActionClipSpec("idle", 6, 1.8f, true, intArrayOf(0, 1, 3, 5, 3, 1)),
+            ActionType.WAVE to ActionClipSpec("wave", 6, 3.6f, false, intArrayOf(0, 1, 2, 3, 4, 3, 4, 5)),
+            ActionType.BOW to ActionClipSpec("bow", 6, 3.2f, false, intArrayOf(0, 1, 2, 3, 3, 4, 5)),
+            ActionType.YAWN to ActionClipSpec("yawn", 6, 2.5f, false, intArrayOf(0, 1, 2, 3, 3, 4, 5)),
+            // BLUSH 使用 shy 全程羞涩低头捧手；POUT 保留 shy 资产但仅取第 1/2 帧傲娇鼓腮转头态
+            ActionType.BLUSH to ActionClipSpec("shy", 6, 2.8f, false, intArrayOf(0, 1, 2, 3, 3, 4, 5)),
+            ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false, intArrayOf(0, 1, 2, 1, 2, 1)),
+            ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false, intArrayOf(0, 1, 2, 3, 4, 2, 5)),
+            // SIT 跳过宽腿深蹲的 1/2 帧，利落进入正坐第 4/5 帧并停留保持
+            ActionType.SIT to ActionClipSpec("sit", 6, 3.6f, false, intArrayOf(0, 3, 4, 5)),
+            // JUMP 使用高举双臂欢呼的 yawn 帧配合跳跃抛物线与挤压拉伸；SHAKE_HEAD 用正面待机帧配合水平摇头
+            ActionType.JUMP to ActionClipSpec("yawn", 6, 3.8f, false, intArrayOf(0, 2, 3, 3, 2, 0)),
+            ActionType.SMUG to ActionClipSpec("idle", 6, 2.0f, false, intArrayOf(0, 3, 0, 3, 0)),
+            ActionType.SHAKE_HEAD to ActionClipSpec("idle", 6, 3.5f, false, intArrayOf(0, 0, 0, 0, 0, 0)),
+            // SLEEP 定格在 nod 第 2 帧（闭眼低首放松态），叠加轻柔睡眠呼吸律动与 Zzz，告别张嘴打哈欠死循环
+            ActionType.SLEEP to ActionClipSpec("nod", 6, 1.5f, true, intArrayOf(2))
         )
 
         /** 查询动作对应的精灵表规格；null 表示该动作没有预渲染序列帧。 */
@@ -104,7 +101,7 @@ class FrameAnimator(
                     if (bmp == null || bmp.width < spec.frameCount) {
                         null
                     } else {
-                        Clip(bmp.asImageBitmap(), spec.frameCount, spec.fps, spec.loop)
+                        Clip(bmp.asImageBitmap(), spec.frameCount, spec.fps, spec.loop, spec.frameSequence)
                     }
                 }
             } catch (e: Throwable) {
@@ -119,19 +116,22 @@ class FrameAnimator(
     fun hasClip(action: ActionType): Boolean = clipFor(action) != null
 
     /**
-     * 按经过时间计算当前帧序号（0-based）。
+     * 按经过时间计算当前精灵图格子索引（0-based）。
      * @param elapsedSeconds 动作开始至今的秒数
-     * @return 帧序号；一次性动作超出时长后停在最后一帧
+     * @return 源图第 index 格；一次性动作超出时长后停在末帧
      */
     fun frameIndexAt(clip: Clip, elapsedSeconds: Float): Int {
-        val raw = (elapsedSeconds * clip.fps).toInt()
-        return if (clip.loop) {
-            ((raw % clip.frameCount) + clip.frameCount) % clip.frameCount
+        val count = clip.stepCount.coerceAtLeast(1)
+        val raw = (elapsedSeconds.coerceAtLeast(0f) * clip.fps).toInt()
+        val step = if (clip.loop) {
+            ((raw % count) + count) % count
         } else {
-            raw.coerceIn(0, clip.frameCount - 1)
+            raw.coerceIn(0, count - 1)
         }
+        val mapped = clip.frameSequence?.getOrNull(step) ?: step
+        return mapped.coerceIn(0, clip.frameCount - 1)
     }
 
     /** 一次性动作总时长（秒），用于判断动画是否播完 */
-    fun durationSeconds(clip: Clip): Float = clip.frameCount / clip.fps
+    fun durationSeconds(clip: Clip): Float = clip.stepCount / clip.fps
 }
