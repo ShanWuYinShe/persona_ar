@@ -334,19 +334,15 @@ fun SettingsDialog(
                             subtitle = "站直在桌面",
                             isSelected = false,
                             activeColor = Color(0xFF00B0FF),
-                            onClick = {
-                                if (currentMode == ARMode.ARCORE_3D) onStand()
-                            },
+                            onClick = { onStand() },
                             modifier = Modifier.weight(1f)
                         )
                         GameOptionChip(
                             title = "桌沿垂腿坐",
-                            subtitle = "坐在桌面边缘",
+                            subtitle = if (currentMode == ARMode.ARCORE_3D) "坐在桌面边缘" else "切换乖巧坐姿",
                             isSelected = false,
                             activeColor = Color(0xFFE65100),
-                            onClick = {
-                                if (currentMode == ARMode.ARCORE_3D) onSit()
-                            },
+                            onClick = { onSit() },
                             modifier = Modifier.weight(1f)
                         )
                     }
