@@ -27,7 +27,8 @@ class FrameAnimatorSpecTest {
     fun `all touch-triggered actions have a sprite mapping`() {
         // 与 PersonaViewModel.onTouchPart 的映射保持一致：HEAD/BODY/HAND/CHEEK
         val touchActions = listOf(
-            ActionType.WAVE,   // HEAD / HAND
+            ActionType.NOD,    // HEAD
+            ActionType.WAVE,   // HAND
             ActionType.POUT,   // CHEEK
             ActionType.BLUSH   // BODY
         )
@@ -56,5 +57,20 @@ class FrameAnimatorSpecTest {
         ActionType.values().forEach { action ->
             assertNotNull("$action 必须绑定预渲染精灵表，防止掉落静态矢量路径", FrameAnimator.specFor(action))
         }
+    }
+
+    @Test
+    fun `idle skips vertical float frame 2 and sleep stays calm without open-mouth yawn`() {
+        val idleSpec = FrameAnimator.specFor(ActionType.IDLE)!!
+        val idleSeq = idleSpec.frameSequence!!
+        assertTrue("IDLE 序列应跳过垂直上跳异常的第 2 帧", !idleSeq.contains(2))
+
+        val sleepSpec = FrameAnimator.specFor(ActionType.SLEEP)!!
+        assertEquals("SLEEP 应采用柔和低头闭眼待睡帧，而非张嘴打哈欠循环", "nod", sleepSpec.fileName)
+        assertEquals(1, sleepSpec.frameSequence?.size)
+        assertEquals(2, sleepSpec.frameSequence?.get(0))
+
+        val shakeSpec = FrameAnimator.specFor(ActionType.SHAKE_HEAD)!!
+        assertEquals("SHAKE_HEAD 不应混入上下点头帧", "idle", shakeSpec.fileName)
     }
 }

@@ -51,18 +51,19 @@ fun CharacterCanvasRenderer(
     val animator = remember { FrameAnimator(context.applicationContext) }
     val requestedClip = remember(visualState.action) { animator.clipFor(visualState.action) }
     val idleClip = remember { animator.clipFor(ActionType.IDLE) }
+    val sitClip = remember { animator.clipFor(ActionType.SIT) }
 
-    // 动作开始时间戳：当 action 或 actionStartedAtNanos 变化时同步更新，确保连续点击时从第 0 帧平滑重播
+    // 动作开始时间戳与常驻待机基准时钟解耦，避免动作结束后与 scheduleActionReset 发生二次跳帧
     var actionStartNanos by remember(visualState.action, visualState.actionStartedAtNanos) {
         mutableLongStateOf(
             if (visualState.actionStartedAtNanos > 0L) visualState.actionStartedAtNanos else System.nanoTime()
         )
     }
-    var nowNanos by remember { mutableLongStateOf(0L) }
+    val idleStartNanos = remember { System.nanoTime() }
+    var nowNanos by remember { mutableLongStateOf(System.nanoTime()) }
     LaunchedEffect(visualState.action, visualState.actionStartedAtNanos) {
         actionStartNanos = if (visualState.actionStartedAtNanos > 0L) visualState.actionStartedAtNanos else System.nanoTime()
     }
-    // 用无限动画驱动重绘，保证帧刷新
     LaunchedEffect(Unit) {
         while (true) {
             nowNanos = System.nanoTime()
@@ -73,21 +74,35 @@ fun CharacterCanvasRenderer(
     val elapsedSeconds = if (actionStartNanos > 0L && nowNanos >= actionStartNanos) {
         (nowNanos - actionStartNanos) / 1_000_000_000f
     } else 0f
+    val idleClockSeconds = ((nowNanos - idleStartNanos) / 1_000_000_000f).coerceAtLeast(0f)
 
-    // 一次性动作播完后自动平滑切回待机呼吸，避免定格在最后一帧；再次点击时立即从第 0 帧重新响应
-    val (activeClip, activeElapsed) = remember(requestedClip, idleClip, elapsedSeconds) {
-        if (requestedClip != null) {
-            if (requestedClip.loop || elapsedSeconds < animator.durationSeconds(requestedClip)) {
-                Pair(requestedClip, elapsedSeconds)
-            } else {
-                Pair(idleClip ?: requestedClip, elapsedSeconds)
+    // 坐姿保持：SIT 播完定格在正坐末帧；IDLE 且处于坐姿时延续正坐态不站回；一次性动作播完切回连续时钟待机
+    val (activeClip, activeElapsed) = remember(
+        requestedClip, idleClip, sitClip, visualState.action, visualState.skeletonStance, elapsedSeconds, idleClockSeconds
+    ) {
+        val isSitting = visualState.skeletonStance == SkeletonStance.SITTING
+        when {
+            visualState.action == ActionType.SIT && sitClip != null -> {
+                Pair(sitClip, elapsedSeconds.coerceAtMost(animator.durationSeconds(sitClip)))
             }
-        } else {
-            Pair(idleClip, elapsedSeconds)
+            requestedClip != null && visualState.action != ActionType.IDLE -> {
+                if (requestedClip.loop || elapsedSeconds < animator.durationSeconds(requestedClip)) {
+                    Pair(requestedClip, elapsedSeconds)
+                } else if (isSitting && sitClip != null) {
+                    Pair(sitClip, animator.durationSeconds(sitClip))
+                } else {
+                    Pair(idleClip ?: requestedClip, idleClockSeconds)
+                }
+            }
+            isSitting && sitClip != null -> {
+                Pair(sitClip, animator.durationSeconds(sitClip))
+            }
+            else -> {
+                Pair(idleClip, idleClockSeconds)
+            }
         }
     }
 
-    // 当前帧序号：整张精灵表不切分，绘制时按网格取第 index 格
     val currentFrameIndex = remember(activeClip, activeElapsed) {
         activeClip?.let { clip ->
             animator.frameIndexAt(clip, activeElapsed)
@@ -106,10 +121,52 @@ fun CharacterCanvasRenderer(
         label = "smoothTiltY"
     )
 
-    // 动作与表情物理律动（跳跃腾空 / 摇头摆头 / 得意歪头）
+    // 动作与表情物理律动（跳跃腾空+挤压拉伸 / 摇头摆头 / 睡觉轻呼吸摇晃 / 得意昂首）
     val actionPhaseSec = elapsedSeconds.coerceAtLeast(0f)
-    val actionShakeOffsetX = if (visualState.action == ActionType.SHAKE_HEAD && actionPhaseSec < 1.5f) {
-        sin(actionPhaseSec * 16f) * 9f * (1f - actionPhaseSec / 1.5f)
+    val jumpClipDur = requestedClip?.let { animator.durationSeconds(it) } ?: 1.55f
+    val jumpOffsetY: Float
+    val jumpScaleX: Float
+    val jumpScaleY: Float
+    if (visualState.action == ActionType.JUMP && actionPhaseSec < jumpClipDur) {
+        val p = (actionPhaseSec / jumpClipDur).coerceIn(0f, 1f)
+        when {
+            p < 0.18f -> {
+                val k = p / 0.18f
+                jumpOffsetY = 12f * k; jumpScaleX = 1f + 0.07f * k; jumpScaleY = 1f - 0.08f * k
+            }
+            p < 0.78f -> {
+                val arc = sin(((p - 0.18f) / 0.60f) * Math.PI).toFloat()
+                jumpOffsetY = -78f * arc; jumpScaleX = 1f - 0.04f * arc; jumpScaleY = 1f + 0.06f * arc
+            }
+            else -> {
+                val c = sin(((p - 0.78f) / 0.22f) * Math.PI).toFloat()
+                jumpOffsetY = 10f * c; jumpScaleX = 1f + 0.06f * c; jumpScaleY = 1f - 0.06f * c
+            }
+        }
+    } else {
+        jumpOffsetY = 0f; jumpScaleX = 1f; jumpScaleY = 1f
+    }
+
+    val actionShakeOffsetX = if (visualState.action == ActionType.SHAKE_HEAD && actionPhaseSec < 1.75f) {
+        val p = (actionPhaseSec / 1.75f).coerceIn(0f, 1f)
+        sin(p * Math.PI * 6.0).toFloat() * 14f * (1f - p * 0.5f)
+    } else 0f
+    val actionShakeTiltDeg = if (visualState.action == ActionType.SHAKE_HEAD && actionPhaseSec < 1.75f) {
+        val p = (actionPhaseSec / 1.75f).coerceIn(0f, 1f)
+        sin(p * Math.PI * 6.0).toFloat() * 3.2f * (1f - p * 0.5f)
+    } else 0f
+
+    val sleepBobY = if (visualState.action == ActionType.SLEEP) {
+        sin(idleClockSeconds * 1.45).toFloat() * 3.5f
+    } else 0f
+    val sleepTiltDeg = if (visualState.action == ActionType.SLEEP) {
+        sin(idleClockSeconds * 0.92).toFloat() * 2.2f
+    } else 0f
+    val smugScaleBoost = if (visualState.action == ActionType.SMUG || visualState.emotion == EmotionType.CONFIDENT) {
+        1.028f
+    } else 1f
+    val smugLiftY = if (visualState.action == ActionType.SMUG) {
+        -6f * sin((actionPhaseSec / 2.2f).coerceIn(0f, 1f) * Math.PI).toFloat()
     } else 0f
 
     // 触碰即时局部形变响应 (Squeeze & Spring Bounce)
@@ -132,10 +189,12 @@ fun CharacterCanvasRenderer(
     )
 
     val smugLeanDeg by animateFloatAsState(
-        targetValue = if (visualState.action == ActionType.SMUG || visualState.emotion == EmotionType.CONFIDENT) {
-            4.5f
-        } else 0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        targetValue = when {
+            visualState.action == ActionType.SMUG || visualState.emotion == EmotionType.CONFIDENT ->
+                2.5f * sin(idleClockSeconds * 1.8).toFloat()
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 180),
         label = "smugLean"
     )
 
@@ -177,12 +236,6 @@ fun CharacterCanvasRenderer(
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var scale by remember { mutableFloatStateOf(1.0f) }
-
-    val jumpAnim by animateFloatAsState(
-        targetValue = if (visualState.action == ActionType.JUMP) -50f else 0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "jump"
-    )
 
     Box(
         modifier = modifier
@@ -228,7 +281,7 @@ fun CharacterCanvasRenderer(
                 .offset {
                     IntOffset(
                         (offsetX + smoothTiltX + actionShakeOffsetX).roundToInt(),
-                        (offsetY + smoothTiltY + effectiveBounce + jumpAnim + bodySquishOffset).roundToInt()
+                        (offsetY + smoothTiltY + effectiveBounce + jumpOffsetY + sleepBobY + smugLiftY + bodySquishOffset).roundToInt()
                     )
                 }
         ) {
@@ -289,9 +342,14 @@ fun CharacterCanvasRenderer(
                 val charW = 240f * s
                 val charH = charW * (activeClip.frameHeight.toFloat() / activeClip.frameWidth.toFloat())
                 val footY = cy + 255f * s
+                val waistY = footY - charH * 0.45f
                 val headCenterY = footY - charH * 0.84f
+                val spriteTilt = smugLeanDeg + actionShakeTiltDeg + sleepTiltDeg
+                val sx = cheekSquishScaleX * jumpScaleX * smugScaleBoost
+                val sy = headSquishScaleY * jumpScaleY * smugScaleBoost
                 withTransform({
-                    rotate(degrees = smugLeanDeg, pivot = Offset(cx, footY))
+                    rotate(degrees = spriteTilt, pivot = Offset(cx, waistY))
+                    scale(scaleX = sx, scaleY = sy, pivot = Offset(cx, footY))
                 }) {
                     drawAnimatedFrame(
                         clip = activeClip,
