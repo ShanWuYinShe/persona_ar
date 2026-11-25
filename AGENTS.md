@@ -38,6 +38,11 @@
   - 后端单元测试：`cd server && go test -v ./...`
   - 代码规范与 Lint：`~/.agents/bin/skill-lint AGENTS.md`
 
+## 设备选择与走查证据（真机优先）
+- 测试/走查 Android 客户端前先枚举设备：`adb devices -l` 中状态为 `device` 的设备才可用；有符合条件的真机时一律用真机，只有没有合格真机才用模拟器，并记录原因。完整判定流程（连接状态、版本/ABI、形态能力、数据安全）见用户级 skill `android-emulator-debug`，本节只写 persona_ar 专属判据。
+- persona_ar 专属判据：可安装机型要求 `minSdk 26`（见 `android/app/build.gradle.kts`），ABI 需与打包产物匹配；ARCore 为可选能力（`android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 为 `optional`），无 ARCore / 无 GMS 设备自动降级为 `UniversalSensorSurfaceTracker`。因此「ARCore 物理平面检测 / 空间锚定」的验收必须在支持 ARCore 的真机上：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且应用内 `ArCoreApk.checkAvailability()` 返回支持；`adb -s <serial> logcat` 出现 `ARSessionManager` 的 Universal Sensor 日志即说明走的是降级路径。2.5D 立绘、Filament 3D、动作表情与语音交互可在普通真机验证。
+- 走查记录与 PR 证据必须写明设备型号 + 系统版本 + serial（模拟器写 AVD/实例名），启动/安装/截图等命令固定带 `-s <serial>`；模拟器与降级路径的结论不得当作 ARCore 真机结论。
+
 ## 敏感凭据规范
 - 任何真实 API Token（如 `LLM_API_KEY`）严禁写入代码、文档、commit 记录或日志；统一通过环境变量或 `.env` 注入。
 

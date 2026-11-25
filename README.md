@@ -106,7 +106,11 @@ go run ./cmd/server
 ### 3. 本地构建与运行 Android 客户端
 
 1. 打开 Android Studio，选择 **Open** 并导入 `android` 目录。
-2. 确保已连接真机或启动 Android 模拟器（推荐 API 26+）。
+2. 选择运行设备（**真机优先**）：
+   - 先枚举设备：`adb devices -l` 中只有状态为 `device` 的设备可用；选中后所有命令固定加 `-s <serial>`。完整设备判定流程见用户级 skill `android-emulator-debug`。
+   - 本项目 **ARCore 是可选能力**：`AndroidManifest.xml` 中 `android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 元数据为 `optional`，依赖 `com.google.ar:core`（版本见 `android/app/build.gradle.kts`）。设备有可用 ARCore 时走物理平面检测与空间锚定，否则自动降级为通用传感器视差追踪，2.5D 立绘与 3D 手办模式照常运行。
+   - 因此 **ARCore 物理平面 / 空间锚定必须在支持 ARCore 的真机上验收**：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且设备可用 Google Play AR 服务（应用内由 `ArCoreApk.checkAvailability()` 判定，降级时 logcat 会打印 `ARSessionManager` 的 Universal Sensor 日志）。其余部分（2.5D 透视、3D 渲染与动作表情、语音交互）普通真机满足 API 26+ 与 ABI 匹配即可验证；无 ARCore 的真机只能验证这些降级路径。
+   - 没有符合条件的真机时才用模拟器（推荐 API 26+），并记录原因；模拟器只能验证非 AR 部分，虚拟相机与模拟传感器画面不能替代真机 AR 透视与空间追踪结论。
 3. 运行构建：
    - 如果使用 Android 模拟器，App 默认自动连接宿主机 `http://10.0.2.2:8000/`。
    - 如果使用真机运行，请确保手机与电脑处于同一局域网 Wi-Fi，在 App 顶部齿轮【设置】中将服务器地址修改为 `http://<电脑局域网IP>:8000/`。
