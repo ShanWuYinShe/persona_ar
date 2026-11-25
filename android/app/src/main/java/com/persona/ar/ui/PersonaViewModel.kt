@@ -356,14 +356,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 val rawShiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
                 val rawShiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
 
-                // 传感器白噪声死区与低通滤波：手机静置时过滤 < 1.8dp 的 MEMS 漂移抖动，杜绝 2.5D 立绘静止时轻微晃动
+                // 传感器白噪声死区与滞回滤波：手机静置时过滤 < 2.6dp 的 MEMS 漂移抖动，杜绝静止随机位移
                 val deltaX = kotlin.math.abs(rawShiftX - filteredShiftX)
                 val deltaY = kotlin.math.abs(rawShiftY - filteredShiftY)
-                if (deltaX > 1.8f) {
-                    filteredShiftX = filteredShiftX * 0.84f + rawShiftX * 0.16f
+                if (deltaX > 2.6f) {
+                    filteredShiftX += (rawShiftX - filteredShiftX) * 0.14f
                 }
-                if (deltaY > 1.8f) {
-                    filteredShiftY = filteredShiftY * 0.84f + rawShiftY * 0.16f
+                if (deltaY > 2.6f) {
+                    filteredShiftY += (rawShiftY - filteredShiftY) * 0.14f
                 }
                 val shiftX = filteredShiftX
                 val shiftY = filteredShiftY
@@ -641,7 +641,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             TouchPart.BODY -> TouchReaction(pose = "SHY", blush = 0.85f, pout = 0f, smug = 0f)
         }
         val touchAction = when (part) {
-            TouchPart.HEAD -> ActionType.WAVE
+            TouchPart.HEAD -> ActionType.NOD
             TouchPart.CHEEK -> ActionType.POUT
             TouchPart.HAND -> ActionType.WAVE
             TouchPart.BODY -> ActionType.BLUSH
@@ -649,8 +649,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val touchEmotion = when (part) {
             TouchPart.HEAD -> EmotionType.JOY
             TouchPart.CHEEK -> EmotionType.ANGRY
-            TouchPart.HAND -> EmotionType.CONFIDENT
+            TouchPart.HAND -> EmotionType.SHY
             TouchPart.BODY -> EmotionType.SHY
+        }
+        val touchExpr = when (part) {
+            TouchPart.HEAD -> "JOY"
+            TouchPart.CHEEK -> "POUT"
+            TouchPart.HAND -> "WINK"
+            TouchPart.BODY -> "BLUSH_FACE"
         }
 
         _uiState.update { current ->
@@ -662,6 +668,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     smugTiltDegrees = reaction.smug,
                     action = touchAction,
                     emotion = touchEmotion,
+                    expression = touchExpr,
                     actionStartedAtNanos = touchReactionStartNanos,
                     sleepinessFactor = 0f,
                     touchReaction = part,
@@ -716,10 +723,11 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     emotion = resp.emotion
                 )
 
-                // 服务端触摸回复也可能带动作（点头/噘嘴/鞠躬等），必须与对话路径一样记录开始时刻，
-                // 否则 FigureScene 用旧时间戳/0 计算 actionElapsed，动作会直接判定为已结束而不播放。
+                // 若端侧 2.6s 专属触摸动作仍在播放，保留本地专属触摸动作与开始时刻不被异步回复打断/跳帧，
+                // 仅同步气泡文本、语音、好感度与非冲突表情状态。
                 val actionStartNanos = System.nanoTime()
                 val staleInteraction = interactionEpoch != myEpoch
+                var keepTouchPoseActive = false
                 _uiState.update { current ->
                     val pose = when (resp.emotion) {
                         EmotionType.SHY -> "SHY"
@@ -728,13 +736,25 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         EmotionType.CONFIDENT -> "SMUG"
                         else -> reaction.pose
                     }
-                    if (staleInteraction) {
-                        current.copy(
+                    val stillInThisTouch = !staleInteraction &&
+                        current.visualState.touchReactionStartedAtNanos == touchReactionStartNanos
+                    keepTouchPoseActive = stillInThisTouch
+                    when {
+                        staleInteraction -> current.copy(
                             messages = current.messages + personaMessage,
                             personaStatus = current.personaStatus?.copy(affinity = resp.currentAffinity)
                         )
-                    } else {
-                        current.copy(
+                        stillInThisTouch -> current.copy(
+                            messages = current.messages + personaMessage,
+                            visualState = current.visualState.copy(
+                                emotion = resp.emotion,
+                                highResPose = pose
+                            ),
+                            personaStatus = current.personaStatus?.copy(
+                                affinity = resp.currentAffinity
+                            )
+                        )
+                        else -> current.copy(
                             messages = current.messages + personaMessage,
                             visualState = current.visualState.copy(
                                 emotion = resp.emotion,
@@ -750,7 +770,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
                 playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
-                if (!staleInteraction) {
+                if (!staleInteraction && !keepTouchPoseActive) {
                     scheduleActionReset(resp.action, actionStartNanos)
                 }
                 addBondExp(expGain)
@@ -1146,31 +1166,41 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 直接设置 3D 骨骼体态（设置页「站立姿态 / 桌沿垂腿坐」按钮与动作预览共用） */
+    /** 设置骨骼体态（3D 与 2.5D 共用：站立 ↔ 坐姿） */
     fun setSkeletonStance(stance: SkeletonStance) {
+        val startedAt = System.nanoTime()
         _uiState.update { current ->
+            val nextAction = when {
+                stance == SkeletonStance.SITTING -> ActionType.SIT
+                current.visualState.action == ActionType.SIT -> ActionType.IDLE
+                else -> current.visualState.action
+            }
+            val nextStarted = if (nextAction != current.visualState.action || nextAction == ActionType.SIT) {
+                startedAt
+            } else {
+                current.visualState.actionStartedAtNanos
+            }
             current.copy(
                 spatialAnchor = current.spatialAnchor.copy(skeletonStance = stance),
-                visualState = current.visualState.copy(skeletonStance = stance)
+                visualState = current.visualState.copy(
+                    skeletonStance = stance,
+                    action = nextAction,
+                    actionStartedAtNanos = nextStarted
+                )
             )
         }
     }
 
     /**
-     * 切换 3D 骨骼姿态 (站立 STANDING / 桌沿垂腿坐姿 SITTING)
+     * 切换骨骼姿态 (站立 STANDING / 坐姿 SITTING)
      */
     fun onToggleSkeletonStance() {
-        _uiState.update { current ->
-            val nextStance = if (current.spatialAnchor.skeletonStance == SkeletonStance.STANDING) {
-                SkeletonStance.SITTING
-            } else {
-                SkeletonStance.STANDING
-            }
-            current.copy(
-                spatialAnchor = current.spatialAnchor.copy(skeletonStance = nextStance),
-                visualState = current.visualState.copy(skeletonStance = nextStance)
-            )
+        val nextStance = if (_uiState.value.spatialAnchor.skeletonStance == SkeletonStance.STANDING) {
+            SkeletonStance.SITTING
+        } else {
+            SkeletonStance.STANDING
         }
+        setSkeletonStance(nextStance)
     }
 
     // 真实书桌实景物理边界拓扑定义 (基于实景几何标定，零 GMS 依赖)

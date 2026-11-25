@@ -268,8 +268,8 @@ fun PersonaMainScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // S. 3D 手办姿态切换（仅在已放置锚定人物后出现，未召唤前不展示以免困惑）
-                if (uiState.arMode == ARMode.ARCORE_3D && uiState.spatialAnchor.isAnchored) {
+                // S. 伴侣姿态切换（3D 已锚定后及 2.5D 模式均支持随时切换站姿 / 坐姿）
+                if (uiState.arMode == ARMode.BILLBOARD_2_5D || uiState.spatialAnchor.isAnchored) {
                     val isSitting = uiState.spatialAnchor.skeletonStance == SkeletonStance.SITTING
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
