@@ -45,11 +45,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.character.CharacterVisualState
+import com.persona.ar.character.drawAnimeEmoteVfx
 import com.persona.ar.character.filament.FigureFrameState
 import com.persona.ar.character.filament.FilamentFigureView
 import com.persona.ar.character.skeleton.MultiViewProfile
 import com.persona.ar.character.skeleton.Skeleton3DEngine
 import com.persona.ar.character.skeleton.SkeletonStance
+import com.persona.ar.data.model.ActionType
+import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
@@ -316,13 +319,14 @@ fun ARCoreOverlay(
                     )
                 }
 
-                // 伴侣脚下若隐若现的二游契约微光光环 (现实弱光下呈现明亮辉光，强光下呈现通透水晶光)
-                val ringAlpha = if (spatialAnchor.isLowLight) 0.35f else 0.18f
+                // 伴侣脚下按当前情绪实时变色的二游契约微光光环（修复旧版 Color(0x00E5FF) 漏写 FF 导致透明失效的 bug）
+                val emotionRingColor = com.persona.ar.character.emotionAccentColor(visualState.emotion)
+                val ringAlpha = if (spatialAnchor.isLowLight) 0.58f else 0.36f
                 drawOval(
-                    color = Color(0x00E5FF).copy(alpha = ringAlpha),
-                    topLeft = Offset(shadowCenterX - shadowWidth * 0.45f, shadowCenterY - shadowHeight * 0.45f),
-                    size = Size(shadowWidth * 0.9f, shadowHeight * 0.9f),
-                    style = Stroke(width = 1.5f)
+                    color = emotionRingColor.copy(alpha = ringAlpha),
+                    topLeft = Offset(shadowCenterX - shadowWidth * 0.48f, shadowCenterY - shadowHeight * 0.48f),
+                    size = Size(shadowWidth * 0.96f, shadowHeight * 0.96f),
+                    style = Stroke(width = 2.4f)
                 )
 
                 // 自由滑动中：高亮贴地滑行瞄准光盘与十字准星
@@ -361,7 +365,7 @@ fun ARCoreOverlay(
                 }
 
                 // 现实桌面透视空间微光切面网格 (横向阶梯透视线 + 纵向透视发散辐射线，构建完整物理贴地切面)
-                val gridColor = Color(0x00E5FF).copy(alpha = 0.13f)
+                val gridColor = emotionRingColor.copy(alpha = 0.22f)
                 val gridW = shadowWidth * 1.65f
                 val gridH = shadowHeight * 2.2f
 
@@ -526,9 +530,16 @@ fun ARCoreOverlay(
             }
         }
 
-        // 2.5 硬件对焦指示框：独立成层，绘制在 3D 手办之上（原在贴地层 Canvas 内会被手办遮挡）
+        // 2.5 硬件对焦指示框 + 3D 动漫情绪符号与红晕特效层（叠在 Filament TextureView 之上，清晰直觉传达角色情绪）
         if (spatialAnchor.isAnchored) {
             CameraFocusBracketOverlay(spatialAnchor = spatialAnchor, isTrue3D = isTrue3D, modifier = Modifier.fillMaxSize())
+            if (isTrue3D && spatialAnchor.isInView) {
+                Figure3DEmotionVfxOverlay(
+                    spatialAnchor = spatialAnchor,
+                    visualState = visualState,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
 
@@ -682,19 +693,20 @@ private fun CameraFocusBracketOverlay(
 ) {
     Canvas(modifier = modifier) {
         val focusAge = System.currentTimeMillis() - spatialAnchor.cameraFocusTimestamp
-        if (!spatialAnchor.isCameraFocusing && focusAge >= 1600L) return@Canvas
+        if (focusAge >= 850L) return@Canvas
         val w = size.width
         val h = size.height
         val ax = w * spatialAnchor.screenX + if (isTrue3D) 0f else spatialAnchor.parallaxShiftX
         val ay = h * spatialAnchor.screenY + if (isTrue3D) 0f else (135f * spatialAnchor.scaleFactor) + spatialAnchor.parallaxShiftY
 
-        val focusProgress = (focusAge.toFloat() / 1600f).coerceIn(0f, 1f)
-        val focusAlpha = if (spatialAnchor.isCameraFocusing) 0.90f else (1.0f - focusProgress).coerceIn(0f, 1f)
-        val boxSize = (70f - (if (spatialAnchor.isCameraFocusing) 6f else 18f * focusProgress)) * spatialAnchor.scaleFactor
-        val focusColor = if (spatialAnchor.isCameraFocusing) Color(0xFFFFD54F) else Color(0xFF69F0AE)
+        val focusProgress = (focusAge.toFloat() / 850f).coerceIn(0f, 1f)
+        val focusAlpha = (1.0f - focusProgress * focusProgress).coerceIn(0f, 1f)
+        val boxSize = (62f - 18f * focusProgress) * spatialAnchor.scaleFactor
+        val focusColor = if (focusProgress < 0.45f && spatialAnchor.isCameraFocusing) Color(0xFFFFD54F) else Color(0xFF69F0AE)
         val cornerLen = 14f * spatialAnchor.scaleFactor
         val fX = ax
-        val fY = ay - (105f * spatialAnchor.scaleFactor) // 对准角色躯干与心口
+        val torsoOffset = if (isTrue3D) h * 0.145f * spatialAnchor.scaleFactor else 105f * spatialAnchor.scaleFactor
+        val fY = ay - torsoOffset // 对准角色躯干心口位置
 
         // 取景器四角直角线瞄准括号 (AF Bracket)
         // 左上
@@ -711,5 +723,53 @@ private fun CameraFocusBracketOverlay(
         drawLine(focusColor.copy(alpha = focusAlpha), Offset(fX + boxSize, fY + boxSize), Offset(fX + boxSize, fY + boxSize - cornerLen), strokeWidth = 2.5f)
         // 中心十字聚焦微点
         drawCircle(focusColor.copy(alpha = focusAlpha * 0.9f), radius = 2.5f, center = Offset(fX, fY))
+    }
+}
+
+/**
+ * 3D 手办屏幕投影动漫情绪特效层：依据针孔视野高度推算头顶位置，实时渲染音符 ♪、粉红爱心 ♥、
+ * 傲娇红十字 💢、自信金星 ✦、Zzz 气泡与暖粉颊晕，确保用户一眼感知角色情绪。
+ */
+@Composable
+private fun Figure3DEmotionVfxOverlay(
+    spatialAnchor: ARSpatialAnchor,
+    visualState: CharacterVisualState,
+    modifier: Modifier = Modifier
+) {
+    val hasActiveEmote = visualState.emotion != EmotionType.NEUTRAL ||
+            visualState.action != ActionType.IDLE ||
+            visualState.touchReaction != null ||
+            visualState.blushIntensity > 0.2f
+    if (!hasActiveEmote) return
+
+    var animTimeSec by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(visualState.emotion, visualState.action, visualState.touchReaction) {
+        val startNanos = System.nanoTime()
+        while (true) {
+            animTimeSec = (System.nanoTime() - startNanos) / 1_000_000_000f
+            kotlinx.coroutines.delay(16L)
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val s = spatialAnchor.scaleFactor
+        val isSitting = spatialAnchor.skeletonStance == SkeletonStance.SITTING
+        // 3D 针孔投影高度比 (0.22m / 2*0.65*tan(31°)) ≈ 0.282 * scale；坐姿约为站姿 68%
+        val headHeightFrac = (if (isSitting) 0.175f else 0.255f) * s
+        val headX = w * spatialAnchor.screenX
+        val headY = (h * spatialAnchor.screenY - h * headHeightFrac).coerceIn(60f, h - 100f)
+
+        drawAnimeEmoteVfx(
+            headCenterX = headX,
+            headCenterY = headY,
+            scale = s * 1.08f,
+            emotion = visualState.emotion,
+            action = visualState.action,
+            animTime = animTimeSec,
+            blushIntensity = visualState.blushIntensity,
+            drawFaceBlushGlow = true
+        )
     }
 }

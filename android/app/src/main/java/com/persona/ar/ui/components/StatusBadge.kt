@@ -191,10 +191,10 @@ fun StatusBadge(
 
                 Spacer(modifier = Modifier.height(3.dp))
 
-                // 萌系羁绊经验条（双层渐变 + 进度端点微高光）
+                // 萌系羁绊经验条（宽度收敛为 92dp 留足右侧四按钮微标签空间）
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.width(106.dp)
+                    modifier = Modifier.width(92.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -230,112 +230,103 @@ fun StatusBadge(
             }
         }
 
-        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标，二次元通透微质感）
+        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标 + 直观微标签，告别看图标猜功能）
         Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.Top
         ) {
             val isARActive = arMode == ARMode.ARCORE_3D
 
-            // AR 现实相机 / 3D 纯净桌面 快速切换快捷键
-            IconButton(
-                onClick = onToggleARMode,
-                modifier = Modifier
-                    .scale(if (isARActive) arGlowPulse else 1f)
-                    .shadow(elevation = if (isARActive) 4.dp else 2.dp, shape = CircleShape)
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isARActive) {
-                            Brush.linearGradient(
-                                listOf(Color(0xFFFF5277), Color(0xFFFF2A6D))
-                            )
-                        } else {
-                            Brush.linearGradient(
-                                listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
-                            )
-                        }
-                    )
-                    .border(
-                        1.5.dp,
-                        if (isARActive) Color(0xFFFF8DA1) else borderColor.copy(alpha = 0.85f),
-                        CircleShape
-                    )
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.ViewInAr,
-                    contentDescription = if (isARActive) "切换至 3D 虚拟空间" else "切换至 AR 现实相机",
-                    tint = if (isARActive) Color.White else borderColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            HudActionButton(
+                label = if (isARActive) "3D" else "2.5D",
+                icon = Icons.Filled.ViewInAr,
+                contentDescription = if (isARActive) "切换至 2.5D 立绘模式" else "切换至 3D 空间模式",
+                tint = if (isARActive) Color.White else borderColor,
+                borderColor = if (isARActive) Color(0xFFFF8DA1) else borderColor.copy(alpha = 0.85f),
+                bgBrush = if (isARActive) {
+                    Brush.linearGradient(listOf(Color(0xFFFF5277), Color(0xFFFF2A6D)))
+                } else {
+                    Brush.linearGradient(listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC)))
+                },
+                scale = if (isARActive) arGlowPulse else 1f,
+                onClick = onToggleARMode
+            )
 
-            // 回忆手账快捷键
-            IconButton(
-                onClick = onOpenMemoryNotebook,
-                modifier = Modifier
-                    .shadow(elevation = 2.dp, shape = CircleShape)
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
-                        )
-                    )
-                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.HistoryEdu,
-                    contentDescription = "心语回忆手账",
-                    tint = Color(0xFFFF4E8E),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            HudActionButton(
+                label = "手账",
+                icon = Icons.Filled.HistoryEdu,
+                contentDescription = "心语回忆手账",
+                tint = Color(0xFFFF4E8E),
+                borderColor = borderColor.copy(alpha = 0.85f),
+                bgBrush = Brush.linearGradient(listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))),
+                onClick = onOpenMemoryNotebook
+            )
 
-            // 角色图鉴/契约工坊快捷键
-            IconButton(
-                onClick = onOpenStore,
-                modifier = Modifier
-                    .shadow(elevation = 2.dp, shape = CircleShape)
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
-                        )
-                    )
-                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.AutoAwesome,
-                    contentDescription = "契约工坊与伙伴图鉴",
-                    tint = Color(0xFFFFB300),
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            HudActionButton(
+                label = "伙伴",
+                icon = Icons.Filled.AutoAwesome,
+                contentDescription = "契约工坊与伙伴图鉴",
+                tint = Color(0xFFE65100),
+                borderColor = borderColor.copy(alpha = 0.85f),
+                bgBrush = Brush.linearGradient(listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))),
+                onClick = onOpenStore
+            )
 
-            // 系统设置快捷键
-            IconButton(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .shadow(elevation = 2.dp, shape = CircleShape)
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))
-                        )
-                    )
-                    .border(1.5.dp, borderColor.copy(alpha = 0.85f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "系统与互动设置",
-                    tint = borderColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            HudActionButton(
+                label = "设置",
+                icon = Icons.Default.Settings,
+                contentDescription = "系统与互动设置",
+                tint = borderColor,
+                borderColor = borderColor.copy(alpha = 0.85f),
+                bgBrush = Brush.linearGradient(listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC))),
+                onClick = onOpenSettings
+            )
         }
+    }
+}
+
+@Composable
+private fun HudActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    tint: Color,
+    borderColor: Color,
+    bgBrush: Brush,
+    scale: Float = 1f,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .scale(scale)
+                .shadow(elevation = 3.dp, shape = CircleShape)
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(bgBrush)
+                .border(1.5.dp, borderColor, CircleShape)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = tint,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xAA281C38))
+                .padding(horizontal = 4.dp, vertical = 0.5.dp)
+        )
     }
 }
 

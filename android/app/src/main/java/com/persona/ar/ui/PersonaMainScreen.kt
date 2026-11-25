@@ -265,81 +265,125 @@ fun PersonaMainScreen(
                 .padding(end = 16.dp)
         ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // S. 3D 手办姿态切换纽扣 (站姿 ↔ 优雅少女坐姿平滑切换)
-                if (uiState.arMode == ARMode.ARCORE_3D) {
+                // S. 3D 手办姿态切换（仅在已放置锚定人物后出现，未召唤前不展示以免困惑）
+                if (uiState.arMode == ARMode.ARCORE_3D && uiState.spatialAnchor.isAnchored) {
                     val isSitting = uiState.spatialAnchor.skeletonStance == SkeletonStance.SITTING
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(if (isSitting) Color(0xFFFF8F00) else Color(0xE6FFFDF9))
-                            .border(1.8.dp, if (isSitting) Color(0xFFFFB300) else Color(0xFF281C38), CircleShape)
-                            .clickable { viewModel.onToggleSkeletonStance() },
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isSitting) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
-                            contentDescription = if (isSitting) "当前坐姿 (点击切换站姿)" else "当前站姿 (点击切换坐姿)",
-                            tint = if (isSitting) Color.White else Color(0xFF281C38),
-                            modifier = Modifier.size(22.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(if (isSitting) Color(0xFFFF8F00) else Color(0xE6FFFDF9))
+                                .border(1.8.dp, if (isSitting) Color(0xFFFFB300) else Color(0xFF281C38), CircleShape)
+                                .clickable { viewModel.onToggleSkeletonStance() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSitting) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
+                                contentDescription = if (isSitting) "当前坐姿 (点击切换站姿)" else "当前站姿 (点击切换坐姿)",
+                                tint = if (isSitting) Color.White else Color(0xFF281C38),
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
+                        Text(
+                            text = if (isSitting) "坐姿" else "站姿",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xAA281C38))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
                         )
                     }
                 }
 
                 // A. 实景视野多模态交互纽扣 (让二次元伴侣看懂眼前真实的桌面与物体)
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xE6FFFDF9))
-                        .border(1.8.dp, Color(0xFF00E5FF), CircleShape)
-                        .clickable {
-                            val realCameraBitmap = cameraFrameProvider?.invoke()
-                            viewModel.onVisionInteract(realCameraBitmap)
-                        },
-                    contentAlignment = Alignment.Center
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Visibility,
-                        contentDescription = "实景视野感知",
-                        tint = Color(0xFF0091EA),
-                        modifier = Modifier.size(22.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xE6FFFDF9))
+                            .border(1.8.dp, Color(0xFF00E5FF), CircleShape)
+                            .clickable {
+                                val realCameraBitmap = cameraFrameProvider?.invoke()
+                                viewModel.onVisionInteract(realCameraBitmap)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Visibility,
+                            contentDescription = "实景视野感知",
+                            tint = Color(0xFF0091EA),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                    Text(
+                        text = "看桌面",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xAA281C38))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
                     )
                 }
 
                 // B. 纯净 AR 快照合影纽扣
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xE6FFFDF9))
-                        .border(1.8.dp, Color(0xFF281C38), CircleShape)
-                        .clickable {
-                            // 触发快门闪光动画并执行真实拍立得合成保存
-                            isShutterFlashing = true
-                            showSnapshotToast = true
-                            coroutineScope.launch {
-                                val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
-                                    ?: "我就站在你的现实世界中哦~"
-                                val realCameraBitmap = cameraFrameProvider?.invoke()
-                                SnapshotHelper.captureAndSavePolaroid(
-                                    context = context,
-                                    visualState = uiState.visualState,
-                                    quote = quote.take(30),
-                                    cameraFrameBitmap = realCameraBitmap
-                                )
-                            }
-                        },
-                    contentAlignment = Alignment.Center
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.CameraAlt,
-                        contentDescription = "纯净 AR 合影拍摄",
-                        tint = Color(0xFF281C38),
-                        modifier = Modifier.size(22.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xE6FFFDF9))
+                            .border(1.8.dp, Color(0xFF281C38), CircleShape)
+                            .clickable {
+                                isShutterFlashing = true
+                                showSnapshotToast = true
+                                coroutineScope.launch {
+                                    val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
+                                        ?: "我就站在你的现实世界中哦~"
+                                    val realCameraBitmap = cameraFrameProvider?.invoke()
+                                    SnapshotHelper.captureAndSavePolaroid(
+                                        context = context,
+                                        visualState = uiState.visualState,
+                                        quote = quote.take(30),
+                                        cameraFrameBitmap = realCameraBitmap
+                                    )
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CameraAlt,
+                            contentDescription = "纯净 AR 合影拍摄",
+                            tint = Color(0xFF281C38),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                    Text(
+                        text = "合影",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xAA281C38))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
                     )
                 }
             }
@@ -361,6 +405,7 @@ fun PersonaMainScreen(
                     isSpeaking = uiState.isSpeaking,
                     partnerName = uiState.visualState.name.ifBlank { "星野 Hoshino" },
                     partnerColorHex = uiState.visualState.model?.previewColorHex ?: "#FF5277",
+                    currentEmotion = uiState.visualState.emotion,
                     streamingText = uiState.streamingText,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -377,6 +422,7 @@ fun PersonaMainScreen(
                     onStartHoldVoice = { viewModel.startHoldRecording() },
                     onStopHoldVoice = { viewModel.stopHoldRecording() },
                     onTouchPart = { part -> viewModel.onTouchPart(part) },
+                    onPreviewAction = { action -> viewModel.previewAction(action) },
                     modifier = Modifier.fillMaxWidth()
                 )
             }

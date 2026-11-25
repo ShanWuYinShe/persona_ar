@@ -72,4 +72,55 @@ class UniversalSensorSurfaceTrackerTest {
         assertTrue("锚点投影应在视野水平中心附近，实际 ${anchor.screenX}", anchor.screenX in 0.40f..0.60f)
         assertTrue("锚点投影应在视野中下部，实际 ${anchor.screenY}", anchor.screenY in 0.50f..0.80f)
     }
+
+    @Test
+    fun `gravity leveled tracking hides anchor when panning away and restores on return`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        // 竖屏平视朝正北：Right=(1,0,0), Up=(0,0,1), -Fwd=(0,-1,0)
+        val uprightNorth = floatArrayOf(
+            1f, 0f, 0f,
+            0f, 0f, -1f,
+            0f, 1f, 0f
+        )
+        // 连续喂入滤波使矩阵收敛到正北姿态
+        repeat(40) { tracker.applyOrientationFilter(uprightNorth, 0f, 0f, 0f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+        assertTrue("锚定瞬间应在视野内", tracker.spatialAnchor.value.isInView)
+
+        // 右转 90° 朝向正东：Right=(0,-1,0), Up=(0,0,1), -Fwd=(-1,0,0)
+        val facingEast = floatArrayOf(
+            0f, 0f, -1f,
+            -1f, 0f, 0f,
+            0f, 1f, 0f
+        )
+        repeat(40) { tracker.applyOrientationFilter(facingEast, 90f, 0f, 0f) }
+        val panned = tracker.spatialAnchor.value
+        assertFalse("镜头移开 90° 后人物应平滑出画消失", panned.isInView)
+        assertTrue("移开向右应提示人物在左侧方位", panned.azimuthDeltaDegrees < -30f)
+
+        // 转回正北原位置
+        repeat(40) { tracker.applyOrientationFilter(uprightNorth, 0f, 0f, 0f) }
+        val restored = tracker.spatialAnchor.value
+        assertTrue("转回原位置后手办应在桌面原位重现", restored.isInView)
+        assertEquals(0f, restored.azimuthDeltaDegrees, 3.0f)
+        assertTrue("重现坐标应回到原点击位置附近", restored.screenX in 0.40f..0.60f && restored.screenY in 0.50f..0.80f)
+    }
+
+    @Test
+    fun `sideways resting phone keeps portrait figure upright without clipping sideways`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        // 手机左侧放在桌面上 (roll = -90°)：col0=(0,0,-1), col1=(-1,0,0), -col2=(0,1,0)
+        val sidewaysPhone = floatArrayOf(
+            0f, -1f, 0f,
+            0f, 0f, -1f,
+            -1f, 0f, 0f
+        )
+        repeat(40) { tracker.applyOrientationFilter(sidewaysPhone, 0f, 0f, -90f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+
+        val anchor = tracker.spatialAnchor.value
+        assertTrue(anchor.isInView)
+        // 相机 Up 应近似对齐世界 +Y (1.0)，确保竖屏状态下角色直立不横躺出画
+        assertTrue("侧置竖屏时相机 Up.y 应大于 0.85，实际 ${anchor.cameraUpY}", anchor.cameraUpY > 0.85f)
+    }
 }

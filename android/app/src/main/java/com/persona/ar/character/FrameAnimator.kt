@@ -78,7 +78,12 @@ class FrameAnimator(
             ActionType.BLUSH to ActionClipSpec("shy", 6, 3.0f, false),
             ActionType.POUT to ActionClipSpec("shy", 6, 3.0f, false),
             ActionType.NOD to ActionClipSpec("nod", 6, 4.0f, false),
-            ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false)
+            ActionType.SIT to ActionClipSpec("sit", 6, 3.0f, false),
+            // 其余动作同样绑定精灵表，搭配 Canvas 动态偏移与情绪粒子构成完整 2.5D 演出，永不跌回静态矢量兜底
+            ActionType.JUMP to ActionClipSpec("wave", 6, 3.8f, false),
+            ActionType.SMUG to ActionClipSpec("idle", 6, 2.2f, false),
+            ActionType.SHAKE_HEAD to ActionClipSpec("nod", 6, 4.0f, false),
+            ActionType.SLEEP to ActionClipSpec("yawn", 6, 1.2f, true)
         )
 
         /** 查询动作对应的精灵表规格；null 表示该动作没有预渲染序列帧。 */

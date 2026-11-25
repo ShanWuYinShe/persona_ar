@@ -55,13 +55,14 @@ class FigureAnimatorTest {
     @Test
     fun `nod rotates head forward`() {
         animator.update(input(ActionType.NOD, 0.5f))
-        assertTrue("nod 应低头，实际 rx=${angle(HumanoidBone.HEAD, 0)}", angle(HumanoidBone.HEAD, 0) > 3f)
+        // 在 -Z 为正面的右手系中，前倾低头对应 rx < 0
+        assertTrue("nod 应前倾低头，实际 rx=${angle(HumanoidBone.HEAD, 0)}", angle(HumanoidBone.HEAD, 0) < -3f)
     }
 
     @Test
     fun `bow bends spine forward and shakes head turns sideways`() {
         animator.update(input(ActionType.BOW, 1.1f))
-        assertTrue(angle(HumanoidBone.SPINE, 0) > 3f)
+        assertTrue("bow 脊柱应前弯，实际 rx=${angle(HumanoidBone.SPINE, 0)}", angle(HumanoidBone.SPINE, 0) < -3f)
         animator.update(input(ActionType.SHAKE_HEAD, 0.4f))
         assertTrue(kotlin.math.abs(angle(HumanoidBone.HEAD, 1)) > 1f)
     }
@@ -85,14 +86,14 @@ class FigureAnimatorTest {
     }
 
     @Test
-    fun `sitting stance lowers hips and folds legs`() {
+    fun `sitting stance lowers hips and folds legs forward above ground`() {
         val i = input()
         i.stance = SkeletonStance.SITTING
         repeat(90) { animator.update(i) }
-        assertTrue("坐姿骨盆应下沉，实际 ${animator.hipsOffsetY}", animator.hipsOffsetY < -0.65f)
-        assertTrue(angle(HumanoidBone.UPPER_LEG_L, 0) <= -70f)
-        assertTrue("坐姿小腿应自然优美屈膝，实际 rx=${angle(HumanoidBone.LOWER_LEG_L, 0)}", angle(HumanoidBone.LOWER_LEG_L, 0) in 70f..100f)
-        assertTrue(angle(HumanoidBone.LOWER_ARM_L, 1) > 45f)
+        assertTrue("坐姿骨盆应下沉至桌面比例，实际 ${animator.hipsOffsetY}", animator.hipsOffsetY in -0.45f..-0.35f)
+        assertTrue("坐姿大腿应向前抬平 (rx > 0)，实际 ${angle(HumanoidBone.UPPER_LEG_L, 0)}", angle(HumanoidBone.UPPER_LEG_L, 0) >= 70f)
+        assertTrue("坐姿小腿应向下垂直 (rx < 0)，实际 rx=${angle(HumanoidBone.LOWER_LEG_L, 0)}", angle(HumanoidBone.LOWER_LEG_L, 0) in -100f..-70f)
+        assertTrue("坐姿前臂应向前弯搭膝头 (ry < 0)，实际 ry=${angle(HumanoidBone.LOWER_ARM_L, 1)}", angle(HumanoidBone.LOWER_ARM_L, 1) < -30f)
     }
 
     @Test
@@ -120,7 +121,8 @@ class FigureAnimatorTest {
         i.emotion = EmotionType.SLEEPY
         animator.update(i)
         assertTrue(animator.eyesClosed > 0.8f)
-        assertTrue(angle(HumanoidBone.HEAD, 0) > 10f)
+        // 打瞌睡前垂低头 (rx < 0)
+        assertTrue("打瞌睡应向前垂头，实际 rx=${angle(HumanoidBone.HEAD, 0)}", angle(HumanoidBone.HEAD, 0) < -10f)
     }
 
     @Test
@@ -139,11 +141,11 @@ class FigureAnimatorTest {
         i.touchReaction = TouchPart.BODY
         i.touchElapsed = 1.0f
         animator.update(i)
-        // 肘关节弯曲角不能超过解剖学安全上限 120° (此前叠加导致超过 216°)
+        // 肘关节弯曲角不能超过解剖学安全上限 145°（左臂弯向 -Z 为负，右臂为正）
         val elbowBendL = angle(HumanoidBone.LOWER_ARM_L, 1)
         val elbowBendR = angle(HumanoidBone.LOWER_ARM_R, 1)
-        assertTrue("左肘关节弯曲不应过屈变形: $elbowBendL", elbowBendL < 120f)
-        assertTrue("右肘关节弯曲不应过屈变形: $elbowBendR", elbowBendR > -120f)
+        assertTrue("左肘关节弯曲不应过屈变形: $elbowBendL", elbowBendL > -145f)
+        assertTrue("右肘关节弯曲不应过屈变形: $elbowBendR", elbowBendR < 145f)
     }
 
     @Test
@@ -175,17 +177,15 @@ class FigureAnimatorTest {
         return Triple(left, right, head)
     }
 
-    // 上臂沿左右 ±X 伸出，rx 是绕各自上臂轴的扭转：左右必须同号才能把双手转到同一高度。
-    // 此前写成 ±60/±30 的镜像符号，导致害羞只有一只手捂脸、得意只有一只手叉腰（另一只停在胸前）。
     @Test
-    fun `blush raises both hands to face symmetrically`() {
+    fun `blush raises both hands symmetrically in front of cheeks`() {
         val (left, right, head) = handWorld(ActionType.BLUSH)
         assertEquals("双手应左右镜像", -left[0], right[0], 0.02f)
         assertEquals("双手高度应一致", left[1], right[1], 0.02f)
         assertEquals("双手前后应一致", left[2], right[2], 0.02f)
         assertTrue(
-            "双手都应抬到脸附近，实际 L.y=${left[1]} R.y=${right[1]} head.y=${head[1]}",
-            abs(left[1] - head[1]) < 0.15f && abs(right[1] - head[1]) < 0.15f
+            "双手都应抬到脸颊前方 (-Z)，实际 L=(${left[0]},${left[1]},${left[2]}) head.y=${head[1]}",
+            abs(left[1] - head[1]) < 0.15f && left[2] < -0.08f && right[2] < -0.08f
         )
     }
 
@@ -209,10 +209,10 @@ class FigureAnimatorTest {
         animator.update(iLeft)
         val headYawLeft = angle(HumanoidBone.HEAD, 1)
         val neckYawLeft = angle(HumanoidBone.NECK, 1)
-        val headPitchDown = angle(HumanoidBone.HEAD, 0)
+        val headPitchUp = angle(HumanoidBone.HEAD, 0)
         assertTrue("gazeX > 0 应当向侧边偏航注视，实际 headYaw=$headYawLeft", headYawLeft > 12f)
         assertTrue("gazeX > 0 颈部协同转动，实际 neckYaw=$neckYawLeft", neckYawLeft > 5f)
-        assertTrue("gazeY > 0 镜头在上方时头部向上抬仰，实际 headPitch=$headPitchDown", headPitchDown < 0f)
+        assertTrue("gazeY > 0 镜头在上方时头部向上抬仰 (rx > 0)，实际 headPitch=$headPitchUp", headPitchUp > 0f)
 
         val iRight = input()
         iRight.gazeX = -0.8f

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 
@@ -60,6 +61,7 @@ fun VoiceInputBar(
     onStartHoldVoice: () -> Unit,
     onStopHoldVoice: () -> Unit,
     onTouchPart: (TouchPart) -> Unit,
+    onPreviewAction: (ActionType) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showTextInput by remember { mutableStateOf(false) }
@@ -89,37 +91,75 @@ fun VoiceInputBar(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. 次要按需展开层：触碰互动选择浮层（纯矢量图标）
+        // 1. 次要按需展开层：触碰互动 + 情绪动作快速演出抽屉（无需进设置页即可随时体验全部动作）
         AnimatedVisibility(
             visible = showInteractSheet,
             enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
             exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 })
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .padding(bottom = 12.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(creamBg)
                     .border(1.5.dp, borderColor, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                VectorActionChip(icon = Icons.Filled.TouchApp, text = "摸摸头") {
-                    onTouchPart(TouchPart.HEAD)
-                    showInteractSheet = false
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    VectorActionChip(icon = Icons.Filled.TouchApp, text = "摸摸头") {
+                        onTouchPart(TouchPart.HEAD)
+                        showInteractSheet = false
+                    }
+                    VectorActionChip(icon = Icons.Filled.Face, text = "戳戳脸") {
+                        onTouchPart(TouchPart.CHEEK)
+                        showInteractSheet = false
+                    }
+                    VectorActionChip(icon = Icons.Filled.PanTool, text = "牵小手") {
+                        onTouchPart(TouchPart.HAND)
+                        showInteractSheet = false
+                    }
+                    VectorActionChip(icon = Icons.Filled.Favorite, text = "抱一抱") {
+                        onTouchPart(TouchPart.BODY)
+                        showInteractSheet = false
+                    }
                 }
-                VectorActionChip(icon = Icons.Filled.Face, text = "戳戳脸") {
-                    onTouchPart(TouchPart.CHEEK)
-                    showInteractSheet = false
-                }
-                VectorActionChip(icon = Icons.Filled.PanTool, text = "牵小手") {
-                    onTouchPart(TouchPart.HAND)
-                    showInteractSheet = false
-                }
-                VectorActionChip(icon = Icons.Filled.Favorite, text = "抱一抱") {
-                    onTouchPart(TouchPart.BODY)
-                    showInteractSheet = false
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val quickActions = listOf(
+                        "挥手" to ActionType.WAVE,
+                        "害羞" to ActionType.BLUSH,
+                        "傲娇" to ActionType.POUT,
+                        "得意" to ActionType.SMUG,
+                        "雀跃" to ActionType.JUMP,
+                        "打盹" to ActionType.SLEEP
+                    )
+                    quickActions.forEach { (label, action) ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFFFEDF3))
+                                .border(1.dp, borderColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .clickable {
+                                    onPreviewAction(action)
+                                    showInteractSheet = false
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                color = borderColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -283,6 +323,7 @@ fun VoiceInputBar(
                             )
                         )
                 )
+                val useDarkInkOnButton = voiceMode == VoiceMode.CONTINUOUS_NATURAL
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
@@ -293,7 +334,7 @@ fun VoiceInputBar(
                         else
                             Icons.Default.Mic,
                         contentDescription = "对讲麦克风",
-                        tint = if (voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive) borderColor else Color.White,
+                        tint = if (useDarkInkOnButton) borderColor else Color.White,
                         modifier = Modifier.size(22.dp)
                     )
 
@@ -310,7 +351,7 @@ fun VoiceInputBar(
                             else ->
                                 "按住说话 · 松开发送"
                         },
-                        color = if (voiceMode == VoiceMode.CONTINUOUS_NATURAL && isContinuousActive) borderColor else Color.White,
+                        color = if (useDarkInkOnButton) borderColor else Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Black
                     )
