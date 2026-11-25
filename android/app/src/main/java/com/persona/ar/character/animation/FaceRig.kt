@@ -41,51 +41,54 @@ class FaceRig(morphTargetNames: Array<String>) {
     }
 
     private fun buildPresets() {
-        // 开怀欢笑：飞扬眉毛 + 弯月笑眼 + 露齿大笑 + 可爱小虎牙
+        // 严禁把 Fcl_ALL_* 与 Fcl_BRW_/EYE_/MTH_* 叠加：VRoid 的 ALL_* 本身就是三层复合形变，叠加会造成下颌双倍脱臼。
+        // 开怀欢笑：飞扬眉毛 + 弯月笑眼 + 明朗笑口 + 可爱小虎牙
         presets["JOY"] = buildPreset(
-            "ALL_Joy" to 0.95f, "BRW_Joy" to 0.75f, "EYE_Joy" to 0.95f, "MTH_Joy" to 0.85f, "HA_Fung1" to 0.70f
+            "BRW_Joy" to 0.75f, "EYE_Joy" to 0.90f, "MTH_Joy" to 0.72f, "HA_Fung1" to 0.60f
         )
-        // 治愈微笑：柔和明媚笑颜
+        // 治愈微笑：柔和明媚闭口猫系微笑
         presets["SMILE"] = buildPreset(
-            "ALL_Joy" to 0.65f, "BRW_Joy" to 0.45f, "EYE_Joy" to 0.65f, "MTH_Joy" to 0.50f, "MTH_Neutral" to 0.15f
+            "BRW_Joy" to 0.42f, "EYE_Joy" to 0.35f, "MTH_Up" to 0.55f, "MTH_Fun" to 0.38f
         )
-        // 俏皮眨眼：单眼完全闭合 + 另一眼弯笑 + 调皮小虎牙
+        // 俏皮眨眼：单眼完全闭合 + 另一眼弯月笑 + 调皮小虎牙
         presets["WINK"] = buildPreset(
-            "EYE_Close_R" to 1.0f, "EYE_Joy" to 0.85f, "ALL_Joy" to 0.65f, "BRW_Joy" to 0.55f, "MTH_Fun" to 0.70f, "HA_Fung1" to 0.85f
+            "EYE_Close_R" to 1.0f, "EYE_Joy_L" to 0.78f, "BRW_Fun" to 0.60f, "MTH_Fun" to 0.65f, "HA_Fung1" to 0.75f
         )
-        // 害羞娇颤：八字怜弱眉 + 半阖笑眼 + 羞涩小抿嘴
+        // 害羞娇颤：八字柔弱眉 + 微眯笑眼 + 羞涩轻抿猫嘴
         presets["BLUSH_FACE"] = buildPreset(
-            "ALL_Joy" to 0.45f, "BRW_Sorrow" to 0.85f, "EYE_Joy" to 0.65f, "EYE_Close" to 0.35f, "MTH_Fun" to 0.45f, "MTH_I" to 0.30f
+            "BRW_Sorrow" to 0.72f, "EYE_Joy" to 0.55f, "EYE_Close" to 0.22f, "MTH_Fun" to 0.42f, "MTH_Up" to 0.24f
         )
-        // 委屈难过：垂眉 + 嘴角下撇哭脸
+        // 委屈难过：垂眉 + 泪目眼型 + 嘴角轻撇
         presets["CRY"] = buildPreset(
-            "ALL_Sorrow" to 0.90f, "BRW_Sorrow" to 0.95f, "EYE_Sorrow" to 0.75f, "MTH_Sorrow" to 0.80f, "MTH_Down" to 0.50f
+            "BRW_Sorrow" to 0.90f, "EYE_Sorrow" to 0.82f, "MTH_Sorrow" to 0.68f, "MTH_Down" to 0.32f
         )
-        // 好奇探究：挑眉 + 微张小圆嘴
+        // 好奇探究：挑眉 + 略微睁大眼睛 + 小巧圆嘴
         presets["CURIOUS"] = buildPreset(
-            "ALL_Surprised" to 0.35f, "BRW_Surprised" to 0.75f, "EYE_Surprised" to 0.45f, "MTH_Neutral" to 0.30f, "MTH_O" to 0.25f
+            "BRW_Surprised" to 0.65f, "EYE_Surprised" to 0.36f, "MTH_O" to 0.22f
         )
-        // 经典傲娇鼓颊：气呼呼倒竖眉 + 瞪视 + 经典小鸭子嘟嘴 (MTH_U)
+        // 经典傲娇鼓颊：倒竖怒眉 + 轻瞪视 + 鼓嘴小鸭唇 (MTH_U)
         presets["POUT"] = buildPreset(
-            "ALL_Angry" to 0.85f, "BRW_Angry" to 0.95f, "EYE_Angry" to 0.65f, "MTH_Angry" to 0.75f, "MTH_U" to 0.85f
+            "BRW_Angry" to 0.90f, "EYE_Angry" to 0.68f, "MTH_U" to 0.78f, "MTH_Up" to 0.32f
         )
-        // 惊惶瞪大：圆滚滚眼瞳 + 张大嘴巴
+        // 可爱惊讶：挑眉圆眼 + 克制适度的小惊呼口型（避免下巴过度张开）
         presets["SURPRISED"] = buildPreset(
-            "ALL_Surprised" to 0.95f, "BRW_Surprised" to 1.0f, "EYE_Surprised" to 1.0f, "MTH_Surprised" to 0.85f, "MTH_O" to 0.75f
+            "BRW_Surprised" to 0.85f, "EYE_Surprised" to 0.82f, "MTH_O" to 0.48f
         )
-        // 困意朦胧：眼皮重重垂落 + 困倦眉 + 微张打小哈欠
+        // 困意朦胧：睡眼惺忪 + 柔垂眉 + 放松微张嘴
         presets["SLEEPY"] = buildPreset(
-            "ALL_Sorrow" to 0.30f, "BRW_Sorrow" to 0.55f, "EYE_Close" to 0.75f, "MTH_O" to 0.40f, "MTH_Down" to 0.25f
+            "BRW_Sorrow" to 0.45f, "EYE_Close" to 0.72f, "MTH_Neutral" to 0.35f, "MTH_Down" to 0.18f
         )
-        // 嚣张得意：猫咪嘴微笑 + 经典自信小虎牙 (HA_Fung1 顶格)
+        // 嚣张得意：挑趣眉 + 半阖自信眼 + 猫咪嘴笑 + 小虎牙顶格
         presets["SMUG"] = buildPreset(
-            "ALL_Fun" to 0.90f, "BRW_Fun" to 0.85f, "EYE_Joy" to 0.80f, "MTH_Fun" to 0.85f, "HA_Fung1" to 1.0f
+            "BRW_Fun" to 0.85f, "EYE_Joy" to 0.28f, "EYE_Angry" to 0.25f,
+            "MTH_Fun" to 0.78f, "MTH_Up" to 0.28f, "HA_Fung1" to 0.95f
         )
-        presets["NEUTRAL"] = buildPreset("MTH_Neutral" to 0.4f)
+        presets["NEUTRAL"] = buildPreset("EYE_Natural" to 0.20f, "MTH_Neutral" to 0.40f)
         presets["ANGRY"] = presets["POUT"]!!
         presets["SAD"] = presets["CRY"]!!
         presets["SHY"] = presets["BLUSH_FACE"]!!
         presets["CONFIDENT"] = presets["SMUG"]!!
+        presets["THINKING"] = presets["CURIOUS"]!!
     }
 
     private fun buildPreset(vararg pairs: Pair<String, Float>): FloatArray {

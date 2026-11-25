@@ -56,6 +56,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private var filteredShiftX = 0f
     private var filteredShiftY = 0f
+    private val createdAtMillis = System.currentTimeMillis()
+    private var interactionEpoch = 0L
 
     init {
         setupAudioPlayer()
@@ -248,17 +250,16 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     /** 动作对应的情绪（让 3D 体态/表情在动作期间同步，而不是只动肢体） */
     private fun emotionForAction(action: ActionType): EmotionType? = when (action) {
-        ActionType.WAVE, ActionType.JUMP, ActionType.SMUG -> EmotionType.JOY
-        ActionType.BLUSH -> EmotionType.SHY
+        ActionType.WAVE, ActionType.JUMP, ActionType.NOD -> EmotionType.JOY
+        ActionType.SMUG -> EmotionType.CONFIDENT
+        ActionType.BLUSH, ActionType.BOW -> EmotionType.SHY
         ActionType.POUT, ActionType.SHAKE_HEAD -> EmotionType.ANGRY
-        ActionType.BOW -> EmotionType.SHY
         ActionType.YAWN, ActionType.SLEEP -> EmotionType.SLEEPY
-        ActionType.NOD -> EmotionType.JOY
         else -> null
     }
 
     /**
-     * 动作自然结束后的回落：把 action 复位到 IDLE 并清掉 2.5D 微表情差分。
+     * 动作自然结束后的回落：把 action 复位到 IDLE，并恢复温和情绪与待机表情。
      * 以「动作开始时间戳」作为令牌，避免连续触发动作时旧协程把新动作清掉。
      */
     private fun scheduleActionReset(action: ActionType, startedAtNanos: Long) {
@@ -274,6 +275,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         visualState = current.visualState.copy(
                             action = ActionType.IDLE,
                             actionStartedAtNanos = 0L,
+                            emotion = EmotionType.NEUTRAL,
+                            expression = "SMILE",
                             highResPose = "DEFAULT",
                             blushIntensity = 0f,
                             poutIntensity = 0f,
@@ -291,6 +294,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
      * 既方便用户直接欣赏 3D 手办的全部动作，也作为真机动作回归验证入口。
      */
     fun previewAction(action: ActionType) {
+        interactionEpoch++
         if (action == ActionType.SIT) {
             setSkeletonStance(SkeletonStance.SITTING)
             return
@@ -331,7 +335,8 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     emotion = emotionForAction(action) ?: current.visualState.emotion,
                     expression = when (action) {
                         ActionType.WAVE, ActionType.NOD, ActionType.JUMP, ActionType.BOW -> "SMILE"
-                        ActionType.BLUSH, ActionType.SMUG -> "BLUSH_FACE"
+                        ActionType.BLUSH -> "BLUSH_FACE"
+                        ActionType.SMUG -> "SMUG"
                         ActionType.POUT, ActionType.SHAKE_HEAD -> "POUT"
                         ActionType.YAWN, ActionType.SLEEP -> "SLEEPY"
                         ActionType.IDLE, ActionType.SIT -> current.visualState.expression
@@ -351,14 +356,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 val rawShiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
                 val rawShiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
 
-                // 传感器白噪声死区与低通滤波：变化小于 0.35dp 判定为静止，避免手机放置桌面时角色小范围随机位移抖动
+                // 传感器白噪声死区与低通滤波：手机静置时过滤 < 1.8dp 的 MEMS 漂移抖动，杜绝 2.5D 立绘静止时轻微晃动
                 val deltaX = kotlin.math.abs(rawShiftX - filteredShiftX)
                 val deltaY = kotlin.math.abs(rawShiftY - filteredShiftY)
-                if (deltaX > 0.35f) {
-                    filteredShiftX = filteredShiftX * 0.75f + rawShiftX * 0.25f
+                if (deltaX > 1.8f) {
+                    filteredShiftX = filteredShiftX * 0.84f + rawShiftX * 0.16f
                 }
-                if (deltaY > 0.35f) {
-                    filteredShiftY = filteredShiftY * 0.75f + rawShiftY * 0.25f
+                if (deltaY > 1.8f) {
+                    filteredShiftY = filteredShiftY * 0.84f + rawShiftY * 0.16f
                 }
                 val shiftX = filteredShiftX
                 val shiftY = filteredShiftY
@@ -628,11 +633,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         // 1. 端侧即时高精微表情与姿态反馈 (Zero GMS 毫秒级零延迟触发)
         //    3D 手办额外记录触摸反应开始时刻，由 FigureAnimator 播放专属全身反应动作
         val touchReactionStartNanos = System.nanoTime()
+        val myEpoch = ++interactionEpoch
         val reaction = when (part) {
-            TouchPart.HEAD -> TouchReaction(pose = "SHY", blush = 0.90f, pout = 0f, smug = 0f)
+            TouchPart.HEAD -> TouchReaction(pose = "SHY", blush = 0.72f, pout = 0f, smug = 0f)
             TouchPart.CHEEK -> TouchReaction(pose = "POUT", blush = 0f, pout = 0.95f, smug = 0f)
-            TouchPart.HAND -> TouchReaction(pose = "DEFAULT", blush = 0f, pout = 0f, smug = 0f)
-            TouchPart.BODY -> TouchReaction(pose = "SMUG", blush = 0f, pout = 0f, smug = 4.5f)
+            TouchPart.HAND -> TouchReaction(pose = "DEFAULT", blush = 0.35f, pout = 0f, smug = 0f)
+            TouchPart.BODY -> TouchReaction(pose = "SHY", blush = 0.85f, pout = 0f, smug = 0f)
         }
         val touchAction = when (part) {
             TouchPart.HEAD -> ActionType.WAVE
@@ -713,6 +719,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 // 服务端触摸回复也可能带动作（点头/噘嘴/鞠躬等），必须与对话路径一样记录开始时刻，
                 // 否则 FigureScene 用旧时间戳/0 计算 actionElapsed，动作会直接判定为已结束而不播放。
                 val actionStartNanos = System.nanoTime()
+                val staleInteraction = interactionEpoch != myEpoch
                 _uiState.update { current ->
                     val pose = when (resp.emotion) {
                         EmotionType.SHY -> "SHY"
@@ -721,22 +728,31 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         EmotionType.CONFIDENT -> "SMUG"
                         else -> reaction.pose
                     }
-                    current.copy(
-                        messages = current.messages + personaMessage,
-                        visualState = current.visualState.copy(
-                            emotion = resp.emotion,
-                            action = resp.action,
-                            actionStartedAtNanos = actionStartNanos,
-                            expression = resp.expression,
-                            highResPose = pose
-                        ),
-                        personaStatus = current.personaStatus?.copy(
-                            affinity = resp.currentAffinity
+                    if (staleInteraction) {
+                        current.copy(
+                            messages = current.messages + personaMessage,
+                            personaStatus = current.personaStatus?.copy(affinity = resp.currentAffinity)
                         )
-                    )
+                    } else {
+                        current.copy(
+                            messages = current.messages + personaMessage,
+                            visualState = current.visualState.copy(
+                                emotion = resp.emotion,
+                                action = resp.action,
+                                actionStartedAtNanos = actionStartNanos,
+                                expression = resp.expression,
+                                highResPose = pose
+                            ),
+                            personaStatus = current.personaStatus?.copy(
+                                affinity = resp.currentAffinity
+                            )
+                        )
+                    }
                 }
                 playPersonaVoice(resp.audioBase64, resp.text, resp.emotion)
-                scheduleActionReset(resp.action, actionStartNanos)
+                if (!staleInteraction) {
+                    scheduleActionReset(resp.action, actionStartNanos)
+                }
                 addBondExp(expGain)
             }
         }
@@ -1442,22 +1458,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 现实光照突变时触发伴侣拟人感知关怀 (防抖 30 秒)
+        // 现实光照突变时触发伴侣温柔关怀 (防抖 30 秒，且屏蔽启动前 5 秒相机测光初始化抖动，不用 SURPRISED 覆盖初始表情)
         val now = System.currentTimeMillis()
-        if (!prevLowLight && profile.isLowLight && now - lastLightNotifyTimestamp > 30_000L) {
+        if (!prevLowLight && profile.isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
             val careMessage = ChatMessage(
                 sender = MessageSender.PERSONA,
                 text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
-                emotion = EmotionType.SURPRISED,
+                emotion = EmotionType.SHY,
                 timestamp = now
             )
             _uiState.update { state ->
                 state.copy(
                     messages = state.messages + careMessage,
                     visualState = state.visualState.copy(
-                        emotion = EmotionType.SURPRISED,
-                        expression = "SURPRISED"
+                        emotion = EmotionType.SHY,
+                        expression = "SMILE"
                     )
                 )
             }
@@ -1484,22 +1500,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 现实光照突变时触发伴侣拟人感知关怀 (防抖 30 秒)
+        // 现实光照突变时触发伴侣温柔关怀 (防抖 30 秒，且屏蔽启动前 5 秒测光收敛)
         val now = System.currentTimeMillis()
-        if (!prevLowLight && isLowLight && now - lastLightNotifyTimestamp > 30_000L) {
+        if (!prevLowLight && isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
             val careMessage = ChatMessage(
                 sender = MessageSender.PERSONA,
                 text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
-                emotion = EmotionType.SURPRISED,
+                emotion = EmotionType.SHY,
                 timestamp = now
             )
             _uiState.update { state ->
                 state.copy(
                     messages = state.messages + careMessage,
                     visualState = state.visualState.copy(
-                        emotion = EmotionType.SURPRISED,
-                        expression = "SURPRISED"
+                        emotion = EmotionType.SHY,
+                        expression = "SMILE"
                     )
                 )
             }

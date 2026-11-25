@@ -50,4 +50,11 @@ class FrameAnimatorSpecTest {
             assertTrue("$action 精灵表文件名不能为空", spec.fileName.isNotBlank())
         }
     }
+
+    @Test
+    fun `every action type has a sprite mapping to prevent static fallback`() {
+        ActionType.values().forEach { action ->
+            assertNotNull("$action 必须绑定预渲染精灵表，防止掉落静态矢量路径", FrameAnimator.specFor(action))
+        }
+    }
 }

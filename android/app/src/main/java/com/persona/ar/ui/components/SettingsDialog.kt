@@ -270,12 +270,26 @@ fun SettingsDialog(
                     sectionBg = sectionBg,
                     borderColor = borderColor
                 ) {
-                    Text(
-                        text = "点击立即让 3D 手办播放对应动作（无需等待对话）。表情/口型由 VRM morph 驱动。",
-                        color = Color(0xFF6B587B),
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "触发动作后可点右侧「收起观赏」或主屏幕左下 [👆] 直接全屏看。",
+                            color = Color(0xFF6B587B),
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        GameMiniChip(
+                            title = "收起观赏",
+                            isSelected = false,
+                            activeColor = Color(0xFFFF4E8E),
+                            onClick = onDismiss
+                        )
+                    }
                     val actionRows = listOf(
                         listOf(
                             "挥手" to ActionType.WAVE,

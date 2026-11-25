@@ -259,10 +259,10 @@ class FigureScene(
                 shadowNearHint = 0.1f
                 shadowFarHint = 1.5f
                 maxShadowDistance = SHADOW_FAR_METERS + 0.5f
-                screenSpaceContactShadows = true
+                screenSpaceContactShadows = false
                 shadowBulbRadius = 0.045f
-                constantBias = 0.002f
-                normalBias = 2.0f
+                constantBias = 0.001f
+                normalBias = 1.0f
                 polygonOffsetConstant = 0.5f
                 polygonOffsetSlope = 1.5f
             })
@@ -458,7 +458,7 @@ class FigureScene(
         groundMaterial = Material.Builder().payload(materialBuffer).build(engine)
         groundInstance = groundMaterial!!.createInstance()
 
-        // 单位四边形（半边长 1，XZ 平面，+Y 朝上），TANGENTS 为单位四元数（unlit 不使用但为必需属性）
+        // 单位四边形（半边长 1，XZ 平面，+Y 朝上），TANGENTS 为绕 X 轴 -90° 旋转四元数使局部 +Z 对齐世界 +Y 法线，消除斜视角 Shadow Acne
         val positions = ByteBuffer.allocateDirect(4 * 3 * 4).order(ByteOrder.nativeOrder())
             .putFloat(-1f).putFloat(0f).putFloat(-1f)
             .putFloat(1f).putFloat(0f).putFloat(-1f)
@@ -466,7 +466,8 @@ class FigureScene(
             .putFloat(-1f).putFloat(0f).putFloat(1f)
         positions.flip()
         val tangents = ByteBuffer.allocateDirect(4 * 4 * 4).order(ByteOrder.nativeOrder())
-        repeat(4) { tangents.putFloat(0f).putFloat(0f).putFloat(0f).putFloat(1f) }
+        val invSqrt2 = 0.70710678f
+        repeat(4) { tangents.putFloat(-invSqrt2).putFloat(0f).putFloat(0f).putFloat(invSqrt2) }
         tangents.flip()
         val indices = ByteBuffer.allocateDirect(6 * 2).order(ByteOrder.nativeOrder())
             .putShort(0).putShort(2).putShort(1)
@@ -500,9 +501,6 @@ class FigureScene(
             .castShadows(false)
             .build(engine, groundEntity)
         groundTransformInstance = transformManager.getInstance(groundEntity)
-        engine.renderableManager.getInstance(groundEntity).let { ri ->
-            if (ri != 0) engine.renderableManager.setScreenSpaceContactShadows(ri, true)
-        }
         scene.addEntity(groundEntity)
     }
 
@@ -649,9 +647,9 @@ class FigureScene(
         var rl = sqrt(rhx * rhx + rhz * rhz)
         if (rl < 1e-5f) { rhx = 1f; rhz = 0f; rl = 1f }
         rhx /= rl; rhz /= rl
-        val back = 0.9f - 0.5f * down
+        val back = 0.85f - 0.45f * down
         var dx = dirX * strength * rhx + back * hx
-        var dy = -(0.6f + 1.2f * down)
+        var dy = -(1.05f + 1.10f * down)
         var dz = dirX * strength * rhz + back * hz
         val dl = sqrt(dx * dx + dy * dy + dz * dz)
         dx /= dl; dy /= dl; dz /= dl
@@ -686,7 +684,7 @@ class FigureScene(
         Matrix.scaleM(mGround, 0, halfExtent, 1f, halfExtent)
         if (groundTransformInstance != 0) transformManager.setTransform(groundTransformInstance, mGround)
         // 阴影最大不透明度：暗环境更实，悬空脱离支撑时平滑消散；手办出画时同步隐去
-        val baseStrength = (0.80f + 0.18f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f) *
+        val baseStrength = (0.56f + 0.14f * (1f - lum)) * f.surfaceSupportConfidence.coerceIn(0f, 1f) *
                 (1f - currentAirborne * 0.7f)
         val strength = if (!f.isWorldAnchored || f.isInView) baseStrength else 0f
         groundInstance?.setParameter("strength", strength)

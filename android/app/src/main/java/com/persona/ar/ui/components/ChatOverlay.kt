@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.ChatMessage
+import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import kotlinx.coroutines.delay
 
@@ -40,6 +41,7 @@ fun ChatOverlay(
     isSpeaking: Boolean,
     partnerName: String = "星野 Hoshino",
     partnerColorHex: String = "#FF5277",
+    currentEmotion: EmotionType = EmotionType.NEUTRAL,
     streamingText: String? = null,
     modifier: Modifier = Modifier
 ) {
@@ -89,7 +91,8 @@ fun ChatOverlay(
                         AnimeGameDialogueItem(
                             msg = msg,
                             partnerName = partnerName,
-                            partnerColor = partnerColor
+                            partnerColor = partnerColor,
+                            currentEmotion = currentEmotion
                         )
                     }
 
@@ -99,7 +102,8 @@ fun ChatOverlay(
                             AnimeGameStreamingDialogueItem(
                                 streamingText = streamingText,
                                 partnerName = partnerName,
-                                partnerColor = partnerColor
+                                partnerColor = partnerColor,
+                                currentEmotion = currentEmotion
                             )
                         }
                     }
@@ -117,14 +121,16 @@ fun ChatOverlay(
                         AnimeGameStreamingDialogueItem(
                             streamingText = streamingText,
                             partnerName = partnerName,
-                            partnerColor = partnerColor
+                            partnerColor = partnerColor,
+                            currentEmotion = currentEmotion
                         )
                     } else {
                         latestMessage?.let {
                             AnimeGameDialogueItem(
                                 msg = it,
                                 partnerName = partnerName,
-                                partnerColor = partnerColor
+                                partnerColor = partnerColor,
+                                currentEmotion = currentEmotion
                             )
                         }
                     }
@@ -140,9 +146,11 @@ fun ChatOverlay(
 private fun AnimeGameStreamingDialogueItem(
     streamingText: String,
     partnerName: String,
-    partnerColor: Color
+    partnerColor: Color,
+    currentEmotion: EmotionType
 ) {
     val strokeColor = Color(0xFF281C38)
+    val emotionColor = emotionTagColor(currentEmotion, partnerColor)
     val infiniteTransition = rememberInfiniteTransition(label = "cursor")
     val cursorAlpha by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -155,14 +163,14 @@ private fun AnimeGameStreamingDialogueItem(
     )
 
     Column(modifier = Modifier.widthIn(max = 330.dp)) {
-        // 角色萌系名牌（附带流式生成呼吸态标识）
+        // 角色萌系名牌（附带流式生成呼吸态标识与实时情绪染色）
         Box(
             modifier = Modifier
                 .padding(start = 12.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(
                     androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(partnerColor, Color(0xFFFF7597))
+                        listOf(emotionColor, partnerColor)
                     )
                 )
                 .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
@@ -224,10 +232,14 @@ private fun AnimeGameStreamingDialogueItem(
 private fun AnimeGameDialogueItem(
     msg: ChatMessage,
     partnerName: String,
-    partnerColor: Color
+    partnerColor: Color,
+    currentEmotion: EmotionType
 ) {
     val isUser = msg.sender == MessageSender.USER
     val strokeColor = Color(0xFF281C38) // 饱满卡通深紫黑描边
+    val activeEmotion = msg.emotion?.takeIf { it != EmotionType.NEUTRAL } ?: currentEmotion
+    val emotionColor = emotionTagColor(activeEmotion, partnerColor)
+    val emotionBadgeText = emotionTagLabel(activeEmotion)
 
     // 翻页小指示标上下微跳跃动画
     val infiniteTransition = rememberInfiniteTransition(label = "dialogueIndicator")
@@ -248,25 +260,42 @@ private fun AnimeGameDialogueItem(
         if (!isUser) {
             // 角色发言：Galgame 对话框（名牌与文本采用绝对垂直隔离，零裁切、零重叠）
             Column(modifier = Modifier.widthIn(max = 330.dp)) {
-                // 1. 角色萌系名牌 (置于上方，y=0 独立层级，绝对不侵占正文区域)
+                // 1. 角色萌系名牌（随角色当前情绪变化渐变色调并带心情微角标）
                 Box(
                     modifier = Modifier
                         .padding(start = 12.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(
                             androidx.compose.ui.graphics.Brush.linearGradient(
-                                listOf(partnerColor, Color(0xFFFF7597))
+                                listOf(emotionColor, partnerColor)
                             )
                         )
                         .border(1.8.dp, strokeColor, RoundedCornerShape(10.dp))
                         .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    Text(
-                        text = "✦ $partnerName ✦",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "✦ $partnerName ✦",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        if (emotionBadgeText != null) {
+                            Text(
+                                text = emotionBadgeText,
+                                color = Color(0xFF281C38),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xEEFFFDF9))
+                                    .padding(horizontal = 5.dp, vertical = 0.5.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -366,4 +395,28 @@ private fun AnimeGameDialogueItem(
             }
         }
     }
+}
+
+private fun emotionTagColor(emotion: EmotionType, defaultColor: Color): Color = when (emotion) {
+    EmotionType.JOY -> Color(0xFFFF8F00)
+    EmotionType.SHY -> Color(0xFFFF4081)
+    EmotionType.ANGRY -> Color(0xFFE64A19)
+    EmotionType.CONFIDENT -> Color(0xFFD84315)
+    EmotionType.SLEEPY -> Color(0xFF7E57C2)
+    EmotionType.THINKING -> Color(0xFF0288D1)
+    EmotionType.SAD -> Color(0xFF1976D2)
+    EmotionType.SURPRISED -> Color(0xFFF57C00)
+    EmotionType.NEUTRAL -> defaultColor
+}
+
+private fun emotionTagLabel(emotion: EmotionType): String? = when (emotion) {
+    EmotionType.JOY -> "开心"
+    EmotionType.SHY -> "害羞"
+    EmotionType.ANGRY -> "傲娇"
+    EmotionType.CONFIDENT -> "得意"
+    EmotionType.SLEEPY -> "犯困"
+    EmotionType.THINKING -> "思考"
+    EmotionType.SAD -> "委屈"
+    EmotionType.SURPRISED -> "惊讶"
+    EmotionType.NEUTRAL -> null
 }
