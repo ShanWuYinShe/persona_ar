@@ -5,10 +5,10 @@ import android.graphics.Bitmap
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.persona.ar.ar.ARMode
-import com.persona.ar.ar.ARSpatialAnchor
 import com.persona.ar.ar.ARTrackingStatus
+import com.persona.ar.ar.EnvironmentalOpticalProfile
 import com.persona.ar.ar.UniversalSensorSurfaceTracker
+import com.persona.ar.ar.VisualAnchorObservation
 import com.persona.ar.audio.AudioPlayer
 import com.persona.ar.audio.VoiceRecorder
 import com.persona.ar.character.animation.ActionTiming
@@ -22,7 +22,6 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
-import com.persona.ar.data.model.PersonaModelType
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
 import com.persona.ar.data.repository.PersonaRepository
@@ -54,8 +53,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
 
-    private var filteredShiftX = 0f
-    private var filteredShiftY = 0f
     private val createdAtMillis = System.currentTimeMillis()
     private var interactionEpoch = 0L
 
@@ -73,19 +70,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             modelManager.activeModel.collect { active ->
                 _uiState.update { current ->
-                    // 拥有真 3D 手办资产的人格默认进入 3D 模式：Filament PBR 手办 + 全动作骨骼动画 + VRM 表情/口型，
-                    // 立体光影与肢体动作都优于 2.5D 立绘旋转；没有 3D 资产的人格自动回退 2.5D 逐帧立绘。
-                    // 仅当用户尚未手动切换过模式 (arModeExplicitlySet=false) 时才跟随人格能力自动切换。
-                    val hasTrue3D = active.modelType == PersonaModelType.GLTF_3D && !active.modelAsset.isNullOrBlank()
-                    val nextMode = when {
-                        current.arModeExplicitlySet -> current.arMode
-                        hasTrue3D -> ARMode.ARCORE_3D
-                        else -> ARMode.BILLBOARD_2_5D
-                    }
                     current.copy(
                         activeModel = active,
-                        arMode = nextMode,
-                        arTrackingStatus = if (nextMode == ARMode.ARCORE_3D && !current.spatialAnchor.isAnchored) {
+                        arTrackingStatus = if (!current.spatialAnchor.isAnchored) {
                             ARTrackingStatus.PLANE_DETECTED
                         } else {
                             current.arTrackingStatus
@@ -199,19 +186,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     text = respText,
                     emotion = emotion
                 )
-                val pose = when (emotion) {
-                    EmotionType.SHY -> "SHY"
-                    EmotionType.ANGRY -> "POUT"
-                    EmotionType.SLEEPY -> "SLEEPY"
-                    EmotionType.CONFIDENT -> "SMUG"
-                    else -> when (action) {
-                        ActionType.BLUSH -> "SHY"
-                        ActionType.POUT -> "POUT"
-                        ActionType.SLEEP, ActionType.YAWN -> "SLEEPY"
-                        ActionType.SMUG -> "SMUG"
-                        else -> "DEFAULT"
-                    }
-                }
+                val isShy = emotion == EmotionType.SHY || action == ActionType.BLUSH
                 current.copy(
                     isLoading = false,
                     streamingText = null,
@@ -221,11 +196,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         action = action,
                         actionStartedAtNanos = actionStartNanos,
                         expression = expr,
-                        highResPose = pose,
-                        blushIntensity = if (pose == "SHY") 0.85f else 0f,
-                        poutIntensity = if (pose == "POUT") 0.90f else 0f,
-                        sleepinessFactor = if (pose == "SLEEPY") 0.90f else 0f,
-                        smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f
+                        blushIntensity = if (isShy) 0.85f else 0f
                     ),
                     personaStatus = current.personaStatus?.copy(
                         affinity = affinity,
@@ -237,15 +208,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             scheduleActionReset(action, actionStartNanos)
             addBondExp(3)
         }
-    }
-
-    /** 动作对应的 2.5D 高精微表情差分姿态（3D 表情由 VRM morph 独立驱动） */
-    private fun poseForAction(action: ActionType): String = when (action) {
-        ActionType.BLUSH -> "SHY"
-        ActionType.POUT -> "POUT"
-        ActionType.SLEEP, ActionType.YAWN -> "SLEEPY"
-        ActionType.SMUG -> "SMUG"
-        else -> "DEFAULT"
     }
 
     /** 动作对应的情绪（让 3D 体态/表情在动作期间同步，而不是只动肢体） */
@@ -277,11 +239,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                             actionStartedAtNanos = 0L,
                             emotion = EmotionType.NEUTRAL,
                             expression = "SMILE",
-                            highResPose = "DEFAULT",
-                            blushIntensity = 0f,
-                            poutIntensity = 0f,
-                            sleepinessFactor = 0f,
-                            smugTiltDegrees = 0f
+                            blushIntensity = 0f
                         )
                     )
                 }
@@ -300,17 +258,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         if (action == ActionType.IDLE) {
-            // 待机复位：清空动作、触摸反应与 2.5D 微表情差分，回到自然呼吸状态
+            // 待机复位：清空动作与触摸反应，平滑回到自然呼吸状态
             _uiState.update { current ->
                 current.copy(
                     visualState = current.visualState.copy(
                         action = ActionType.IDLE,
                         actionStartedAtNanos = 0L,
-                        highResPose = "DEFAULT",
                         blushIntensity = 0f,
-                        poutIntensity = 0f,
-                        sleepinessFactor = 0f,
-                        smugTiltDegrees = 0f,
                         emotion = EmotionType.NEUTRAL,
                         expression = "SMILE",
                         touchReaction = null,
@@ -321,17 +275,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         val startedAt = System.nanoTime()
-        val pose = poseForAction(action)
         _uiState.update { current ->
             current.copy(
                 visualState = current.visualState.copy(
                     action = action,
                     actionStartedAtNanos = startedAt,
-                    highResPose = pose,
-                    blushIntensity = if (pose == "SHY") 0.85f else 0f,
-                    poutIntensity = if (pose == "POUT") 0.9f else 0f,
-                    sleepinessFactor = if (pose == "SLEEPY") 0.88f else 0f,
-                    smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f,
+                    blushIntensity = if (action == ActionType.BLUSH) 0.85f else 0f,
                     emotion = emotionForAction(action) ?: current.visualState.emotion,
                     expression = when (action) {
                         ActionType.WAVE, ActionType.NOD, ActionType.JUMP, ActionType.BOW -> "SMILE"
@@ -351,89 +300,58 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         universalTracker.start()
         viewModelScope.launch {
             universalTracker.spatialAnchor.collect { tracked ->
-                val pitchDeg = tracked.cameraPitchDegrees
-                val rollDeg = tracked.cameraRollDegrees
-                val rawShiftX = (rollDeg * 0.45f).coerceIn(-30f, 30f)
-                val rawShiftY = ((pitchDeg - 45f) * 0.45f).coerceIn(-30f, 30f)
-
-                // 传感器白噪声死区与滞回滤波：手机静置时过滤 < 2.6dp 的 MEMS 漂移抖动，杜绝静止随机位移
-                val deltaX = kotlin.math.abs(rawShiftX - filteredShiftX)
-                val deltaY = kotlin.math.abs(rawShiftY - filteredShiftY)
-                if (deltaX > 2.6f) {
-                    filteredShiftX += (rawShiftX - filteredShiftX) * 0.14f
-                }
-                if (deltaY > 2.6f) {
-                    filteredShiftY += (rawShiftY - filteredShiftY) * 0.14f
-                }
-                val shiftX = filteredShiftX
-                val shiftY = filteredShiftY
-
-                val gazeX = tracked.cameraGazeOffsetX
-                val gazeY = tracked.cameraGazeOffsetY
-
                 _uiState.update { current ->
-                    val base = current.spatialAnchor
-                    val isAnchored = base.isAnchored && tracked.isWorldAnchored
-
-                    val updatedSpatialAnchor = if (isAnchored) {
-                        base.copy(
-                            screenX = tracked.screenX,
-                            screenY = tracked.screenY,
-                            isWorldAnchored = true,
-                            worldAnchorX = tracked.worldAnchorX,
-                            worldAnchorY = tracked.worldAnchorY,
-                            worldAnchorZ = tracked.worldAnchorZ,
-                            cameraForwardX = tracked.cameraForwardX,
-                            cameraForwardY = tracked.cameraForwardY,
-                            cameraForwardZ = tracked.cameraForwardZ,
-                            cameraUpX = tracked.cameraUpX,
-                            cameraUpY = tracked.cameraUpY,
-                            cameraUpZ = tracked.cameraUpZ,
-                            parallaxShiftX = shiftX,
-                            parallaxShiftY = shiftY,
-                            cameraGazeOffsetX = gazeX,
-                            cameraGazeOffsetY = gazeY,
-                            cameraPitchDegrees = pitchDeg,
-                            cameraRollDegrees = rollDeg,
-                            isInView = tracked.isInView,
-                            azimuthDeltaDegrees = tracked.azimuthDeltaDegrees
-                        )
-                    } else {
-                        base.copy(
-                            parallaxShiftX = shiftX,
-                            parallaxShiftY = shiftY,
-                            cameraGazeOffsetX = gazeX,
-                            cameraGazeOffsetY = gazeY,
-                            cameraPitchDegrees = pitchDeg,
-                            cameraRollDegrees = rollDeg
-                        )
-                    }
-                    if (current.spatialAnchor == updatedSpatialAnchor &&
-                        current.visualState.tiltOffsetX == shiftX &&
-                        current.visualState.tiltOffsetY == shiftY &&
-                        current.visualState.gazeShiftX == gazeX &&
-                        current.visualState.gazeShiftY == gazeY &&
-                        current.visualState.cameraPitchDegrees == pitchDeg &&
-                        current.visualState.cameraRollDegrees == rollDeg
-                    ) {
+                    val optical = calculateOpticalParams(
+                        screenX = tracked.screenX,
+                        screenY = tracked.screenY,
+                        scaleFactor = tracked.scaleFactor,
+                        bloomBleedFactor = tracked.bloomIntensity
+                    )
+                    val mergedAnchor = tracked.copy(
+                        chromaticAberrationIntensity = optical.chromaticAberration,
+                        chromaticAngleRad = optical.chromaticAngle,
+                        depthOfFieldBlur = optical.depthOfFieldBlur,
+                        isMacroProximity = optical.isMacroProximity
+                    )
+                    val effectiveEnvLight = (tracked.lightIntensity * tracked.lensVignetteFactor).coerceIn(0.18f, 1.35f)
+                    val mergedVisual = current.visualState.copy(
+                        scale = tracked.scaleFactor,
+                        environmentalLighting = effectiveEnvLight,
+                        isLowLight = tracked.isLowLight,
+                        ambientColorTemp = tracked.ambientColorTemp,
+                        ambientTintRed = (tracked.ambientTintRed * 0.7f + tracked.localSurfaceTintRed * 0.3f).coerceIn(0.75f, 1.30f),
+                        ambientTintGreen = (tracked.ambientTintGreen * 0.7f + tracked.localSurfaceTintGreen * 0.3f).coerceIn(0.75f, 1.30f),
+                        ambientTintBlue = (tracked.ambientTintBlue * 0.7f + tracked.localSurfaceTintBlue * 0.3f).coerceIn(0.75f, 1.30f),
+                        sensorGrainIntensity = tracked.sensorGrainIntensity,
+                        gazeShiftX = tracked.cameraGazeOffsetX,
+                        gazeShiftY = tracked.cameraGazeOffsetY,
+                        inertialSwayAngle = tracked.inertialSwayAngle,
+                        chromaticAberrationIntensity = optical.chromaticAberration,
+                        chromaticAngleRad = optical.chromaticAngle,
+                        bloomIntensity = optical.bloomIntensity,
+                        depthOfFieldBlur = optical.depthOfFieldBlur,
+                        isMacroProximity = optical.isMacroProximity,
+                        lightDirectionX = tracked.lightDirectionX,
+                        lightDirectionY = tracked.lightDirectionY,
+                        lightDirectionalStrength = tracked.lightDirectionalStrength,
+                        cameraPitchDegrees = tracked.cameraPitchDegrees,
+                        cameraRollDegrees = tracked.cameraRollDegrees,
+                        lensVignetteFactor = tracked.lensVignetteFactor,
+                        isCameraFocusing = tracked.isCameraFocusing,
+                        skeletonStance = tracked.skeletonStance
+                    )
+                    if (current.spatialAnchor == mergedAnchor && current.visualState == mergedVisual) {
                         current
                     } else {
                         current.copy(
-                            spatialAnchor = updatedSpatialAnchor,
-                            visualState = current.visualState.copy(
-                                tiltOffsetX = shiftX,
-                                tiltOffsetY = shiftY,
-                                gazeShiftX = gazeX,
-                                gazeShiftY = gazeY,
-                                cameraPitchDegrees = pitchDeg,
-                                cameraRollDegrees = rollDeg
-                            )
+                            spatialAnchor = mergedAnchor,
+                            visualState = mergedVisual
                         )
                     }
                 }
 
-                // 空间声场方位实时联动（随镜头平移/出画同步平移声相）
-                if (_uiState.value.spatialAnchor.isAnchored) {
+                // 空间声场方位实时联动（随镜头平移/绕圈公转同步平移声相）
+                if (tracked.isAnchored) {
                     val pan = if (tracked.isInView) {
                         ((tracked.screenX - 0.5f) * 2f).coerceIn(-1f, 1f)
                     } else {
@@ -441,11 +359,28 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     }
                     audioPlayer.updateSpatialAudio(
                         normalizedScreenX = (pan + 1f) / 2f,
-                        scaleFactor = _uiState.value.spatialAnchor.scaleFactor
+                        scaleFactor = tracked.scaleFactor
                     )
                 }
             }
         }
+    }
+
+    fun snapshotImuWorldBasis(outRight: FloatArray, outUp: FloatArray, outForward: FloatArray): Boolean {
+        return universalTracker.snapshotImuWorldBasis(outRight, outUp, outForward)
+    }
+
+    fun onVisualAnchorObserved(
+        obs: VisualAnchorObservation,
+        basisRight: FloatArray,
+        basisUp: FloatArray,
+        basisForward: FloatArray
+    ) {
+        universalTracker.onVisualAnchorObserved(obs, basisRight, basisUp, basisForward)
+    }
+
+    fun onCameraIntrinsicsChanged(effectiveVerticalFovDeg: Float, viewportAspect: Float) {
+        universalTracker.updateCameraIntrinsics(effectiveVerticalFovDeg, viewportAspect)
     }
 
     private fun loadInitialStatus() {
@@ -598,11 +533,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                             action = resp.action,
                             actionStartedAtNanos = actionStartNanos,
                             expression = resp.expression,
-                            highResPose = pose,
-                            blushIntensity = if (pose == "SHY") 0.85f else 0f,
-                            poutIntensity = if (pose == "POUT") 0.90f else 0f,
-                            sleepinessFactor = if (pose == "SLEEPY") 0.90f else 0f,
-                            smugTiltDegrees = if (pose == "SMUG") 4.5f else 0f
+                            blushIntensity = if (resp.emotion == EmotionType.SHY || resp.action == ActionType.BLUSH) 0.85f else 0f
                         ),
                         personaStatus = current.personaStatus?.copy(
                             affinity = resp.currentAffinity,
@@ -630,15 +561,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         // 触感微震动联动
         triggerHapticFeedback(part)
 
-        // 1. 端侧即时高精微表情与姿态反馈 (Zero GMS 毫秒级零延迟触发)
-        //    3D 手办额外记录触摸反应开始时刻，由 FigureAnimator 播放专属全身反应动作
+        // 1. 端侧即时 3D 骨骼动作与 VRM 表情反馈 (Zero GMS 毫秒级零延迟触发)
         val touchReactionStartNanos = System.nanoTime()
         val myEpoch = ++interactionEpoch
-        val reaction = when (part) {
-            TouchPart.HEAD -> TouchReaction(pose = "SHY", blush = 0.72f, pout = 0f, smug = 0f)
-            TouchPart.CHEEK -> TouchReaction(pose = "POUT", blush = 0f, pout = 0.95f, smug = 0f)
-            TouchPart.HAND -> TouchReaction(pose = "DEFAULT", blush = 0.35f, pout = 0f, smug = 0f)
-            TouchPart.BODY -> TouchReaction(pose = "SHY", blush = 0.85f, pout = 0f, smug = 0f)
+        val touchBlush = when (part) {
+            TouchPart.HEAD -> 0.72f
+            TouchPart.CHEEK -> 0f
+            TouchPart.HAND -> 0.35f
+            TouchPart.BODY -> 0.85f
         }
         val touchAction = when (part) {
             TouchPart.HEAD -> ActionType.NOD
@@ -662,22 +592,18 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { current ->
             current.copy(
                 visualState = current.visualState.copy(
-                    highResPose = reaction.pose,
-                    blushIntensity = reaction.blush,
-                    poutIntensity = reaction.pout,
-                    smugTiltDegrees = reaction.smug,
+                    blushIntensity = touchBlush,
                     action = touchAction,
                     emotion = touchEmotion,
                     expression = touchExpr,
                     actionStartedAtNanos = touchReactionStartNanos,
-                    sleepinessFactor = 0f,
                     touchReaction = part,
                     touchReactionStartedAtNanos = touchReactionStartNanos
                 )
             )
         }
 
-        // 触摸反应动作与微表情 2.6 秒后自动同步复位（以开始时间戳为令牌，避免连点误清）
+        // 触摸反应动作与表情 2.6 秒后自动同步复位（以开始时间戳为令牌，避免连点误清）
         viewModelScope.launch {
             delay(2700L)
             _uiState.update { current ->
@@ -689,10 +615,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         emotion = EmotionType.NEUTRAL,
                         action = if (current.visualState.action == touchAction) ActionType.IDLE else current.visualState.action,
                         actionStartedAtNanos = if (current.visualState.action == touchAction) 0L else current.visualState.actionStartedAtNanos,
-                        highResPose = if (current.visualState.highResPose == reaction.pose) "DEFAULT" else current.visualState.highResPose,
-                        blushIntensity = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.blushIntensity,
-                        poutIntensity = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.poutIntensity,
-                        smugTiltDegrees = if (current.visualState.highResPose == reaction.pose) 0f else current.visualState.smugTiltDegrees
+                        blushIntensity = if (current.visualState.blushIntensity == touchBlush) 0f else current.visualState.blushIntensity
                     )
                 )
             }
@@ -729,13 +652,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 val staleInteraction = interactionEpoch != myEpoch
                 var keepTouchPoseActive = false
                 _uiState.update { current ->
-                    val pose = when (resp.emotion) {
-                        EmotionType.SHY -> "SHY"
-                        EmotionType.ANGRY -> "POUT"
-                        EmotionType.SLEEPY -> "SLEEPY"
-                        EmotionType.CONFIDENT -> "SMUG"
-                        else -> reaction.pose
-                    }
                     val stillInThisTouch = !staleInteraction &&
                         current.visualState.touchReactionStartedAtNanos == touchReactionStartNanos
                     keepTouchPoseActive = stillInThisTouch
@@ -747,8 +663,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         stillInThisTouch -> current.copy(
                             messages = current.messages + personaMessage,
                             visualState = current.visualState.copy(
-                                emotion = resp.emotion,
-                                highResPose = pose
+                                emotion = resp.emotion
                             ),
                             personaStatus = current.personaStatus?.copy(
                                 affinity = resp.currentAffinity
@@ -760,8 +675,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                                 emotion = resp.emotion,
                                 action = resp.action,
                                 actionStartedAtNanos = actionStartNanos,
-                                expression = resp.expression,
-                                highResPose = pose
+                                expression = resp.expression
                             ),
                             personaStatus = current.personaStatus?.copy(
                                 affinity = resp.currentAffinity
@@ -818,14 +732,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 手动触发星野慵懒大叔打瞌睡休眠姿态 (Sleepy Nap Mode)
+     * 手动触发星野慵懒打瞌睡休眠姿态 (Sleepy Nap Mode)
      */
     fun triggerSleepyNap() {
         _uiState.update { current ->
             current.copy(
                 visualState = current.visualState.copy(
-                    highResPose = "SLEEPY",
-                    sleepinessFactor = 0.92f,
                     emotion = EmotionType.SLEEPY,
                     action = ActionType.SLEEP,
                     actionStartedAtNanos = System.nanoTime()
@@ -962,22 +874,6 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(bubbleDisplayMode = mode) }
     }
 
-    fun toggleARMode() {
-        _uiState.update {
-            val nextMode = if (it.arMode == ARMode.BILLBOARD_2_5D) ARMode.ARCORE_3D else ARMode.BILLBOARD_2_5D
-            it.copy(
-                arMode = nextMode,
-                // 用户显式切换过模式后，切换人格不再自动改写模式
-                arModeExplicitlySet = true,
-                arTrackingStatus = if (nextMode == ARMode.ARCORE_3D) {
-                    if (it.spatialAnchor.isAnchored) ARTrackingStatus.ANCHORED else ARTrackingStatus.PLANE_DETECTED
-                } else {
-                    ARTrackingStatus.ANCHORED
-                }
-            )
-        }
-    }
-
     private var lastMacroProximityNotifyTimestamp = 0L
 
     private data class OpticalCalculations(
@@ -985,8 +881,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val chromaticAngle: Float,
         val bloomIntensity: Float,
         val depthOfFieldBlur: Float,
-        val isMacroProximity: Boolean,
-        val bottomCutoff: Float
+        val isMacroProximity: Boolean
     )
 
     private fun calculateOpticalParams(
@@ -1002,133 +897,55 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val chromaticAberration = (radialDist * 0.72f).coerceIn(0f, 1f)
         val isMacro = scaleFactor >= 1.50f
         val dofBlur = (kotlin.math.abs(scaleFactor - 1.0f) * 0.38f).coerceIn(0f, 0.65f)
-        val bottomCutoff = if (screenY > 0.80f) ((screenY - 0.80f) / 0.20f).coerceIn(0f, 1f) else 0f
 
         return OpticalCalculations(
             chromaticAberration = chromaticAberration,
             chromaticAngle = chromaticAngle,
             bloomIntensity = bloomBleedFactor,
             depthOfFieldBlur = dofBlur,
-            isMacroProximity = isMacro,
-            bottomCutoff = bottomCutoff
+            isMacroProximity = isMacro
         )
     }
 
     fun onTapPlaceAnchor(screenX: Float, screenY: Float) {
         audioPlayer.updateSpatialAudio(screenX, 1.0f)
         universalTracker.anchorToDesktop(screenX, screenY)
-        val tracked = universalTracker.spatialAnchor.value
+        universalTracker.updateCameraFocus(true, System.currentTimeMillis())
         _uiState.update { current ->
-            val optical = calculateOpticalParams(
-                screenX = screenX,
-                screenY = screenY,
-                scaleFactor = current.spatialAnchor.scaleFactor,
-                bloomBleedFactor = current.spatialAnchor.bloomIntensity
-            )
             current.copy(
                 arTrackingStatus = ARTrackingStatus.ANCHORED,
-                spatialAnchor = current.spatialAnchor.copy(
-                    screenX = screenX,
-                    screenY = screenY,
-                    isAnchored = true,
-                    isWorldAnchored = true,
-                    worldAnchorX = tracked.worldAnchorX,
-                    worldAnchorY = tracked.worldAnchorY,
-                    worldAnchorZ = tracked.worldAnchorZ,
-                    cameraForwardX = tracked.cameraForwardX,
-                    cameraForwardY = tracked.cameraForwardY,
-                    cameraForwardZ = tracked.cameraForwardZ,
-                    cameraUpX = tracked.cameraUpX,
-                    cameraUpY = tracked.cameraUpY,
-                    cameraUpZ = tracked.cameraUpZ,
-                    isInView = true,
-                    azimuthDeltaDegrees = 0f,
-                    distanceMeters = 0.65f,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    bloomIntensity = optical.bloomIntensity,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    cameraFocusTimestamp = System.currentTimeMillis(),
-                    isCameraFocusing = true,
-                    planeTypeDescription = "书桌实景 (真实 3D 空间锁定)"
-                ),
-                visualState = current.visualState.copy(
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    bloomIntensity = optical.bloomIntensity,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    isCameraFocusing = true
-                )
+                resetFeaturesSignal = System.nanoTime()
             )
         }
     }
 
     fun onTransformAnchor(scaleMultiplier: Float, rotationYawDelta: Float) {
+        val wasMacro = universalTracker.spatialAnchor.value.isMacroProximity
         universalTracker.updateScale(scaleMultiplier)
         universalTracker.updateRotation(rotationYawDelta)
-        var triggeredMacroCare = false
-        _uiState.update { current ->
-            val anchor = current.spatialAnchor
-            val nextScale = (anchor.scaleFactor * scaleMultiplier).coerceIn(0.4f, 2.2f)
-            val nextYaw = (anchor.rotationYaw + rotationYawDelta) % 360f
-            val optical = calculateOpticalParams(
-                screenX = anchor.screenX,
-                screenY = anchor.screenY,
-                scaleFactor = nextScale,
-                bloomBleedFactor = anchor.bloomIntensity
-            )
-            audioPlayer.updateSpatialAudio(anchor.screenX, nextScale)
+        val anchor = universalTracker.spatialAnchor.value
+        audioPlayer.updateSpatialAudio(anchor.screenX, anchor.scaleFactor)
 
-            if (!anchor.isMacroProximity && optical.isMacroProximity) {
-                val now = System.currentTimeMillis()
-                if (now - lastMacroProximityNotifyTimestamp > 20_000L) {
-                    lastMacroProximityNotifyTimestamp = now
-                    triggeredMacroCare = true
-                }
-            }
-
-            current.copy(
-                spatialAnchor = anchor.copy(
-                    scaleFactor = nextScale,
-                    rotationYaw = nextYaw,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff
-                ),
-                visualState = current.visualState.copy(
-                    scale = nextScale,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    emotion = if (optical.isMacroProximity) EmotionType.SHY else current.visualState.emotion
-                )
-            )
-        }
-
-        if (triggeredMacroCare) {
+        val nowMacro = anchor.scaleFactor >= 1.50f
+        if (!wasMacro && nowMacro) {
             val now = System.currentTimeMillis()
-            val careMessage = ChatMessage(
-                sender = MessageSender.PERSONA,
-                text = "指挥官突然靠得好近呀... 稍微有点心跳加速呢 (⁄ ⁄•⁄ω⁄•⁄ ⁄) 💕",
-                emotion = EmotionType.SHY,
-                timestamp = now
-            )
-            _uiState.update { state ->
-                state.copy(
-                    messages = state.messages + careMessage,
-                    visualState = state.visualState.copy(
-                        emotion = EmotionType.SHY,
-                        expression = "BLUSH"
-                    )
+            if (now - lastMacroProximityNotifyTimestamp > 20_000L) {
+                lastMacroProximityNotifyTimestamp = now
+                val careMessage = ChatMessage(
+                    sender = MessageSender.PERSONA,
+                    text = "指挥官突然靠得好近呀... 稍微有点心跳加速呢 (⁄ ⁄•⁄ω⁄•⁄ ⁄) 💕",
+                    emotion = EmotionType.SHY,
+                    timestamp = now
                 )
+                _uiState.update { state ->
+                    state.copy(
+                        messages = state.messages + careMessage,
+                        visualState = state.visualState.copy(
+                            emotion = EmotionType.SHY,
+                            expression = "BLUSH"
+                        )
+                    )
+                }
             }
         }
     }
@@ -1139,35 +956,14 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { current ->
             current.copy(
                 arTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
-                spatialAnchor = current.spatialAnchor.copy(
-                    isAnchored = false,
-                    isWorldAnchored = false,
-                    isInView = true,
-                    azimuthDeltaDegrees = 0f,
-                    scaleFactor = 1.0f,
-                    rotationYaw = 0f,
-                    parallaxShiftX = 0f,
-                    parallaxShiftY = 0f,
-                    chromaticAberrationIntensity = 0f,
-                    bloomIntensity = 0f,
-                    depthOfFieldBlur = 0f,
-                    isMacroProximity = false,
-                    surfaceOcclusionBottomCutoff = 0f,
-                    planeTypeDescription = "书桌实景 (零 GMS)"
-                ),
-                visualState = current.visualState.copy(
-                    chromaticAberrationIntensity = 0f,
-                    bloomIntensity = 0f,
-                    depthOfFieldBlur = 0f,
-                    isMacroProximity = false,
-                    surfaceOcclusionBottomCutoff = 0f
-                )
+                resetFeaturesSignal = 0L
             )
         }
     }
 
-    /** 设置骨骼体态（3D 与 2.5D 共用：站立 ↔ 坐姿） */
+    /** 设置 3D 骨骼体态（站立 ↔ 桌沿垂腿坐姿） */
     fun setSkeletonStance(stance: SkeletonStance) {
+        universalTracker.updateSkeletonStance(stance)
         val startedAt = System.nanoTime()
         _uiState.update { current ->
             val nextAction = when {
@@ -1203,292 +999,48 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         setSkeletonStance(nextStance)
     }
 
-    // 真实书桌实景物理边界拓扑定义 (基于实景几何标定，零 GMS 依赖)
-    companion object {
-        private const val DESK_CLIFF_BOTTOM_Y = 0.80f      // 桌面前沿实木悬崖分界线
-        private const val DESK_CLIFF_WARNING_Y = 0.74f     // 接近桌沿的预警阈值
-        private const val DESK_EDGE_LEFT_X = 0.12f         // 左侧桌面边缘
-        private const val DESK_EDGE_RIGHT_X = 0.88f        // 右侧桌面边缘
-        private const val KEYBOARD_MIN_X = 0.18f           // 机械键盘凸起刚体 X 范围
-        private const val KEYBOARD_MAX_X = 0.90f
-        private const val KEYBOARD_MIN_Y = 0.52f           // 机械键盘凸起刚体 Y 范围
-        private const val KEYBOARD_MAX_Y = 0.72f
+    /**
+     * 开始拖拽 3D 模型重定位（射线-桌面水平面求交，零回弹零乱跑）
+     */
+    fun onDragStart(screenX: Float, screenY: Float) {
+        universalTracker.beginDrag(screenX, screenY)
+        universalTracker.updateCameraFocus(false)
     }
 
     /**
-     * 在现实画面中自由拖拽滑动伴侣模型 (Surface Drag Repositioning & Cliff Physics)
+     * 拖拽移动 3D 模型（严格落在手指所在物理桌面水平面射线交点）
      */
-    fun onDragAnchor(deltaNormX: Float, deltaNormY: Float) {
-        _uiState.update { current ->
-            val anchor = current.spatialAnchor
-            val nextX = (anchor.screenX + deltaNormX).coerceIn(0.06f, 0.94f)
-            val nextY = (anchor.screenY + deltaNormY).coerceIn(0.20f, 0.92f)
-
-            if (anchor.isWorldAnchored) {
-                universalTracker.anchorToDesktop(nextX, nextY)
-            }
-
-            // 透视几何：Y 坐标越小 (靠近画面上方远端)，距离越远 (0.8m ~ 1.5m)
-            val depthFactor = (1.0f + (0.65f - nextY) * 0.5f).coerceIn(0.55f, 1.4f)
-            val currentScale = anchor.scaleFactor
-
-            val optical = calculateOpticalParams(
-                screenX = nextX,
-                screenY = nextY,
-                scaleFactor = currentScale,
-                bloomBleedFactor = anchor.bloomIntensity
-            )
-            audioPlayer.updateSpatialAudio(nextX, currentScale)
-
-            // 1. 机械键盘物理碰撞刚体与台阶高度抬升 (Keyboard Step Collider)
-            val isOverKeyboard = nextX in KEYBOARD_MIN_X..KEYBOARD_MAX_X && nextY in KEYBOARD_MIN_Y..KEYBOARD_MAX_Y
-            val stepHeightOffset = if (isOverKeyboard) 14f * currentScale else 0f
-
-            // 2. 真实桌面悬崖边缘感知与下垂物理解算 (Desk Cliff Edge Solver)
-            val isBeyondCliffBottom = nextY >= DESK_CLIFF_BOTTOM_Y
-            val isNearCliffBottom = nextY > DESK_CLIFF_WARNING_Y && !isBeyondCliffBottom
-            val isNearCliffSide = nextX < DESK_EDGE_LEFT_X || nextX > DESK_EDGE_RIGHT_X
-
-            val cliffIntensity = when {
-                isBeyondCliffBottom -> 1.0f
-                isNearCliffBottom -> ((nextY - DESK_CLIFF_WARNING_Y) / (DESK_CLIFF_BOTTOM_Y - DESK_CLIFF_WARNING_Y)).coerceIn(0f, 1f)
-                isNearCliffSide -> {
-                    val distLeft = (DESK_EDGE_LEFT_X - nextX) / 0.06f
-                    val distRight = (nextX - DESK_EDGE_RIGHT_X) / 0.06f
-                    maxOf(distLeft, distRight).coerceIn(0f, 1f)
-                }
-                else -> 0f
-            }
-
-            val isDangling = isBeyondCliffBottom
-            val airDist = if (isDangling) ((nextY - DESK_CLIFF_BOTTOM_Y) / 0.12f).coerceIn(0f, 1f) else 0f
-            val supportConfidence = if (isDangling) (1.0f - airDist * 0.92f).coerceIn(0.06f, 1.0f) else 1.0f
-
-            // 3. 物理质量-弹簧惯性摆动与悬崖平衡反冲 (Mass-Spring-Damper Sway & Cliff Balance)
-            val baseSwayAngle = (-deltaNormX * 220f).coerceIn(-16f, 16f)
-            // 靠近悬崖时，伴侣身体重心微仰自平衡，防止前倾摔倒
-            val balancePitchBack = if (nextY > DESK_CLIFF_WARNING_Y) -cliffIntensity * 7.5f else 0f
-            val totalSwayAngle = (baseSwayAngle + balancePitchBack).coerceIn(-18f, 18f)
-
-            // 纵向弹性形变：地面拖拽弹性挤压 vs 悬空时的重力下垂拉伸 (Leg Droop Stretch)
-            val baseSquishY = (1.0f - deltaNormY * 0.9f).coerceIn(0.92f, 1.08f)
-            val totalSquishY = if (isDangling) (1.0f + airDist * 0.07f).coerceIn(1.0f, 1.10f) else baseSquishY
-
-            // 4. 动态视线追踪 (Eye Gaze Tracking) + 悬崖探查微视线
-            val baseGazeX = ((0.5f - nextX) * 14f).coerceIn(-8f, 8f)
-            val baseGazeY = ((0.42f - nextY) * 10f).coerceIn(-6f, 6f)
-            // 逼近悬崖时，眼睛产生探头下瞥动作
-            val cliffPeekingGazeY = (baseGazeY + cliffIntensity * 4.0f).coerceIn(-6f, 8f)
-
-            // 5. 前景键盘遮挡切片比例 (当伴侣接近或穿过键盘后沿 Y > 0.60f 时产生物理遮挡)
-            val fgOcclusion = if (nextY > 0.60f) ((nextY - 0.60f) / 0.22f).coerceIn(0f, 0.45f) else 0f
-
-            current.copy(
-                spatialAnchor = anchor.copy(
-                    screenX = nextX,
-                    screenY = nextY,
-                    isDragging = true,
-                    distanceMeters = ((0.65f * depthFactor) * 10f).toInt() / 10f,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    inertialSwayAngle = totalSwayAngle,
-                    inertialSquishY = totalSquishY,
-                    gazeTrackingEyeX = baseGazeX,
-                    gazeTrackingEyeY = cliffPeekingGazeY,
-                    foregroundOcclusionRatio = fgOcclusion,
-                    isNearCliffEdge = cliffIntensity > 0.05f,
-                    cliffEdgeIntensity = cliffIntensity,
-                    isDanglingOverCliff = isDangling,
-                    dangleAirDistance = airDist,
-                    surfaceSupportConfidence = supportConfidence,
-                    surfaceStepHeightOffset = stepHeightOffset
-                ),
-                visualState = current.visualState.copy(
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    inertialSwayAngle = totalSwayAngle,
-                    inertialSquishY = totalSquishY,
-                    gazeTrackingEyeX = baseGazeX,
-                    gazeTrackingEyeY = cliffPeekingGazeY,
-                    foregroundOcclusionRatio = fgOcclusion,
-                    isNearCliffEdge = cliffIntensity > 0.05f,
-                    cliffEdgeIntensity = cliffIntensity,
-                    isDanglingOverCliff = isDangling,
-                    dangleAirDistance = airDist,
-                    surfaceSupportConfidence = supportConfidence,
-                    surfaceStepHeightOffset = stepHeightOffset
-                )
-            )
-        }
+    fun onDragTo(screenX: Float, screenY: Float) {
+        val updated = universalTracker.dragTo(screenX, screenY)
+        audioPlayer.updateSpatialAudio(updated.screenX, updated.scaleFactor)
     }
 
-    fun onDragStateChanged(isDragging: Boolean) {
-        val currentAnchor = _uiState.value.spatialAnchor
-        val wasDangling = currentAnchor.isDanglingOverCliff
-
+    /**
+     * 结束拖拽：稳停在用户松手位置，刷新该处特征点并对焦测光
+     */
+    fun onDragEnd() {
+        val ended = universalTracker.endDrag()
+        universalTracker.updateCameraFocus(true, System.currentTimeMillis())
+        audioPlayer.updateSpatialAudio(ended.screenX, ended.scaleFactor)
         _uiState.update { current ->
-            current.copy(
-                spatialAnchor = current.spatialAnchor.copy(
-                    isDragging = isDragging,
-                    isCameraFocusing = !isDragging,
-                    cameraFocusTimestamp = if (!isDragging) System.currentTimeMillis() else current.spatialAnchor.cameraFocusTimestamp,
-                    inertialSwayAngle = if (!isDragging) 0f else current.spatialAnchor.inertialSwayAngle,
-                    inertialSquishY = if (!isDragging && !wasDangling) 1.0f else current.spatialAnchor.inertialSquishY
-                ),
-                visualState = current.visualState.copy(
-                    isCameraFocusing = !isDragging,
-                    inertialSwayAngle = if (!isDragging) 0f else current.visualState.inertialSwayAngle,
-                    inertialSquishY = if (!isDragging && !wasDangling) 1.0f else current.visualState.inertialSquishY
-                )
-            )
-        }
-
-        // 6. 悬空脱离自救与安全着陆回弹机制 (Auto-Catch & Safe Landing Recovery)
-        if (!isDragging && wasDangling) {
-            viewModelScope.launch {
-                // 平滑回弹吸附至安全桌垫前沿
-                val startY = currentAnchor.screenY
-                val targetY = DESK_CLIFF_WARNING_Y
-                val steps = 8
-                for (step in 1..steps) {
-                    kotlinx.coroutines.delay(20L)
-                    val progress = step.toFloat() / steps
-                    val easedProgress = (1.0f - kotlin.math.cos(progress * kotlin.math.PI.toFloat())) / 2.0f
-                    val currentY = startY + (targetY - startY) * easedProgress
-                    _uiState.update { state ->
-                        state.copy(
-                            spatialAnchor = state.spatialAnchor.copy(
-                                screenY = currentY,
-                                isDanglingOverCliff = false,
-                                dangleAirDistance = 0f,
-                                surfaceSupportConfidence = 1.0f,
-                                cliffEdgeIntensity = (1.0f - progress) * 0.4f,
-                                isNearCliffEdge = progress < 0.8f,
-                                inertialSquishY = 0.90f + progress * 0.10f // 触地弹性缓冲
-                            ),
-                            visualState = state.visualState.copy(
-                                isDanglingOverCliff = false,
-                                dangleAirDistance = 0f,
-                                surfaceSupportConfidence = 1.0f,
-                                cliffEdgeIntensity = (1.0f - progress) * 0.4f,
-                                isNearCliffEdge = progress < 0.8f,
-                                inertialSquishY = 0.90f + progress * 0.10f
-                            )
-                        )
-                    }
-                }
-                // 最终稳固站立在桌面上
-                _uiState.update { state ->
-                    state.copy(
-                        spatialAnchor = state.spatialAnchor.copy(
-                            screenY = targetY,
-                            isDanglingOverCliff = false,
-                            isNearCliffEdge = false,
-                            cliffEdgeIntensity = 0f,
-                            surfaceSupportConfidence = 1.0f,
-                            inertialSquishY = 1.0f
-                        ),
-                        visualState = state.visualState.copy(
-                            isDanglingOverCliff = false,
-                            isNearCliffEdge = false,
-                            cliffEdgeIntensity = 0f,
-                            surfaceSupportConfidence = 1.0f,
-                            inertialSquishY = 1.0f
-                        )
-                    )
-                }
-            }
+            current.copy(resetFeaturesSignal = System.nanoTime())
         }
     }
 
     fun onCameraFocusStateChanged(isFocusing: Boolean) {
-        _uiState.update { current ->
-            current.copy(
-                spatialAnchor = current.spatialAnchor.copy(isCameraFocusing = isFocusing),
-                visualState = current.visualState.copy(isCameraFocusing = isFocusing)
-            )
-        }
+        universalTracker.updateCameraFocus(isFocusing)
     }
 
     private var lastLightNotifyTimestamp = 0L
 
     /**
-     * 现实环境全光谱光学特征实时注入 (照度、色温、三原色增益、强光光晕、相机高 ISO 噪点与落脚点局部材质底色)
+     * 现实环境全光谱光学特征实时注入（6 方向环境光色、局部桌面底色、锁定世界主光与相机参数）
      */
-    fun onOpticalProfileChanged(profile: com.persona.ar.ar.EnvironmentalOpticalProfile) {
-        val prevLowLight = _uiState.value.spatialAnchor.isLowLight
-        _uiState.update { current ->
-            val anchor = current.spatialAnchor
-            val optical = calculateOpticalParams(
-                screenX = anchor.screenX,
-                screenY = anchor.screenY,
-                scaleFactor = anchor.scaleFactor,
-                bloomBleedFactor = profile.bloomBleedFactor
-            )
+    fun onOpticalProfileChanged(profile: EnvironmentalOpticalProfile) {
+        val prevLowLight = universalTracker.spatialAnchor.value.isLowLight
+        universalTracker.updateOpticalMetadata(profile)
 
-            // 综合全局环境照度与伴侣落脚点局部桌面照度 (40% 全局 + 60% 局部)
-            val effectiveLighting = (profile.luminance * 0.4f + profile.localSurfaceLuminance * 0.6f).coerceIn(0.2f, 1.35f)
-
-            current.copy(
-                spatialAnchor = anchor.copy(
-                    lightIntensity = effectiveLighting,
-                    isLowLight = profile.isLowLight,
-                    ambientColorTemp = profile.colorTemp,
-                    ambientTintRed = profile.tintR,
-                    ambientTintGreen = profile.tintG,
-                    ambientTintBlue = profile.tintB,
-                    sensorGrainIntensity = profile.sensorGrainIntensity,
-                    bloomIntensity = optical.bloomIntensity,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    localSurfaceTintRed = profile.localSurfaceTintR,
-                    localSurfaceTintGreen = profile.localSurfaceTintG,
-                    localSurfaceTintBlue = profile.localSurfaceTintB,
-                    localSurfaceLuminance = profile.localSurfaceLuminance,
-                    lightDirectionX = profile.lightDirectionX,
-                    lightDirectionY = profile.lightDirectionY,
-                    lightDirectionalStrength = profile.lightDirectionalStrength,
-                    deskTextureConfidence = profile.deskTextureConfidence,
-                    visualFlowOffsetX = profile.visualFlowOffsetX,
-                    visualFlowOffsetY = profile.visualFlowOffsetY,
-                    lensVignetteFactor = profile.lensVignetteFactor
-                ),
-                visualState = current.visualState.copy(
-                    environmentalLighting = (effectiveLighting * profile.lensVignetteFactor).coerceIn(0.18f, 1.35f),
-                    isLowLight = profile.isLowLight,
-                    ambientColorTemp = profile.colorTemp,
-                    ambientTintRed = (profile.tintR * 0.7f + profile.localSurfaceTintR * 0.3f).coerceIn(0.8f, 1.25f),
-                    ambientTintGreen = (profile.tintG * 0.7f + profile.localSurfaceTintG * 0.3f).coerceIn(0.8f, 1.25f),
-                    ambientTintBlue = (profile.tintB * 0.7f + profile.localSurfaceTintB * 0.3f).coerceIn(0.8f, 1.25f),
-                    sensorGrainIntensity = profile.sensorGrainIntensity,
-                    bloomIntensity = optical.bloomIntensity,
-                    chromaticAberrationIntensity = optical.chromaticAberration,
-                    chromaticAngleRad = optical.chromaticAngle,
-                    depthOfFieldBlur = optical.depthOfFieldBlur,
-                    isMacroProximity = optical.isMacroProximity,
-                    surfaceOcclusionBottomCutoff = optical.bottomCutoff,
-                    lightDirectionX = profile.lightDirectionX,
-                    lightDirectionY = profile.lightDirectionY,
-                    lightDirectionalStrength = profile.lightDirectionalStrength,
-                    cameraPitchDegrees = anchor.cameraPitchDegrees,
-                    cameraRollDegrees = anchor.cameraRollDegrees,
-                    visualFlowOffsetX = profile.visualFlowOffsetX,
-                    visualFlowOffsetY = profile.visualFlowOffsetY,
-                    lensVignetteFactor = profile.lensVignetteFactor
-                )
-            )
-        }
-
-        // 现实光照突变时触发伴侣温柔关怀 (防抖 30 秒，且屏蔽启动前 5 秒相机测光初始化抖动，不用 SURPRISED 覆盖初始表情)
+        // 现实光照突变时触发伴侣温柔关怀 (防抖 30 秒，且屏蔽启动前 5 秒相机测光初始化抖动)
         val now = System.currentTimeMillis()
         if (!prevLowLight && profile.isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
@@ -1511,26 +1063,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 现实环境光照与色度动态反馈
-     * 将摄像头采集到的环境明暗与暗光状态实时注入虚拟伴侣与空间锚点，
-     * 并在现实光照突变时触发二次元伴侣的主动拟人关怀。
+     * 现实环境光照突变辅助提醒（主要光学更新已由 onOpticalProfileChanged 原子写入）
      */
     fun onEnvironmentalLightChanged(luminance: Float, isLowLight: Boolean) {
-        val prevLowLight = _uiState.value.spatialAnchor.isLowLight
-        _uiState.update { current ->
-            current.copy(
-                spatialAnchor = current.spatialAnchor.copy(
-                    lightIntensity = luminance,
-                    isLowLight = isLowLight
-                ),
-                visualState = current.visualState.copy(
-                    environmentalLighting = luminance,
-                    isLowLight = isLowLight
-                )
-            )
-        }
-
-        // 现实光照突变时触发伴侣温柔关怀 (防抖 30 秒，且屏蔽启动前 5 秒测光收敛)
+        val prevLowLight = universalTracker.spatialAnchor.value.isLowLight
         val now = System.currentTimeMillis()
         if (!prevLowLight && isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
@@ -1687,10 +1223,3 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         universalTracker.stop()
     }
 }
-
-private data class TouchReaction(
-    val pose: String,
-    val blush: Float,
-    val pout: Float,
-    val smug: Float
-)

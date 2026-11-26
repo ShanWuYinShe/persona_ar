@@ -123,4 +123,97 @@ class UniversalSensorSurfaceTrackerTest {
         // 相机 Up 应近似对齐世界 +Y (1.0)，确保竖屏状态下角色直立不横躺出画
         assertTrue("侧置竖屏时相机 Up.y 应大于 0.85，实际 ${anchor.cameraUpY}", anchor.cameraUpY > 0.85f)
     }
+
+    @Test
+    fun `dragTo moves anchor onto horizontal plane under cursor with zero bounce-back`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        tracker.updateCameraIntrinsics(62f, 0.5f)
+        // 向下俯视桌面约 30°：Right=(1,0,0), Up=(0, cos30, sin30), Fwd=(0, -sin30, -cos30) => -Fwd=(0, sin30, cos30)
+        // ENU cols: col0=(1,0,0), col1=(0, sin30, cos30), col2=(0, -cos30, sin30) => up_world = col1 -> Fwd in world? Wait:
+        // 直接喂入标准朝正北略向下俯视 35° 的旋转矩阵
+        val p = Math.toRadians(35.0).toFloat()
+        val cp = kotlin.math.cos(p)
+        val sp = kotlin.math.sin(p)
+        // ENU col0=(1,0,0), col1(devY)=(0, sp, cp), col2(devZ)=(0, -cp, sp) => forward_enu=-col2=(0, cp, -sp)
+        val tiltedNorth = floatArrayOf(
+            1f, 0f, 0f,
+            0f, sp, -cp,
+            0f, cp, sp
+        )
+        repeat(40) { tracker.applyOrientationFilter(tiltedNorth, 0f, 35f, 0f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+        val startPlaneY = tracker.spatialAnchor.value.worldAnchorY
+
+        tracker.beginDrag(0.5f, 0.65f)
+        assertTrue(tracker.spatialAnchor.value.isDragging)
+
+        // 手指拖向画面左上角 (0.28f, 0.52f)
+        val duringLeft = tracker.dragTo(0.28f, 0.52f)
+        assertEquals("拖拽时模型必须在同一水平桌面上移动", startPlaneY, duringLeft.worldAnchorY, 1e-4f)
+        assertEquals("屏幕投影 X 必须紧跟手指", 0.28f, duringLeft.screenX, 0.02f)
+        assertEquals("屏幕投影 Y 必须紧跟手指", 0.52f, duringLeft.screenY, 0.02f)
+
+        // 再拖到屏幕最下缘接近桌边 (0.76f, 0.85f)，确认绝不乱跑或弹回
+        val duringEdge = tracker.dragTo(0.76f, 0.85f)
+        assertEquals(startPlaneY, duringEdge.worldAnchorY, 1e-4f)
+        assertEquals(0.76f, duringEdge.screenX, 0.02f)
+        assertEquals(0.85f, duringEdge.screenY, 0.02f)
+
+        val ended = tracker.endDrag()
+        assertFalse(ended.isDragging)
+        assertEquals("松手后零回弹，保持在拖放点 X", duringEdge.screenX, ended.screenX, 0.005f)
+        assertEquals("松手后零回弹，保持在拖放点 Y", duringEdge.screenY, ended.screenY, 0.005f)
+        assertEquals(duringEdge.worldAnchorX, ended.worldAnchorX, 1e-4f)
+        assertEquals(duringEdge.worldAnchorZ, ended.worldAnchorZ, 1e-4f)
+    }
+
+    @Test
+    fun `visual inertial fusion enables 360 orbit around fixed world anchor`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        tracker.updateCameraIntrinsics(62f, 0.5f)
+        val uprightNorth = floatArrayOf(
+            1f, 0f, 0f,
+            0f, 0f, -1f,
+            0f, 1f, 0f
+        )
+        repeat(40) { tracker.applyOrientationFilter(uprightNorth, 0f, 0f, 0f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+        val initialAnchorX = tracker.spatialAnchor.value.worldAnchorX
+        val initialAnchorY = tracker.spatialAnchor.value.worldAnchorY
+        val initialAnchorZ = tracker.spatialAnchor.value.worldAnchorZ
+
+        // 模拟用户持手机走到模型右侧 90°（面向正西，继续把镜头对着模型所在屏幕中心）
+        val facingWest = floatArrayOf(
+            0f, 0f, 1f,
+            1f, 0f, 0f,
+            0f, 1f, 0f
+        )
+        val basisR = FloatArray(3)
+        val basisU = FloatArray(3)
+        val basisF = FloatArray(3)
+        repeat(40) {
+            tracker.applyOrientationFilter(facingWest, -90f, 0f, 0f)
+            tracker.snapshotImuWorldBasis(basisR, basisU, basisF)
+            tracker.onVisualAnchorObserved(
+                VisualAnchorObservation(
+                    trackedScreenX = 0.5f,
+                    trackedScreenY = 0.65f,
+                    scaleRatio = 1.0f,
+                    confidence = 0.9f,
+                    inlierCount = 8,
+                    isLost = false
+                ),
+                basisR, basisU, basisF
+            )
+        }
+
+        val orbited = tracker.spatialAnchor.value
+        // 世界锚点坐标绝对不能漂移
+        assertEquals(initialAnchorX, orbited.worldAnchorX, 1e-4f)
+        assertEquals(initialAnchorY, orbited.worldAnchorY, 1e-4f)
+        assertEquals(initialAnchorZ, orbited.worldAnchorZ, 1e-4f)
+        // 相机必须绕到了锚点的右侧 (+X 方向) 观察模型侧面
+        assertTrue("绕到右侧时相机位置 cameraPosX 应显著为正，实际 ${orbited.cameraPosX}", orbited.cameraPosX > 0.35f)
+        assertTrue("绕圈时模型保持在画面视野中", orbited.isInView)
+    }
 }

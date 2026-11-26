@@ -90,4 +90,55 @@ class FigureLightingTest {
         // 红通道增益 clamp 到了 0.2f
         assertEquals(0.2f, sh[0], 1e-4f)
     }
+
+    @Test
+    fun `compute2BandSHFromProbe captures top-bottom and left-right color contrast`() {
+        val sh = FigureLighting.compute2BandSHFromProbe(
+            ambientColorTemp = 0.3f,
+            tintRed = 1.0f,
+            tintGreen = 1.0f,
+            tintBlue = 1.0f,
+            topR = 1.2f, topG = 1.15f, topB = 0.9f,
+            bottomR = 0.55f, bottomG = 0.35f, bottomB = 0.25f,
+            leftR = 0.7f, leftG = 0.9f, leftB = 1.2f,
+            rightR = 1.25f, rightG = 0.85f, rightB = 0.65f
+        )
+        assertEquals(FigureLighting.SH_2BAND_COEFFICIENT_COUNT, sh.size)
+        // 右侧比左侧更红 -> L1,+1 R > 0；左侧比右侧更蓝 -> L1,+1 B < 0
+        assertTrue("右暖左冷时 X 偶极子红分量应为正，实际 ${sh[9]}", sh[9] > 0.05f)
+        assertTrue("右暖左冷时 X 偶极子蓝分量应为负，实际 ${sh[11]}", sh[11] < -0.05f)
+        // 顶部显著比底部亮 -> L1,-1 Y 偶极子为正
+        assertTrue("顶亮底暗时 Y 偶极子应为正", sh[3] > 0.1f && sh[4] > 0.1f)
+    }
+
+    @Test
+    fun `fillEnvironmentCubemapFace populates opaque valid RGBA pixels across faces and mips`() {
+        val size = 8
+        val bytes = ByteArray(size * size * 4)
+        val top = floatArrayOf(1.2f, 1.1f, 0.95f)
+        val bottom = floatArrayOf(0.5f, 0.4f, 0.35f)
+        val left = floatArrayOf(0.8f, 0.9f, 1.1f)
+        val right = floatArrayOf(1.1f, 0.9f, 0.75f)
+        val global = floatArrayOf(0.95f, 0.95f, 0.95f)
+
+        for (face in 0 until 6) {
+            for (mip in 0..4) {
+                FigureLighting.fillEnvironmentCubemapFace(
+                    face = face, size = size, roughnessLevel = mip,
+                    topRgb = top, bottomRgb = bottom, leftRgb = left, rightRgb = right, globalRgb = global,
+                    outBytes = bytes
+                )
+                for (i in 0 until size * size) {
+                    val a = bytes[i * 4 + 3].toInt() and 0xFF
+                    assertEquals("Cubemap alpha 必须为 255", 255, a)
+                }
+            }
+        }
+        // 验证 +Y(面2, 天顶) 平均红通道亮度高于 -Y(面3, 桌面底部)
+        FigureLighting.fillEnvironmentCubemapFace(2, size, 0, top, bottom, left, right, global, bytes)
+        val topCenterR = bytes[(size * size / 2) * 4].toInt() and 0xFF
+        FigureLighting.fillEnvironmentCubemapFace(3, size, 0, top, bottom, left, right, global, bytes)
+        val bottomCenterR = bytes[(size * size / 2) * 4].toInt() and 0xFF
+        assertTrue("天顶面($topCenterR)应亮于底面($bottomCenterR)", topCenterR > bottomCenterR)
+    }
 }

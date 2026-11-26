@@ -8,18 +8,13 @@
 
 ## 🌟 核心特性
 
-### 1. 现实空间投射与 AR 双模无缝切换
-- **2.5D 精致动态立绘透视模式 (Billboard AR)**：
-  - 借助 CameraX 实现超低延迟的真实世界背景透视。
-  - 细腻的二次元动态立绘渲染：包含自然呼吸浮动、眼神与周期性眨眼、动态腮红红晕、情绪表情差分（开朗、害羞、委屈、傲娇噘嘴）。
-  - **现实桌面投影阴影**：脚底生成带羽化的环境光椭圆阴影，让纸片人稳稳立于真实世界桌面或地面。
-  - **陀螺仪重力微视差 (Parallax Effect)**：晃动手机时，纸片人产生空间视差浮动，强化破壁而出的立体沉浸感。
-  - **手势自由操控**：单指任意拖拽摆放位置、双指缩放调整大小比例。
-- **真 3D 手办空间模式 (Filament + 全动作骨骼)**：
-  - 离线 Filament PBR 渲染 VRM 手办：方向光真实投射接触阴影、相机同轴闪光灯、现实环境 IBL 色渗与按照度自动曝光。
-  - **全身骨骼动作**：挥手、点头、摇头、鞠躬、跳跃、噘嘴、害羞捂脸、打哈欠、打瞌睡、得意叉腰、桌沿垂腿坐，以及摸头/戳脸/牵手/拥抱 4 种触摸反应；动作带缓动与自动回落，不是简单旋转贴图。
-  - **VRM 表情 + 真实口型**：41 个 blend shape 驱动微笑/害羞/生气/惊讶/困倦与随机眨眼，`Visualizer` 采样真实语音振幅驱动嘴型开合。
-  - 360 度视角旋转、单指拖拽摆放、双指缩放、桌面边缘坐姿切换；无 3D 资产的人格自动回退 2.5D 逐帧立绘。
+### 1. 纯 3D 物理空间定位与现实光影融合
+- **真 3D 手办空间引擎 (Filament + 全动作骨骼 + 6DoF 视觉惯性追踪)**：
+  - 离线 Filament PBR 渲染 VRM 手办：世界坐标系方向光真实投射 DPCF 柔和接触阴影、6 方向环境光实时更新 2-Band IBL 球谐与环境反射立方体贴图、相机同轴柔光补光与按环境照度自动 EV100 曝光。
+  - **视觉-惯性 6DoF 360° 空间定位**：零 GMS 依赖的 `UniversalSensorSurfaceTracker` 融合 `GAME_ROTATION_VECTOR` 重力校平与稀疏光流 9 点自适应关键帧追踪，拿着手机绕模型走动 360° 可稳定观察正面、侧面与背面。
+  - **射线-桌面求交精准拖拽**：单指拖拽严格沿着物理桌面水平面射线求交重定位，指哪拖到哪，松手稳停、零回弹。
+  - **全身骨骼动作与平滑混合**：支持挥手、点头、摇头、鞠躬、跳跃、噘嘴、害羞捂脸、打哈欠、打瞌睡、得意叉腰、桌沿垂腿坐，以及基于 3D 骨骼屏幕投影精确拾取的摸头/戳脸/牵手/拥抱触摸反应；全关节四元数 Slerp 交叉淡入消除动作切帧突变。
+  - **VRM 表情 + 真实口型**：41 个 blend shape 平滑驱动微笑/害羞/生气/惊讶/困倦与随机双连眨眼，`Visualizer` 采样真实语音振幅驱动嘴型开合。
 
 ### 2. 模拟真实人类的情感交互大脑
 - **多维度情绪与动作驱动**：
@@ -49,9 +44,9 @@ persona_ar/
 ├── android/                     # Android AR 客户端
 │   ├── app/src/main/
 │   │   ├── java/com/persona/ar/
-│   │   │   ├── ar/             # AR 模式切换、CameraX 透视背景、ARCore 适配与陀螺仪
+│   │   │   ├── ar/             # 6DoF 视觉惯性追踪、CameraX 真实内参/光学探针、ARCore 可选适配
 │   │   │   ├── audio/          # 音频播放、TTS 兜底与口型振幅采样、麦克风拾音
-│   │   │   ├── character/      # 2.5D 精致动态立绘 Canvas 渲染器、3D 网格底座、触碰热区
+│   │   │   ├── character/      # 纯 3D Filament 渲染管线、骨骼动画、VRM 表情与漫画 VFX
 │   │   │   ├── data/           # 数据模型、Retrofit API Client、Repository
 │   │   │   ├── ui/             # Jetpack Compose UI、MVI ViewModel、状态管理
 │   │   │   │   └── components/ # 聊天气泡浮窗、对讲输入栏、好感度胶囊、设置面板
@@ -108,8 +103,8 @@ go run ./cmd/server
 1. 打开 Android Studio，选择 **Open** 并导入 `android` 目录。
 2. 选择运行设备（**真机优先**）：
    - 先枚举设备：`adb devices -l` 中只有状态为 `device` 的设备可用；选中后所有命令固定加 `-s <serial>`。完整设备判定流程见用户级 skill `android-emulator-debug`。
-   - 本项目 **ARCore 是可选能力**：`AndroidManifest.xml` 中 `android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 元数据为 `optional`，依赖 `com.google.ar:core`（版本见 `android/app/build.gradle.kts`）。设备有可用 ARCore 时走物理平面检测与空间锚定，否则自动降级为通用传感器视差追踪，2.5D 立绘与 3D 手办模式照常运行。
-   - 因此 **ARCore 物理平面 / 空间锚定必须在支持 ARCore 的真机上验收**：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且设备可用 Google Play AR 服务（应用内由 `ArCoreApk.checkAvailability()` 判定，降级时 logcat 会打印 `ARSessionManager` 的 Universal Sensor 日志）。其余部分（2.5D 透视、3D 渲染与动作表情、语音交互）普通真机满足 API 26+ 与 ABI 匹配即可验证；无 ARCore 的真机只能验证这些降级路径。
+   - 本项目 **ARCore 是可选能力**：`AndroidManifest.xml` 中 `android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 元数据为 `optional`，依赖 `com.google.ar:core`（版本见 `android/app/build.gradle.kts`）。设备有可用 ARCore 时走物理平面检测与空间锚定，否则自动使用基于 IMU 与稀疏光流的通用 6DoF 空间追踪器，纯 3D 手办与环绕观察照常运行。
+   - 因此 **ARCore 物理平面 / 空间锚定必须在支持 ARCore 的真机上验收**：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且设备可用 Google Play AR 服务（应用内由 `ArCoreApk.checkAvailability()` 判定，降级时 logcat 会打印 `ARSessionManager` 的 Universal Sensor 日志）。其余部分（Filament 3D 渲染与光影融合、动作表情、6DoF 视觉惯性追踪与拖拽、语音交互）普通真机满足 API 26+ 与 ABI 匹配即可验证；无 ARCore 的真机只能验证这些降级路径。
    - 没有符合条件的真机时才用模拟器（推荐 API 26+），并记录原因；模拟器只能验证非 AR 部分，虚拟相机与模拟传感器画面不能替代真机 AR 透视与空间追踪结论。
 3. 运行构建：
    - 如果使用 Android 模拟器，App 默认自动连接宿主机 `http://10.0.2.2:8000/`。
@@ -122,11 +117,12 @@ go run ./cmd/server
 
 | 操作 | 交互效果 |
 | :--- | :--- |
-| **单指在屏幕上拖动** | 自由摆放纸片人在现实中的位置（支持摆放在桌面或地面） |
-| **双指捏合 / 展开** | 放大或缩小纸片人投射尺寸 |
+| **单指在屏幕上拖动** | 沿真实物理桌面水平面精确拖拽重定位 3D 手办（松手稳停不乱跑） |
+| **双指捏合 / 展开** | 放大或缩小 3D 手办在现实中的比例 |
+| **绕手办周围走动** | 360° 从正面、侧面与背面立体观察 3D 手办 |
 | **轻触头部** | 触发摸头反应（害羞脸红、好感度提升） |
 | **轻触脸颊** | 触发捏脸反应（嘟嘴傲娇、生气特效） |
 | **轻触双手** | 触发牵手反应（光子共振、眨眼微笑） |
 | **按住底部麦克风** | 实时拾音对讲，松开即刻发送语音给星野 |
-| **点击顶部 AR 胶囊** | 在【2.5D 精致立绘】与【3D 空间追踪】模式间无缝切换 |
-| **点击齿轮图标** | 打开设置：服务器地址、视觉模式、3D 动作演出预览（一键触发全部动作/坐姿切换）与系统参数 |
+| **点击顶部重放按钮** | 清除当前锚点，重新轻触桌面放置 3D 模型 |
+| **点击齿轮图标** | 打开设置：服务器地址、3D 动作演出预览（一键触发全部动作/坐姿切换）与系统参数 |

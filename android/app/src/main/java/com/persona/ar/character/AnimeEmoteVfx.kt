@@ -14,7 +14,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * 2.5D 与 3D 模式共享的二次元漫画情绪特效层（Anime Comic Emotion VFX）。
+ * 3D AR 角色二次元漫画情绪特效层（Anime Comic Emotion VFX）。
  *
  * 严格规范：不使用任何白色柔边圆/羽毛状光团（防止在暗背景上与轮廓叠加出现「白色羽毛」伪影），
  * 全部采用高饱和度矢量漫画符号（音符 ♪、爱心 ♥、傲娇十字 💢、金星 ✦、Zzz、泪珠 💧、叹号 !）。

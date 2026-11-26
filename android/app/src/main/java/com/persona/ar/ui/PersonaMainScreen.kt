@@ -34,10 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.persona.ar.ar.ARMode
 import com.persona.ar.ar.CameraXView
 import com.persona.ar.character.Character3DRenderer
-import com.persona.ar.character.CharacterCanvasRenderer
 import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.ui.components.ChatOverlay
 import com.persona.ar.ui.components.MemoryNotebookDialog
@@ -83,15 +81,22 @@ fun PersonaMainScreen(
                 )
             }
     ) {
-        // 1. 现实摄像头画面透传层 (集成环境光照感知、局部材质探针与真实相机帧抓取)
+        // 1. 现实摄像头画面透传层 (集成 6DoF 视觉特征跟踪、真实相机 FOV 读取与全光谱环境光学探针)
         var cameraFrameProvider by remember { mutableStateOf<(() -> android.graphics.Bitmap?)?>(null) }
+        var figureFrameProvider by remember { mutableStateOf<(() -> android.graphics.Bitmap?)?>(null) }
 
         if (hasCameraPermission) {
             CameraXView(
                 modifier = Modifier.fillMaxSize(),
                 focusAnchorNormX = uiState.spatialAnchor.screenX,
                 focusAnchorNormY = uiState.spatialAnchor.screenY,
+                isAnchored = uiState.spatialAnchor.isAnchored,
+                isDragging = uiState.spatialAnchor.isDragging,
+                resetFeaturesSignal = uiState.resetFeaturesSignal,
                 isFocusTriggered = uiState.spatialAnchor.isCameraFocusing,
+                imuBasisProvider = { r, u, f -> viewModel.snapshotImuWorldBasis(r, u, f) },
+                onVisualAnchorObserved = { obs, r, u, f -> viewModel.onVisualAnchorObserved(obs, r, u, f) },
+                onCameraIntrinsicsChanged = { effFov, aspect -> viewModel.onCameraIntrinsicsChanged(effFov, aspect) },
                 onFocusStateChanged = { isFocusing ->
                     viewModel.onCameraFocusStateChanged(isFocusing)
                 },
@@ -113,32 +118,21 @@ fun PersonaMainScreen(
             )
         }
 
-        // 2. 纸片人现实空间投射层
-        when (uiState.arMode) {
-            ARMode.BILLBOARD_2_5D -> {
-                CharacterCanvasRenderer(
-                    visualState = uiState.visualState,
-                    onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            ARMode.ARCORE_3D -> {
-                Character3DRenderer(
-                    visualState = uiState.visualState,
-                    trackingStatus = uiState.arTrackingStatus,
-                    spatialAnchor = uiState.spatialAnchor,
-                    partnerName = uiState.activeModel?.name ?: "星野",
-                    onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
-                    onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
-                    onDragAnchor = { dx, dy -> viewModel.onDragAnchor(dx, dy) },
-                    onDragStateChanged = { isDragging -> viewModel.onDragStateChanged(isDragging) },
-                    onResetAnchor = { viewModel.onResetAnchor() },
-                    onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
-                    onToggleStance = { viewModel.onToggleSkeletonStance() },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
+        // 2. 纯 3D 手办现实空间投射层 (Filament PBR + 全身体态骨骼 + 6DoF 360° 空间定位)
+        Character3DRenderer(
+            visualState = uiState.visualState,
+            trackingStatus = uiState.arTrackingStatus,
+            spatialAnchor = uiState.spatialAnchor,
+            partnerName = uiState.activeModel?.name ?: "星野",
+            onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
+            onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
+            onDragStart = { x, y -> viewModel.onDragStart(x, y) },
+            onDragTo = { x, y -> viewModel.onDragTo(x, y) },
+            onDragEnd = { viewModel.onDragEnd() },
+            onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
+            onFigureCaptureReady = { provider -> figureFrameProvider = provider },
+            modifier = Modifier.fillMaxSize()
+        )
 
         // 3. 拟人思考态反馈泡泡 (当后端 AI 推理延迟时展示，化解用户等待焦虑，带韵律思考光点)
         AnimatedVisibility(
@@ -242,13 +236,13 @@ fun PersonaMainScreen(
             StatusBadge(
                 status = uiState.personaStatus,
                 activeModel = uiState.activeModel,
-                arMode = uiState.arMode,
+                isAnchored = uiState.spatialAnchor.isAnchored,
                 currentEmotion = uiState.visualState.emotion,
                 bondLevel = uiState.bondLevel,
                 bondExp = uiState.bondExp,
                 bondExpNext = uiState.bondExpNext,
                 bondTitle = uiState.bondLevelTitle,
-                onToggleARMode = { viewModel.toggleARMode() },
+                onResetAnchor = { viewModel.onResetAnchor() },
                 onOpenStore = { viewModel.setStoreOpen(true) },
                 onOpenMemoryNotebook = { viewModel.setMemoryNotebookOpen(true) },
                 onOpenSettings = { viewModel.setSettingsOpen(true) }
@@ -268,8 +262,8 @@ fun PersonaMainScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // S. 伴侣姿态切换（3D 已锚定后及 2.5D 模式均支持随时切换站姿 / 坐姿）
-                if (uiState.arMode == ARMode.BILLBOARD_2_5D || uiState.spatialAnchor.isAnchored) {
+                // S. 伴侣 3D 体态切换（已锚定后支持随时切换站姿 / 桌沿坐姿）
+                if (uiState.spatialAnchor.isAnchored) {
                     val isSitting = uiState.spatialAnchor.skeletonStance == SkeletonStance.SITTING
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -358,11 +352,13 @@ fun PersonaMainScreen(
                                     val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
                                         ?: "我就站在你的现实世界中哦~"
                                     val realCameraBitmap = cameraFrameProvider?.invoke()
+                                    val real3DFigureBitmap = figureFrameProvider?.invoke()
                                     SnapshotHelper.captureAndSavePolaroid(
                                         context = context,
                                         visualState = uiState.visualState,
                                         quote = quote.take(30),
-                                        cameraFrameBitmap = realCameraBitmap
+                                        cameraFrameBitmap = realCameraBitmap,
+                                        figure3DBitmap = real3DFigureBitmap
                                     )
                                 }
                             },
@@ -569,7 +565,6 @@ fun PersonaMainScreen(
 
         if (uiState.isSettingsOpen) {
             SettingsDialog(
-                currentMode = uiState.arMode,
                 currentVoiceMode = uiState.voiceMode,
                 currentBubbleMode = uiState.bubbleDisplayMode,
                 currentServerUrl = uiState.serverBaseUrl,
@@ -582,7 +577,6 @@ fun PersonaMainScreen(
                 currentAsrApiKey = uiState.asrApiKey,
                 currentAsrModel = uiState.asrModel,
                 onDismiss = { viewModel.setSettingsOpen(false) },
-                onToggleMode = { viewModel.toggleARMode() },
                 onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
                 onSelectBubbleMode = { mode -> viewModel.setBubbleDisplayMode(mode) },
                 onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) },
