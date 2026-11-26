@@ -79,6 +79,11 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
     private var visualEstimatedDistance = 0.65f
     private var currentCamHeightAbovePlane = 0.12f
     private var visualConfidence = 0f
+    private var activeVisualKeyframeId = -1
+    private var keyframeReferenceDistance = 0.65f
+    private var hasAcceptedVisualBasis = false
+    private val lastAcceptedBasisForward = floatArrayOf(0f, 0f, -1f)
+    private val lastAcceptedBasisUp = floatArrayOf(0f, 1f, 0f)
     private var isDragging = false
     private var dragGrabOffsetX = 0f
     private var dragGrabOffsetZ = 0f
@@ -91,6 +96,7 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
     private val tmpRay = FloatArray(3)
     private val tmpHit = FloatArray(3)
     private val tmpProj = FloatArray(3)
+    private val tmpVisualProj = FloatArray(3)
 
     fun start() {
         val sensorToUse = gameRotationVectorSensor ?: rotationVectorSensor ?: gravitySensor ?: accelerometer
@@ -237,9 +243,63 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
                 return
             }
 
-            // 视觉尺度更新估计距离
-            val scaleFactor = if (obs.inlierCount >= 4) obs.scaleRatio.coerceIn(0.95f, 1.05f) else 1f
-            visualEstimatedDistance = (visualEstimatedDistance / scaleFactor).coerceIn(0.24f, 2.20f)
+            // 评估 IMU 旋转与视觉锚点投影变化，避免手机静止时被亚像素噪声推走
+            val basisRotChanged = if (!hasAcceptedVisualBasis) {
+                true
+            } else {
+                val dotFwd = basisForward[0] * lastAcceptedBasisForward[0] +
+                    basisForward[1] * lastAcceptedBasisForward[1] +
+                    basisForward[2] * lastAcceptedBasisForward[2]
+                val dotUp = basisUp[0] * lastAcceptedBasisUp[0] +
+                    basisUp[1] * lastAcceptedBasisUp[1] +
+                    basisUp[2] * lastAcceptedBasisUp[2]
+                dotFwd < 0.99997f || dotUp < 0.99997f
+            }
+
+            SpatialMath3D.projectWorldToScreen(
+                wx = worldAnchorX,
+                wy = worldAnchorY,
+                wz = worldAnchorZ,
+                camPosX = camPos[0],
+                camPosY = camPos[1],
+                camPosZ = camPos[2],
+                camRight = basisRight,
+                camUp = basisUp,
+                camForward = basisForward,
+                verticalFovDeg = verticalFovDegrees,
+                aspect = viewportAspect,
+                outScreen = tmpVisualProj
+            )
+            val screenDelta = hypot(
+                (obs.trackedScreenX - tmpVisualProj[0]).toDouble(),
+                (obs.trackedScreenY - tmpVisualProj[1]).toDouble()
+            ).toFloat()
+
+            // 视觉尺度更新估计距离：优先使用关键帧绝对尺度比，并加入死区抑制噪声累加收缩
+            val hasSignificantScaleChange: Boolean
+            if (obs.keyframeId > 0) {
+                if (obs.keyframeId != activeVisualKeyframeId) {
+                    activeVisualKeyframeId = obs.keyframeId
+                    keyframeReferenceDistance = visualEstimatedDistance
+                }
+                val rawKeyScale = if (obs.inlierCount >= 4) obs.keyframeScaleRatio.coerceIn(0.75f, 1.35f) else 1f
+                hasSignificantScaleChange = abs(rawKeyScale - 1f) > 0.032f && obs.inlierCount >= 5
+                if (hasSignificantScaleChange) {
+                    val targetVisualDist = (keyframeReferenceDistance / rawKeyScale).coerceIn(0.24f, 2.20f)
+                    visualEstimatedDistance += (targetVisualDist - visualEstimatedDistance) * 0.25f
+                }
+            } else {
+                val rawStepScale = if (obs.inlierCount >= 4) obs.scaleRatio.coerceIn(0.95f, 1.05f) else 1f
+                hasSignificantScaleChange = abs(rawStepScale - 1f) > 0.025f
+                if (hasSignificantScaleChange) {
+                    visualEstimatedDistance = (visualEstimatedDistance / rawStepScale).coerceIn(0.24f, 2.20f)
+                }
+            }
+
+            if (!basisRotChanged && screenDelta < 0.015f && !hasSignificantScaleChange) {
+                visualConfidence = obs.confidence
+                return
+            }
 
             // 构造此刻从相机指向视觉追踪桌面锚点的世界射线
             SpatialMath3D.screenToWorldRay(
@@ -259,9 +319,11 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             if (dirY < -0.22f && currentCamHeightAbovePlane > 0.14f) {
                 val planeDist = (currentCamHeightAbovePlane / (-dirY)).coerceIn(0.24f, 2.20f)
                 targetDist = planeDist * 0.68f + visualEstimatedDistance * 0.32f
-                // 极慢速适应用户抬高/蹲低手机引起的高度变化
-                val observedH = visualEstimatedDistance * (-dirY)
-                currentCamHeightAbovePlane = (currentCamHeightAbovePlane * 0.94f + observedH * 0.06f).coerceIn(0.14f, 1.50f)
+                // 仅在存在真实运动且内点充足时慢速适应机位高度变化，静止期锁死高度
+                if (obs.inlierCount >= 5 && (basisRotChanged || hasSignificantScaleChange)) {
+                    val observedH = visualEstimatedDistance * (-dirY)
+                    currentCamHeightAbovePlane = (currentCamHeightAbovePlane * 0.97f + observedH * 0.03f).coerceIn(0.14f, 1.50f)
+                }
             } else {
                 targetDist = visualEstimatedDistance
             }
@@ -271,6 +333,9 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             targetCamPos[1] = max(worldAnchorY - targetDist * tmpRay[1], planeY + 0.06f)
             targetCamPos[2] = worldAnchorZ - targetDist * tmpRay[2]
 
+            System.arraycopy(basisForward, 0, lastAcceptedBasisForward, 0, 3)
+            System.arraycopy(basisUp, 0, lastAcceptedBasisUp, 0, 3)
+            hasAcceptedVisualBasis = true
             visualConfidence = obs.confidence
         }
     }
@@ -304,6 +369,9 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
 
             val initialDistance = 0.65f
             visualEstimatedDistance = initialDistance
+            keyframeReferenceDistance = initialDistance
+            activeVisualKeyframeId = -1
+            hasAcceptedVisualBasis = false
             SpatialMath3D.screenToWorldRay(
                 screenX = sx,
                 screenY = sy,
@@ -452,6 +520,9 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             val dy = worldAnchorY - camPos[1]
             val dz = worldAnchorZ - camPos[2]
             visualEstimatedDistance = sqrt(dx * dx + dy * dy + dz * dz).coerceIn(0.24f, 2.60f)
+            keyframeReferenceDistance = visualEstimatedDistance
+            activeVisualKeyframeId = -1
+            hasAcceptedVisualBasis = false
             targetCamPos[0] = camPos[0]
             targetCamPos[1] = camPos[1]
             targetCamPos[2] = camPos[2]
@@ -656,6 +727,10 @@ class UniversalSensorSurfaceTracker(context: Context) : SensorEventListener {
             hasAnchorPose = false
             isDragging = false
             visualConfidence = 0f
+            visualEstimatedDistance = 0.65f
+            keyframeReferenceDistance = 0.65f
+            activeVisualKeyframeId = -1
+            hasAcceptedVisualBasis = false
             camPos[0] = 0f; camPos[1] = 0f; camPos[2] = 0f
             targetCamPos[0] = 0f; targetCamPos[1] = 0f; targetCamPos[2] = 0f
             _spatialAnchor.value = ARSpatialAnchor(

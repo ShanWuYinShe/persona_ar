@@ -240,9 +240,9 @@ fun ARCoreOverlay(
                 val aoW = 148f * spatialAnchor.scaleFactor * distFactor
                 val aoH = (aoW * 0.40f * groundAspect).coerceAtLeast(10f * spatialAnchor.scaleFactor * distFactor)
 
-                // 自然羽化柔边 Contact AO 阴影（无硬边、无蓝光）
+                // 自然羽化柔边 Contact AO 阴影（无硬边、无蓝光，与 DPCF 阴影自然融为一体）
                 val envLum = spatialAnchor.lightIntensity.coerceIn(0.2f, 1.35f)
-                val aoAlpha = if (visualState.action == ActionType.JUMP) 0.16f else (0.34f + 0.12f * (1f - envLum)).coerceIn(0.24f, 0.48f)
+                val aoAlpha = if (visualState.action == ActionType.JUMP) 0.10f else (0.22f + 0.08f * (1f - envLum)).coerceIn(0.16f, 0.30f)
                 drawOval(
                     brush = Brush.radialGradient(
                         colors = listOf(
