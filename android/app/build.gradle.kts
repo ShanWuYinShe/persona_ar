@@ -3,6 +3,38 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 版本号以 git tag (vX.Y.Z) 为唯一来源：正式 tag 产出 X.Y.Z，开发态附 -dev.N 后缀
+fun resolveGitVersion(): Pair<Int, String> {
+    return try {
+        val process = ProcessBuilder("git", "describe", "--tags", "--match", "v*", "--long")
+            .directory(rootProject.projectDir.parentFile)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        val exit = process.waitFor()
+        val match = if (exit == 0) {
+            Regex("""^v(\d+)\.(\d+)\.(\d+)-(\d+)-g[0-9a-f]+$""").matchEntire(output)
+        } else {
+            null
+        }
+        if (match != null) {
+            val major = match.groupValues[1].toInt()
+            val minor = match.groupValues[2].toInt()
+            val patch = match.groupValues[3].toInt()
+            val ahead = match.groupValues[4].toInt()
+            val code = (major * 10000 + minor * 100 + patch).coerceAtLeast(1)
+            val name = if (ahead == 0) "$major.$minor.$patch" else "$major.$minor.$patch-dev.$ahead"
+            code to name
+        } else {
+            1 to "1.0.0-dev"
+        }
+    } catch (_: Exception) {
+        1 to "1.0.0-dev"
+    }
+}
+
+val (derivedVersionCode, derivedVersionName) = resolveGitVersion()
+
 android {
     namespace = "com.persona.ar"
     // Filament 1.81.0 的 AAR 声明 minCompileSdk=37（见其 aar-metadata.properties）；compileSdk 只影响编译期可见 API，
@@ -13,8 +45,8 @@ android {
         applicationId = "com.persona.ar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = derivedVersionCode
+        versionName = derivedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
