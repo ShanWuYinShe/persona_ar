@@ -216,4 +216,94 @@ class UniversalSensorSurfaceTrackerTest {
         assertTrue("绕到右侧时相机位置 cameraPosX 应显著为正，实际 ${orbited.cameraPosX}", orbited.cameraPosX > 0.35f)
         assertTrue("绕圈时模型保持在画面视野中", orbited.isInView)
     }
+
+    @Test
+    fun `stationary noisy visual observations over 300 frames do not shrink or drift anchor`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        tracker.updateCameraIntrinsics(62f, 1080f / 2340f)
+        val p = Math.toRadians(35.0).toFloat()
+        val cp = kotlin.math.cos(p)
+        val sp = kotlin.math.sin(p)
+        val tiltedNorth = floatArrayOf(
+            1f, 0f, 0f,
+            0f, sp, -cp,
+            0f, cp, sp
+        )
+        repeat(40) { tracker.applyOrientationFilter(tiltedNorth, 0f, 35f, 0f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+        val initialDist = tracker.spatialAnchor.value.distanceMeters
+        val initialAnchorX = tracker.spatialAnchor.value.worldAnchorX
+        val initialAnchorZ = tracker.spatialAnchor.value.worldAnchorZ
+
+        val basisR = FloatArray(3)
+        val basisU = FloatArray(3)
+        val basisF = FloatArray(3)
+        tracker.snapshotImuWorldBasis(basisR, basisU, basisF)
+
+        // 模拟传统会拖垮尺度的帧间亚像素缩小噪声 (0.985) 与微弱漂移 (0.006)
+        repeat(300) { idx ->
+            val jitter = if (idx % 2 == 0) 0.006f else -0.005f
+            tracker.onVisualAnchorObserved(
+                VisualAnchorObservation(
+                    trackedScreenX = 0.5f + jitter,
+                    trackedScreenY = 0.65f - jitter * 0.5f,
+                    scaleRatio = 0.985f,
+                    confidence = 0.85f,
+                    inlierCount = 7,
+                    isLost = false,
+                    keyframeId = 1,
+                    keyframeScaleRatio = 0.985f
+                ),
+                basisR, basisU, basisF
+            )
+            tracker.applyOrientationFilter(tiltedNorth, 0f, 35f, 0f)
+        }
+
+        val after = tracker.spatialAnchor.value
+        assertEquals("静止噪声下相机距人偶距离绝不能被拉远缩成小人", initialDist, after.distanceMeters, 0.015f)
+        assertEquals(0.5f, after.screenX, 0.01f)
+        assertEquals(0.65f, after.screenY, 0.01f)
+        assertEquals(initialAnchorX, after.worldAnchorX, 1e-4f)
+        assertEquals(initialAnchorZ, after.worldAnchorZ, 1e-4f)
+    }
+
+    @Test
+    fun `keyframeScaleRatio converges once without exponential compounding across repeated frames`() {
+        val tracker = UniversalSensorSurfaceTracker(fakeContext)
+        tracker.updateCameraIntrinsics(62f, 0.5f)
+        val uprightNorth = floatArrayOf(
+            1f, 0f, 0f,
+            0f, 0f, -1f,
+            0f, 1f, 0f
+        )
+        repeat(40) { tracker.applyOrientationFilter(uprightNorth, 0f, 0f, 0f) }
+        tracker.anchorToDesktop(0.5f, 0.65f)
+
+        val basisR = FloatArray(3)
+        val basisU = FloatArray(3)
+        val basisF = FloatArray(3)
+        tracker.snapshotImuWorldBasis(basisR, basisU, basisF)
+
+        // 同一关键帧持续汇报靠近 1.25x：距离应收敛至 0.65 / 1.25 = 0.52m，绝不指数塌缩到 min 0.24m
+        repeat(60) {
+            tracker.onVisualAnchorObserved(
+                VisualAnchorObservation(
+                    trackedScreenX = 0.5f,
+                    trackedScreenY = 0.65f,
+                    scaleRatio = 1.25f,
+                    confidence = 0.9f,
+                    inlierCount = 8,
+                    isLost = false,
+                    keyframeId = 1,
+                    keyframeScaleRatio = 1.25f
+                ),
+                basisR, basisU, basisF
+            )
+            tracker.applyOrientationFilter(uprightNorth, 0f, 0f, 0f)
+        }
+
+        val after = tracker.spatialAnchor.value
+        assertEquals(0.65f / 1.25f, after.distanceMeters, 0.04f)
+        assertTrue("不应指数连除压到下限 0.24m，实际 ${after.distanceMeters}", after.distanceMeters > 0.45f)
+    }
 }

@@ -3,14 +3,7 @@ package com.persona.ar.ar
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 /**
  * 现实环境光学特征剖面（基于屏幕对齐坐标精确采样）
@@ -60,7 +53,9 @@ data class VisualAnchorObservation(
     val scaleRatio: Float,
     val confidence: Float,
     val inlierCount: Int,
-    val isLost: Boolean
+    val isLost: Boolean,
+    val keyframeId: Int = 0,
+    val keyframeScaleRatio: Float = scaleRatio
 )
 
 /**
@@ -69,8 +64,8 @@ data class VisualAnchorObservation(
  * 关键架构升级：
  * 1. 所有采样均经过 `SpatialMath3D.screenNormToBufferNorm`，严格校正传感器旋转 (0/90/180/270°)
  *    与 PreviewView FILL_CENTER 裁剪，消除旧版「主光源歪 90° / 桌面取样错位」的 Bug；
- * 2. 在屏幕对齐的紧凑灰度网格 (96×GH) 上每帧运行 9 点 2D 角点光流跟踪 + IMU 旋转先验预测 +
- *    2D Similarity 变换拟合 + 自适应关键帧刷新，支持用户拿着手机绕模型 360° 走动观察。
+ * 2. 委托 `KeyframeVisualTracker` 在紧凑灰度网格 (96×GH) 上运行关键帧锁定 + 2 点 RANSAC 稀疏光流，
+ *    静止持握或桌面支架放置时零累加漂移，支持绕模型 360° 走动观察。
  */
 class CameraEnvironmentalAnalyzer(
     private val onLightEstimated: (luminance: Float, isLowLight: Boolean) -> Unit = { _, _ -> },
@@ -100,8 +95,7 @@ class CameraEnvironmentalAnalyzer(
     /** 清空视觉追踪特征（重置锚点时调用） */
     fun clearFeatures() {
         synchronized(trackerLock) {
-            hasInitializedFeatures = false
-            featureCount = 0
+            keyframeTracker.clear()
             pendingResetFeatures = false
         }
     }
@@ -116,30 +110,10 @@ class CameraEnvironmentalAnalyzer(
     private var currGray = IntArray(gridW * gridH)
     private var coarseGray = IntArray(coarseW * coarseH)
 
-    // ---- 9 点稀疏角点特征状态 ----
-    private val maxFeatures = 9
-    private val patchRadius = 3 // 7x7 patch
-    private val patchSize = 7
-    private val patchArea = patchSize * patchSize
-    private var featureCount = 0
-    private var hasInitializedFeatures = false
-    private val featX = FloatArray(maxFeatures) // 网格坐标 (0..gridW)
-    private val featY = FloatArray(maxFeatures)
-    private val featPatches = Array(maxFeatures) { FloatArray(patchArea) }
-    private val featPatchNorm = FloatArray(maxFeatures)
-    private val obsX = FloatArray(maxFeatures)
-    private val obsY = FloatArray(maxFeatures)
-    private val obsOk = BooleanArray(maxFeatures)
-    private var anchorGridX = gridW * 0.5f
-    private var anchorGridY = gridH * 0.65f
-    private var framesSinceKeyframe = 0
-    private var cumulativeRotDeg = 0f
+    // ---- 关键帧锁定稀疏光流引擎 ----
+    private val keyframeTracker = KeyframeVisualTracker(gridW = gridW)
 
-    // IMU 上一帧世界基向量缓存
-    private var hasPrevImu = false
-    private val prevRight = FloatArray(3)
-    private val prevUp = FloatArray(3)
-    private val prevForward = FloatArray(3)
+    // IMU 当前帧世界基向量缓存
     private val currRight = FloatArray(3)
     private val currUp = FloatArray(3)
     private val currForward = FloatArray(3)
@@ -204,15 +178,10 @@ class CameraEnvironmentalAnalyzer(
                 }
             }
 
-            // 2. 视觉锚点 6DoF 稀疏光流追踪 (全帧率 30fps 运行)
+            // 2. 视觉锚点 6DoF 关键帧锁定稀疏光流追踪 (全帧率 30fps 运行)
             val hasImu = imuBasisProvider?.invoke(currRight, currUp, currForward) == true
             if (isTrackingActive && !isDraggingPaused && hasImu) {
                 runVisualTracking(aspect, effectiveVerticalFovDeg)
-            } else if (hasImu) {
-                System.arraycopy(currRight, 0, prevRight, 0, 3)
-                System.arraycopy(currUp, 0, prevUp, 0, 3)
-                System.arraycopy(currForward, 0, prevForward, 0, 3)
-                hasPrevImu = true
             }
 
             // 3. 环境光照、主光源方位与 6 向色彩探针 (每 3 帧采样一次，10Hz 平滑更新)
@@ -233,470 +202,37 @@ class CameraEnvironmentalAnalyzer(
             coarseH = targetH / 2
             currGray = IntArray(gridW * gridH)
             coarseGray = IntArray(coarseW * coarseH)
-            hasInitializedFeatures = false
-            featureCount = 0
+            keyframeTracker.onGridResized()
         }
     }
 
-    // ========================================================================= 9 点 IMU 先验稀疏光流
+    // ========================================================================= 关键帧锁定 IMU 先验稀疏光流
 
     private fun runVisualTracking(aspect: Float, vFovDeg: Float) {
         synchronized(trackerLock) {
-            if (pendingResetFeatures || !hasInitializedFeatures) {
-                pendingResetFeatures = false
-                anchorGridX = resetTargetX * gridW
-                anchorGridY = resetTargetY * gridH
-                initFeaturesAround(anchorGridX, anchorGridY)
-                System.arraycopy(currRight, 0, prevRight, 0, 3)
-                System.arraycopy(currUp, 0, prevUp, 0, 3)
-                System.arraycopy(currForward, 0, prevForward, 0, 3)
-                hasPrevImu = true
-                framesSinceKeyframe = 0
-                cumulativeRotDeg = 0f
-                if (featureCount >= 3) {
-                    onVisualAnchorObserved?.invoke(
-                        VisualAnchorObservation(
-                            trackedScreenX = anchorGridX / gridW,
-                            trackedScreenY = anchorGridY / gridH,
-                            scaleRatio = 1.0f,
-                            confidence = 1.0f,
-                            inlierCount = featureCount,
-                            isLost = false
-                        ),
-                        currRight.copyOf(), currUp.copyOf(), currForward.copyOf()
-                    )
-                }
-                return
-            }
-
-            if (featureCount < 3 || !hasPrevImu) {
-                System.arraycopy(currRight, 0, prevRight, 0, 3)
-                System.arraycopy(currUp, 0, prevUp, 0, 3)
-                System.arraycopy(currForward, 0, prevForward, 0, 3)
-                hasPrevImu = true
-                return
-            }
-
-            // 计算上一帧到本帧的纯旋转预测与累加旋转角
-            val dotFwd = (prevForward[0] * currForward[0] + prevForward[1] * currForward[1] + prevForward[2] * currForward[2]).coerceIn(-1f, 1f)
-            val stepAngleDeg = Math.toDegrees(kotlin.math.acos(dotFwd.toDouble())).toFloat()
-            cumulativeRotDeg += stepAngleDeg
-
-            val tanHalfFov = tan(Math.toRadians(vFovDeg.toDouble()) * 0.5).toFloat()
-            var matchedCount = 0
-
-            for (k in 0 until featureCount) {
-                // 用前一帧 IMU 射线投影到当前帧 IMU，得到纯旋转先验位置
-                val sxPrev = featX[k] / gridW
-                val syPrev = featY[k] / gridH
-                val ndcX = 2f * sxPrev - 1f
-                val ndcY = 1f - 2f * syPrev
-                val rx = ndcX * tanHalfFov * aspect
-                val ry = ndcY * tanHalfFov
-                val wx = rx * prevRight[0] + ry * prevUp[0] + prevForward[0]
-                val wy = rx * prevRight[1] + ry * prevUp[1] + prevForward[1]
-                val wz = rx * prevRight[2] + ry * prevUp[2] + prevForward[2]
-
-                val vx = wx * currRight[0] + wy * currRight[1] + wz * currRight[2]
-                val vy = wx * currUp[0] + wy * currUp[1] + wz * currUp[2]
-                val vz = wx * currForward[0] + wy * currForward[1] + wz * currForward[2]
-
-                if (vz <= 0.1f) {
-                    obsOk[k] = false
-                    continue
-                }
-                val predGridX = ((vx / (vz * tanHalfFov * aspect) + 1f) * 0.5f) * gridW
-                val predGridY = ((1f - vy / (vz * tanHalfFov)) * 0.5f) * gridH
-
-                if (predGridX < patchRadius + 2 || predGridX >= gridW - patchRadius - 2 ||
-                    predGridY < patchRadius + 2 || predGridY >= gridH - patchRadius - 2
-                ) {
-                    obsOk[k] = false
-                    continue
-                }
-
-                val matched = matchFeatureZncc(k, predGridX, predGridY)
-                obsOk[k] = matched
-                if (matched) matchedCount++
-            }
-
-            if (matchedCount >= 3) {
-                val fit = fitSimilarityAndTransformAnchor()
-                if (fit != null) {
-                    val (newAx, newAy, scaleRatio, inliers, avgResidual) = fit
-                    val newNormX = newAx / gridW
-                    val newNormY = newAy / gridH
-                    val inBounds = newNormX in -0.25f..1.25f && newNormY in -0.25f..1.25f
-
-                    if (inliers >= 3 && inBounds) {
-                        anchorGridX = newAx
-                        anchorGridY = newAy
-                        // 更新特征点为最新观测位置
-                        for (k in 0 until featureCount) {
-                            if (obsOk[k]) {
-                                featX[k] = obsX[k]
-                                featY[k] = obsY[k]
-                            }
-                        }
-                        framesSinceKeyframe++
-
-                        // Keyframe hand-off：转角超过 8° 或连续跟了 8 帧或部分特征出画时原地刷新模板，支持无限 360° 环绕
-                        val outOfMarginCount = (0 until featureCount).count {
-                            !obsOk[it] || featX[it] < 8f || featX[it] > gridW - 8f || featY[it] < 8f || featY[it] > gridH - 8f
-                        }
-                        if (avgResidual < 1.8f && (cumulativeRotDeg > 8f || framesSinceKeyframe >= 8 || outOfMarginCount >= 3)) {
-                            refreshOrReplaceFeatures(anchorGridX, anchorGridY)
-                            framesSinceKeyframe = 0
-                            cumulativeRotDeg = 0f
-                        }
-
-                        val conf = (inliers.toFloat() / maxFeatures.toFloat()).coerceIn(0.35f, 1.0f)
-                        onVisualAnchorObserved?.invoke(
-                            VisualAnchorObservation(
-                                trackedScreenX = newNormX,
-                                trackedScreenY = newNormY,
-                                scaleRatio = scaleRatio.coerceIn(0.92f, 1.08f),
-                                confidence = conf,
-                                inlierCount = inliers,
-                                isLost = false
-                            ),
-                            currRight.copyOf(), currUp.copyOf(), currForward.copyOf()
-                        )
-                    } else {
-                        emitLostObservation()
-                    }
-                } else {
-                    emitLostObservation()
-                }
-            } else {
-                emitLostObservation()
-            }
-
-            System.arraycopy(currRight, 0, prevRight, 0, 3)
-            System.arraycopy(currUp, 0, prevUp, 0, 3)
-            System.arraycopy(currForward, 0, prevForward, 0, 3)
-            hasPrevImu = true
-        }
-    }
-
-    private fun emitLostObservation() {
-        onVisualAnchorObserved?.invoke(
-            VisualAnchorObservation(
-                trackedScreenX = anchorGridX / gridW,
-                trackedScreenY = anchorGridY / gridH,
-                scaleRatio = 1.0f,
-                confidence = 0f,
-                inlierCount = 0,
-                isLost = true
-            ),
-            currRight.copyOf(), currUp.copyOf(), currForward.copyOf()
-        )
-    }
-
-    private fun initFeaturesAround(cx: Float, cy: Float) {
-        featureCount = 0
-        hasInitializedFeatures = true
-
-        data class Candidate(val x: Int, val y: Int, val score: Float)
-        val candidates = ArrayList<Candidate>(128)
-        val margin = patchRadius + 3
-        val minX = max(margin, (cx - gridW * 0.36f).toInt())
-        val maxX = min(gridW - margin - 1, (cx + gridW * 0.36f).toInt())
-        val minY = max(margin + (gridH * 0.12f).toInt(), (cy - gridH * 0.24f).toInt())
-        val maxY = min(gridH - margin - 1, (cy + gridH * 0.24f).toInt())
-
-        for (y in minY..maxY step 2) {
-            for (x in minX..maxX step 2) {
-                val cornerScore = computeCornerScore(x, y)
-                if (cornerScore > 140f) {
-                    // 优先靠近锚点的清晰纹理点
-                    val dist = hypot((x - cx).toDouble(), (y - cy).toDouble()).toFloat()
-                    val weight = 1f / (1f + dist * 0.04f)
-                    candidates.add(Candidate(x, y, cornerScore * weight))
-                }
+            val resetNow = pendingResetFeatures
+            pendingResetFeatures = false
+            val obs = keyframeTracker.trackFrame(
+                gray = currGray,
+                gridH = gridH,
+                aspect = aspect,
+                vFovDeg = vFovDeg,
+                currRight = currRight,
+                currUp = currUp,
+                currForward = currForward,
+                pendingReset = resetNow,
+                resetNormX = resetTargetX,
+                resetNormY = resetTargetY
+            )
+            if (obs != null) {
+                onVisualAnchorObserved?.invoke(
+                    obs,
+                    currRight.copyOf(),
+                    currUp.copyOf(),
+                    currForward.copyOf()
+                )
             }
         }
-        candidates.sortByDescending { it.score }
-
-        val minSepSq = 8f * 8f
-        for (c in candidates) {
-            if (featureCount >= maxFeatures) break
-            var tooClose = false
-            for (i in 0 until featureCount) {
-                val dx = featX[i] - c.x
-                val dy = featY[i] - c.y
-                if (dx * dx + dy * dy < minSepSq) {
-                    tooClose = true
-                    break
-                }
-            }
-            if (!tooClose) {
-                extractPatch(c.x, c.y, featureCount)
-                featureCount++
-            }
-        }
-    }
-
-    private fun refreshOrReplaceFeatures(cx: Float, cy: Float) {
-        // 先保留仍在清晰范围内的有效特征更新其 patch，空缺名额补选新角点
-        var kept = 0
-        for (k in 0 until featureCount) {
-            if (obsOk[k]) {
-                val ix = obsX[k].toInt()
-                val iy = obsY[k].toInt()
-                if (ix in (patchRadius + 4)..(gridW - patchRadius - 5) &&
-                    iy in (patchRadius + 4)..(gridH - patchRadius - 5) &&
-                    computeCornerScore(ix, iy) > 100f
-                ) {
-                    if (kept != k) {
-                        featX[kept] = obsX[k]
-                        featY[kept] = obsY[k]
-                    }
-                    extractPatch(ix, iy, kept)
-                    kept++
-                }
-            }
-        }
-        featureCount = kept
-        if (featureCount < maxFeatures) {
-            data class Candidate(val x: Int, val y: Int, val score: Float)
-            val candidates = ArrayList<Candidate>(96)
-            val margin = patchRadius + 4
-            val minX = max(margin, (cx - gridW * 0.36f).toInt())
-            val maxX = min(gridW - margin - 1, (cx + gridW * 0.36f).toInt())
-            val minY = max(margin + (gridH * 0.12f).toInt(), (cy - gridH * 0.24f).toInt())
-            val maxY = min(gridH - margin - 1, (cy + gridH * 0.24f).toInt())
-            for (y in minY..maxY step 3) {
-                for (x in minX..maxX step 3) {
-                    val s = computeCornerScore(x, y)
-                    if (s > 140f) candidates.add(Candidate(x, y, s))
-                }
-            }
-            candidates.sortByDescending { it.score }
-            val minSepSq = 8f * 8f
-            for (c in candidates) {
-                if (featureCount >= maxFeatures) break
-                var tooClose = false
-                for (i in 0 until featureCount) {
-                    val dx = featX[i] - c.x
-                    val dy = featY[i] - c.y
-                    if (dx * dx + dy * dy < minSepSq) { tooClose = true; break }
-                }
-                if (!tooClose) {
-                    extractPatch(c.x, c.y, featureCount)
-                    featureCount++
-                }
-            }
-        }
-    }
-
-    /** 2D Harris 风格角点响应（剔除只有单轴梯度的直线边缘，避免光流沿边缘滑动） */
-    private fun computeCornerScore(cx: Int, cy: Int): Float {
-        var sxx = 0f
-        var syy = 0f
-        for (dy in -1..1) {
-            val r = (cy + dy) * gridW
-            for (dx in -1..1) {
-                val x = cx + dx
-                val gx = (currGray[r + x + 1] - currGray[r + x - 1]).toFloat()
-                val gy = (currGray[(cy + dy + 1) * gridW + x] - currGray[(cy + dy - 1) * gridW + x]).toFloat()
-                sxx += gx * gx
-                syy += gy * gy
-            }
-        }
-        return min(sxx, syy)
-    }
-
-    private fun extractPatch(cx: Int, cy: Int, idx: Int) {
-        featX[idx] = cx.toFloat()
-        featY[idx] = cy.toFloat()
-        val dst = featPatches[idx]
-        var sum = 0f
-        var p = 0
-        for (dy in -patchRadius..patchRadius) {
-            val r = (cy + dy) * gridW
-            for (dx in -patchRadius..patchRadius) {
-                val v = currGray[r + cx + dx].toFloat()
-                dst[p++] = v
-                sum += v
-            }
-        }
-        val mean = sum / patchArea
-        var normSq = 0f
-        for (i in 0 until patchArea) {
-            val d = dst[i] - mean
-            dst[i] = d
-            normSq += d * d
-        }
-        featPatchNorm[idx] = sqrt(normSq).coerceAtLeast(1e-3f)
-    }
-
-    /**
-     * 先在 2x 粗层 ±5 格初搜，再在细层 ±2 格用 ZNCC 精匹配 + 亚像素抛物线拟合
-     */
-    private fun matchFeatureZncc(featIdx: Int, predX: Float, predY: Float): Boolean {
-        val tmpl = featPatches[featIdx]
-        val tmplNorm = featPatchNorm[featIdx]
-        if (tmplNorm < 18f) return false // 纹理太弱的块直接放弃
-
-        // 粗层搜索（在细网格以步长 2 围绕预测中心 ±10 格搜索）
-        val px = predX.toInt().coerceIn(patchRadius + 1, gridW - patchRadius - 2)
-        val py = predY.toInt().coerceIn(patchRadius + 1, gridH - patchRadius - 2)
-        val coarseRadius = 8
-        var bestCoarseX = px
-        var bestCoarseY = py
-        var bestCoarseScore = -2f
-
-        for (dy in -coarseRadius..coarseRadius step 2) {
-            val cy = py + dy
-            if (cy < patchRadius || cy >= gridH - patchRadius) continue
-            for (dx in -coarseRadius..coarseRadius step 2) {
-                val cx = px + dx
-                if (cx < patchRadius || cx >= gridW - patchRadius) continue
-                val ncc = computeZnccAt(cx, cy, tmpl, tmplNorm)
-                if (ncc > bestCoarseScore) {
-                    bestCoarseScore = ncc
-                    bestCoarseX = cx
-                    bestCoarseY = cy
-                }
-            }
-        }
-
-        // 细层 ±2 格精搜
-        var bestX = bestCoarseX
-        var bestY = bestCoarseY
-        var bestScore = bestCoarseScore
-        for (dy in -2..2) {
-            val cy = bestCoarseY + dy
-            if (cy < patchRadius + 1 || cy >= gridH - patchRadius - 1) continue
-            for (dx in -2..2) {
-                val cx = bestCoarseX + dx
-                if (cx < patchRadius + 1 || cx >= gridW - patchRadius - 1) continue
-                val ncc = computeZnccAt(cx, cy, tmpl, tmplNorm)
-                if (ncc > bestScore) {
-                    bestScore = ncc
-                    bestX = cx
-                    bestY = cy
-                }
-            }
-        }
-
-        if (bestScore < 0.58f) return false
-
-        // 亚像素抛物线拟合
-        val sL = computeZnccAt(bestX - 1, bestY, tmpl, tmplNorm)
-        val sR = computeZnccAt(bestX + 1, bestY, tmpl, tmplNorm)
-        val sU = computeZnccAt(bestX, bestY - 1, tmpl, tmplNorm)
-        val sD = computeZnccAt(bestX, bestY + 1, tmpl, tmplNorm)
-
-        val denomX = (sL - 2f * bestScore + sR)
-        val denomY = (sU - 2f * bestScore + sD)
-        val subX = if (abs(denomX) > 1e-4f) (0.5f * (sL - sR) / denomX).coerceIn(-0.5f, 0.5f) else 0f
-        val subY = if (abs(denomY) > 1e-4f) (0.5f * (sU - sD) / denomY).coerceIn(-0.5f, 0.5f) else 0f
-
-        obsX[featIdx] = bestX + subX
-        obsY[featIdx] = bestY + subY
-        return true
-    }
-
-    private fun computeZnccAt(cx: Int, cy: Int, tmpl: FloatArray, tmplNorm: Float): Float {
-        var sum = 0f
-        for (dy in -patchRadius..patchRadius) {
-            val r = (cy + dy) * gridW
-            for (dx in -patchRadius..patchRadius) {
-                sum += currGray[r + cx + dx]
-            }
-        }
-        val mean = sum / patchArea
-        var dot = 0f
-        var candSq = 0f
-        var p = 0
-        for (dy in -patchRadius..patchRadius) {
-            val r = (cy + dy) * gridW
-            for (dx in -patchRadius..patchRadius) {
-                val d = currGray[r + cx + dx] - mean
-                dot += d * tmpl[p++]
-                candSq += d * d
-            }
-        }
-        val denom = tmplNorm * sqrt(candSq).coerceAtLeast(1e-3f)
-        return dot / denom
-    }
-
-    private data class SimilarityFit(
-        val anchorX: Float,
-        val anchorY: Float,
-        val scaleRatio: Float,
-        val inliers: Int,
-        val avgResidual: Float
-    )
-
-    private fun fitSimilarityAndTransformAnchor(): SimilarityFit? {
-        val active = (0 until featureCount).filter { obsOk[it] }.toMutableList()
-        if (active.size < 3) return null
-
-        fun solveSubset(indices: List<Int>): FloatArray? {
-            if (indices.size < 2) return null
-            var mx1 = 0f; var my1 = 0f; var mx2 = 0f; var my2 = 0f
-            for (i in indices) {
-                mx1 += featX[i]; my1 += featY[i]
-                mx2 += obsX[i]; my2 += obsY[i]
-            }
-            val n = indices.size.toFloat()
-            mx1 /= n; my1 /= n; mx2 /= n; my2 /= n
-
-            var a = 0f; var b = 0f; var den = 0f
-            for (i in indices) {
-                val px = featX[i] - mx1
-                val py = featY[i] - my1
-                val qx = obsX[i] - mx2
-                val qy = obsY[i] - my2
-                a += px * qx + py * qy
-                b += px * qy - py * qx
-                den += px * px + py * py
-            }
-            val c: Float
-            val s: Float
-            if (den > 1e-2f) {
-                c = a / den
-                s = b / den
-            } else {
-                c = 1f; s = 0f
-            }
-            val scale = sqrt(c * c + s * s)
-            if (scale < 0.80f || scale > 1.25f) return null
-            return floatArrayOf(mx1, my1, mx2, my2, c, s, scale)
-        }
-
-        val firstPass = solveSubset(active) ?: return null
-        val residuals = active.map { i ->
-            val px = featX[i] - firstPass[0]
-            val py = featY[i] - firstPass[1]
-            val predX = firstPass[2] + firstPass[4] * px - firstPass[5] * py
-            val predY = firstPass[3] + firstPass[5] * px + firstPass[4] * py
-            i to hypot((obsX[i] - predX).toDouble(), (obsY[i] - predY).toDouble()).toFloat()
-        }
-        val filtered = residuals.filter { it.second < 2.5f }.map { it.first }
-        val finalFit = if (filtered.size >= 3) (solveSubset(filtered) ?: firstPass) else firstPass
-        val inlierSet = if (filtered.size >= 3) filtered else active
-
-        var totalRes = 0f
-        for (i in inlierSet) {
-            val px = featX[i] - finalFit[0]
-            val py = featY[i] - finalFit[1]
-            val predX = finalFit[2] + finalFit[4] * px - finalFit[5] * py
-            val predY = finalFit[3] + finalFit[5] * px + finalFit[4] * py
-            totalRes += hypot((obsX[i] - predX).toDouble(), (obsY[i] - predY).toDouble()).toFloat()
-        }
-        val avgRes = totalRes / inlierSet.size
-
-        // 用最终 Similarity Transform 精确变换上一帧锚点
-        val apx = anchorGridX - finalFit[0]
-        val apy = anchorGridY - finalFit[1]
-        val newAx = finalFit[2] + finalFit[4] * apx - finalFit[5] * apy
-        val newAy = finalFit[3] + finalFit[5] * apx + finalFit[4] * apy
-
-        return SimilarityFit(newAx, newAy, finalFit[6], inlierSet.size, avgRes)
     }
 
     // ========================================================================= 屏幕对齐光学与 6 向色度分析

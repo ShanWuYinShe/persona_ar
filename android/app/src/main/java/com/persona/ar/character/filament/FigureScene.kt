@@ -164,13 +164,17 @@ class FigureScene(
     private val camRight = FloatArray(3)
     private val camUp = FloatArray(3)
     private val camForward = FloatArray(3)
+    private var camPosX = 0f
+    private var camPosY = 0f
+    private var camPosZ = 0f
+    private var currentVerticalFovDeg = DEFAULT_VERTICAL_FOV_DEGREES.toFloat()
+    private var currentAspect = 1080f / 2340f
     private val footWorld = FloatArray(3)
     private val mModel = FloatArray(16)
     private val mGround = FloatArray(16)
-    private val projMatrix = DoubleArray(16)
-    private val viewMatrix = DoubleArray(16)
     private val tmpJointLocal = FloatArray(3)
     private val tmpJointWorld = FloatArray(3)
+    private val tmpProjScreen = FloatArray(3)
     private val pickHandler = Handler(Looper.getMainLooper())
 
     // 实时缓存各关键骨骼屏幕像素坐标，供精准触碰与头顶特效定位
@@ -214,7 +218,7 @@ class FigureScene(
             discard = false
         }
         view.setShadowingEnabled(true)
-        view.shadowType = View.ShadowType.PCF
+        view.shadowType = View.ShadowType.PCSS
         view.setAntiAliasing(View.AntiAliasing.NONE)
         view.dithering = View.Dithering.TEMPORAL
         view.setPostProcessingEnabled(true)
@@ -243,7 +247,7 @@ class FigureScene(
             .build(engine)
         view.colorGrading = colorGrading
 
-        // 主方向光：世界锁定台灯/自然光，投射细腻柔和阴影
+        // 主方向光：世界锁定台灯/自然光，投射细腻柔和 DPCF 接触硬化阴影
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
             .color(1.0f, 0.96f, 0.92f)
             .intensity(1_000f)
@@ -251,16 +255,16 @@ class FigureScene(
             .castShadows(true)
             .shadowOptions(LightManager.ShadowOptions().apply {
                 mapSize = SHADOW_MAP_SIZE
-                shadowFar = SHADOW_FAR_METERS
-                shadowNearHint = 0.08f
-                shadowFarHint = 1.8f
-                maxShadowDistance = SHADOW_FAR_METERS + 0.5f
-                screenSpaceContactShadows = false
+                shadowFar = 2.2f
+                shadowNearHint = 0.06f
+                shadowFarHint = 1.6f
+                maxShadowDistance = 2.6f
+                screenSpaceContactShadows = true
                 shadowBulbRadius = 0.055f
-                constantBias = 0.001f
-                normalBias = 1.0f
-                polygonOffsetConstant = 0.5f
-                polygonOffsetSlope = 1.5f
+                constantBias = 0.0004f
+                normalBias = 0.7f
+                polygonOffsetConstant = 0.3f
+                polygonOffsetSlope = 1.0f
             })
             .build(engine, keyLightEntity)
         keyLightInstance = lightManager.getInstance(keyLightEntity)
@@ -514,6 +518,8 @@ class FigureScene(
     private fun updateCamera(f: FigureFrameState) {
         val aspect = viewportWidth.toDouble() / viewportHeight.toDouble()
         val vFov = f.effectiveVerticalFovDegrees.toDouble().coerceIn(35.0, 88.0)
+        currentAspect = aspect.toFloat()
+        currentVerticalFovDeg = vFov.toFloat()
         camera.setProjection(vFov, aspect, CAMERA_NEAR, CAMERA_FAR, Camera.Fov.VERTICAL)
 
         if (f.isWorldAnchored) {
@@ -524,6 +530,9 @@ class FigureScene(
             val cx = f.cameraPosX.toDouble()
             val cy = f.cameraPosY.toDouble()
             val cz = f.cameraPosZ.toDouble()
+            camPosX = f.cameraPosX
+            camPosY = f.cameraPosY
+            camPosZ = f.cameraPosZ
             camera.lookAt(
                 cx, cy, cz,
                 cx + camForward[0], cy + camForward[1], cz + camForward[2],
@@ -545,6 +554,9 @@ class FigureScene(
             camForward[0] = fx.toFloat(); camForward[1] = fy.toFloat(); camForward[2] = fz.toFloat()
             camUp[0] = ux.toFloat(); camUp[1] = uy.toFloat(); camUp[2] = uz.toFloat()
             camRight[0] = rx.toFloat(); camRight[1] = ry.toFloat(); camRight[2] = rz.toFloat()
+            camPosX = 0f
+            camPosY = 0f
+            camPosZ = 0f
             camera.lookAt(0.0, 0.0, 0.0, fx, fy, fz, ux, uy, uz)
 
             val d = f.distanceMeters.toDouble().coerceIn(0.2, 2.0)
@@ -688,7 +700,7 @@ class FigureScene(
         Matrix.translateM(mGround, 0, footWorld[0], footWorld[1], footWorld[2])
         Matrix.scaleM(mGround, 0, halfExtent, 1f, halfExtent)
         if (groundTransformInstance != 0) transformManager.setTransform(groundTransformInstance, mGround)
-        val baseStrength = (0.58f + 0.16f * (1f - lum)) * (1f - currentAirborne * 0.7f)
+        val baseStrength = (0.38f + 0.14f * (1f - lum)) * (1f - currentAirborne * 0.7f)
         val strength = if (f.anchored && (!f.isWorldAnchored || f.isInView)) baseStrength else 0f
         groundInstance?.setParameter("strength", strength)
     }
@@ -696,11 +708,17 @@ class FigureScene(
     private fun updateFigure(f: FigureFrameState) {
         if (assetRootInstance == 0) return
         val k = if (f.anchored && (!f.isWorldAnchored || f.isInView)) assetScale * f.scale else 0f
-        Matrix.setIdentityM(mModel, 0)
-        Matrix.translateM(mModel, 0, footWorld[0], footWorld[1], footWorld[2])
-        Matrix.rotateM(mModel, 0, f.yawDegrees + 180f, 0f, 1f, 0f)
-        Matrix.scaleM(mModel, 0, k, k, k)
-        Matrix.translateM(mModel, 0, -assetPivot[0], -assetPivot[1], -assetPivot[2])
+        FigureProjectionMath.buildModelMatrix(
+            out = mModel,
+            footX = footWorld[0],
+            footY = footWorld[1],
+            footZ = footWorld[2],
+            yawDegrees = f.yawDegrees,
+            uniformScale = k,
+            pivotX = assetPivot[0],
+            pivotY = assetPivot[1],
+            pivotZ = assetPivot[2]
+        )
         transformManager.setTransform(assetRootInstance, mModel)
     }
 
@@ -756,8 +774,7 @@ class FigureScene(
     private fun updateJointScreenProjections() {
         val solver = poseSolver ?: return
         val r = rig ?: return
-        camera.getProjectionMatrix(projMatrix)
-        camera.getViewMatrix(viewMatrix)
+        if (viewportWidth <= 0 || viewportHeight <= 0) return
 
         val trackedBones = arrayOf(
             HumanoidBone.HEAD, HumanoidBone.NECK, HumanoidBone.CHEST,
@@ -767,22 +784,53 @@ class FigureScene(
         for (bone in trackedBones) {
             val node = r.humanoid[bone] ?: continue
             solver.worldPosition(node, tmpJointLocal)
-            // local -> world via mModel (列主序)
-            val lx = tmpJointLocal[0]; val ly = tmpJointLocal[1]; val lz = tmpJointLocal[2]
-            tmpJointWorld[0] = mModel[0] * lx + mModel[4] * ly + mModel[8] * lz + mModel[12]
-            tmpJointWorld[1] = mModel[1] * lx + mModel[5] * ly + mModel[9] * lz + mModel[13]
-            tmpJointWorld[2] = mModel[2] * lx + mModel[6] * ly + mModel[10] * lz + mModel[14]
-            val sx = projectScreenX(tmpJointWorld[0], tmpJointWorld[1], tmpJointWorld[2])
-            val sy = projectScreenY(tmpJointWorld[0], tmpJointWorld[1], tmpJointWorld[2])
-            jointScreenX[bone] = sx
-            jointScreenY[bone] = sy
+            FigureProjectionMath.transformLocalToWorld(
+                mModel, tmpJointLocal[0], tmpJointLocal[1], tmpJointLocal[2], tmpJointWorld
+            )
+            FigureProjectionMath.projectWorldToNormalized(
+                worldX = tmpJointWorld[0],
+                worldY = tmpJointWorld[1],
+                worldZ = tmpJointWorld[2],
+                camPosX = camPosX,
+                camPosY = camPosY,
+                camPosZ = camPosZ,
+                camRight = camRight,
+                camUp = camUp,
+                camForward = camForward,
+                verticalFovDeg = currentVerticalFovDeg,
+                aspect = currentAspect,
+                outScreen = tmpProjScreen
+            )
+            if (tmpProjScreen[2] > 0.04f) {
+                jointScreenX[bone] = tmpProjScreen[0] * viewportWidth
+                jointScreenY[bone] = tmpProjScreen[1] * viewportHeight
+            }
         }
 
-        val hx = jointScreenX[HumanoidBone.HEAD]
-        val hy = jointScreenY[HumanoidBone.HEAD]
-        if (hx != null && hy != null) {
-            latestHeadScreenX = (hx / viewportWidth.coerceAtLeast(1)).coerceIn(0f, 1f)
-            latestHeadScreenY = (hy / viewportHeight.coerceAtLeast(1)).coerceIn(0f, 1f)
+        val headNode = r.humanoid[HumanoidBone.HEAD]
+        if (headNode != null) {
+            FigureProjectionMath.computeHeadVfxLocal(solver.world, headNode, 0.12f, tmpJointLocal)
+            FigureProjectionMath.transformLocalToWorld(
+                mModel, tmpJointLocal[0], tmpJointLocal[1], tmpJointLocal[2], tmpJointWorld
+            )
+            FigureProjectionMath.projectWorldToNormalized(
+                worldX = tmpJointWorld[0],
+                worldY = tmpJointWorld[1],
+                worldZ = tmpJointWorld[2],
+                camPosX = camPosX,
+                camPosY = camPosY,
+                camPosZ = camPosZ,
+                camRight = camRight,
+                camUp = camUp,
+                camForward = camForward,
+                verticalFovDeg = currentVerticalFovDeg,
+                aspect = currentAspect,
+                outScreen = tmpProjScreen
+            )
+            if (tmpProjScreen[2] > 0.04f) {
+                latestHeadScreenX = tmpProjScreen[0].coerceIn(0f, 1f)
+                latestHeadScreenY = tmpProjScreen[1].coerceIn(0f, 1f)
+            }
         }
     }
 
@@ -840,28 +888,6 @@ class FigureScene(
         }
 
         return if (entity in headEntities) TouchPart.HEAD else TouchPart.BODY
-    }
-
-    private fun projectScreenX(x: Float, y: Float, z: Float): Float {
-        val vx = (viewMatrix[0] * x + viewMatrix[4] * y + viewMatrix[8] * z + viewMatrix[12]).toFloat()
-        val vy = (viewMatrix[1] * x + viewMatrix[5] * y + viewMatrix[9] * z + viewMatrix[13]).toFloat()
-        val vz = (viewMatrix[2] * x + viewMatrix[6] * y + viewMatrix[10] * z + viewMatrix[14]).toFloat()
-        val vw = (viewMatrix[3] * x + viewMatrix[7] * y + viewMatrix[11] * z + viewMatrix[15]).toFloat()
-        val cx = projMatrix[0] * vx + projMatrix[4] * vy + projMatrix[8] * vz + projMatrix[12] * vw
-        val cw = projMatrix[3] * vx + projMatrix[7] * vy + projMatrix[11] * vz + projMatrix[15] * vw
-        val ndcX = cx / cw
-        return ((ndcX + 1.0) / 2.0 * viewportWidth).toFloat()
-    }
-
-    private fun projectScreenY(x: Float, y: Float, z: Float): Float {
-        val vx = (viewMatrix[0] * x + viewMatrix[4] * y + viewMatrix[8] * z + viewMatrix[12]).toFloat()
-        val vy = (viewMatrix[1] * x + viewMatrix[5] * y + viewMatrix[9] * z + viewMatrix[13]).toFloat()
-        val vz = (viewMatrix[2] * x + viewMatrix[6] * y + viewMatrix[10] * z + viewMatrix[14]).toFloat()
-        val vw = (viewMatrix[3] * x + viewMatrix[7] * y + viewMatrix[11] * z + viewMatrix[15]).toFloat()
-        val cy = projMatrix[1] * vx + projMatrix[5] * vy + projMatrix[9] * vz + projMatrix[13] * vw
-        val cw = projMatrix[3] * vx + projMatrix[7] * vy + projMatrix[11] * vz + projMatrix[15] * vw
-        val ndcY = cy / cw
-        return ((1.0 - ndcY) / 2.0 * viewportHeight).toFloat()
     }
 
     private fun abs(v: Float): Float = if (v < 0f) -v else v

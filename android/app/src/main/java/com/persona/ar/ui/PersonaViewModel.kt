@@ -911,9 +911,11 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         audioPlayer.updateSpatialAudio(screenX, 1.0f)
         universalTracker.anchorToDesktop(screenX, screenY)
         universalTracker.updateCameraFocus(true, System.currentTimeMillis())
+        val anchored = universalTracker.spatialAnchor.value
         _uiState.update { current ->
             current.copy(
                 arTrackingStatus = ARTrackingStatus.ANCHORED,
+                spatialAnchor = anchored,
                 resetFeaturesSignal = System.nanoTime()
             )
         }
@@ -1023,7 +1025,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         universalTracker.updateCameraFocus(true, System.currentTimeMillis())
         audioPlayer.updateSpatialAudio(ended.screenX, ended.scaleFactor)
         _uiState.update { current ->
-            current.copy(resetFeaturesSignal = System.nanoTime())
+            current.copy(
+                spatialAnchor = ended,
+                resetFeaturesSignal = System.nanoTime()
+            )
         }
     }
 
