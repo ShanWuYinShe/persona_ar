@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.persona.ar.ar.ARMode
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.VoiceMode
@@ -39,7 +37,6 @@ import com.persona.ar.data.model.VoiceMode
  */
 @Composable
 fun SettingsDialog(
-    currentMode: ARMode,
     currentVoiceMode: VoiceMode,
     currentBubbleMode: BubbleDisplayMode,
     currentServerUrl: String,
@@ -52,7 +49,6 @@ fun SettingsDialog(
     currentAsrApiKey: String = "",
     currentAsrModel: String = "whisper-1",
     onDismiss: () -> Unit,
-    onToggleMode: () -> Unit,
     onSelectVoiceMode: (VoiceMode) -> Unit,
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
     onUpdateServerUrl: (String) -> Unit,
@@ -227,43 +223,7 @@ fun SettingsDialog(
                     )
                 }
 
-                // 3. 现实投射视觉模式
-                SectionContainer(
-                    icon = Icons.Filled.ViewInAr,
-                    title = "现实投射视觉维度",
-                    sectionBg = sectionBg,
-                    borderColor = borderColor
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        GameOptionChip(
-                            title = "2.5D Q萌立绘",
-                            subtitle = "动态呼吸·眨眼大头身",
-                            isSelected = currentMode == ARMode.BILLBOARD_2_5D,
-                            activeColor = Color(0xFFFF7597),
-                            onClick = { if (currentMode != ARMode.BILLBOARD_2_5D) onToggleMode() },
-                            modifier = Modifier.weight(1f)
-                        )
-                        GameOptionChip(
-                            title = "3D 空间追踪",
-                            subtitle = "实景视差·零GMS依赖",
-                            isSelected = currentMode == ARMode.ARCORE_3D,
-                            activeColor = Color(0xFF00B0FF),
-                            onClick = { if (currentMode != ARMode.ARCORE_3D) onToggleMode() },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Text(
-                        text = "• 3D 空间追踪: 内置零 GMS 依赖的通用实景视差引擎，国内安卓全机型 100% 离线支持，轻触桌面即可锁定伴侣",
-                        color = Color(0xFF6B587B),
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp
-                    )
-                }
-
-                // 3.5 3D 手办动作演出预览（同时也是真机动作回归验证入口）
+                // 3. 3D 手办动作演出预览（同时也是真机动作回归验证入口）
                 SectionContainer(
                     icon = Icons.Filled.AutoAwesome,
                     title = "3D 动作演出预览",
@@ -276,7 +236,7 @@ fun SettingsDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "触发动作后可点右侧「收起观赏」或主屏幕左下 [👆] 直接全屏看。",
+                            text = "触发动作后可点右侧「收起观赏」或主屏幕左下「动作」按钮全屏观赏。",
                             color = Color(0xFF6B587B),
                             fontSize = 10.sp,
                             lineHeight = 14.sp,
@@ -339,7 +299,7 @@ fun SettingsDialog(
                         )
                         GameOptionChip(
                             title = "桌沿垂腿坐",
-                            subtitle = if (currentMode == ARMode.ARCORE_3D) "坐在桌面边缘" else "切换乖巧坐姿",
+                            subtitle = "坐在桌面边缘",
                             isSelected = false,
                             activeColor = Color(0xFFE65100),
                             onClick = { onSit() },

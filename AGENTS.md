@@ -15,9 +15,9 @@
 ## 3D 手办渲染管线（Filament）
 - 渲染层：`com.persona.ar.character.filament` — `FilamentEngineHolder`（进程级 Engine）、`FigureScene`（每视图场景/相机/双光源/IBL/接触阴影）、`FilamentFigureView`（Compose + TextureView + Choreographer 渲染循环 + GPU 拾取）。
 - 选 **Filament 1.81.0**（`filament-android` / `gltfio-android` / `filament-utils-android`）：其绑定依赖 `kotlin-stdlib 2.4.0`，须配 Kotlin ≥ 2.3。
-- 光照：**方向光**（台灯，唯一投影光源）+ **相机同轴点光源**（闪光灯，物理 1/r² 衰减，不投影）+ **IBL 2-Band 球谐定向光照**（天顶顶光与桌面底面反射色渗）；曝光按环境照度映射 EV100；光学后处理集成 **ACES 电影级色彩分级**、**Bloom 高光微晕**、**DPCF 接触硬化柔和阴影** 与 **时间性抖动抗色带**。
+- 光照：**世界锁定方向光**（台灯，唯一投影光源）+ **相机同轴点光源**（弱闪光灯补光，物理 1/r² 衰减，不投影）+ **动态 IBL 2-Band 球谐 + 5-Mip 环境反射立方体贴图**（实时反映 6 方向天顶、桌面底面与左右环境光色）；曝光按环境照度映射 EV100；光学后处理集成 **ACES 电影级色彩分级**、**Bloom 高光微晕**、**DPCF 接触硬化柔和阴影** 与 **时间性抖动抗色带**。
 - 接触阴影：`android/app/src/main/materials/shadow_catcher.mat` 经 matc 编译为 `assets/materials/shadow_catcher.filamat`（`unlit` + `shadowMultiplier` + `transparent`），**仅支持方向光阴影**；顶点需 `position` + `tangents`。
-- 3D 资产：`assets/models/<persona>/figure.glb`，由 `android/tools/prepare_model.py` 从 VRM 转换（剥离非眼睛 `KHR_materials_unlit` 注入头发/皮肤/鞋履/常服分层 PBR 粗糙度与金属度，眼睛材质保留 unlit；删 VRM 扩展与孤儿贴图）。模型清单用 `PersonaModelManifest.modelAsset` 声明；无 3D 资产的人格自动回退 2.5D Canvas 渲染。
+- 3D 资产：`assets/models/<persona>/figure.glb`，由 `android/tools/prepare_model.py` 从 VRM 转换（剥离非眼睛 `KHR_materials_unlit` 注入头发/皮肤/鞋履/常服分层 PBR 粗糙度与金属度，眼睛材质保留 unlit；删 VRM 扩展与孤儿贴图）。全角色统一使用 `GLTF_3D` 渲染（无 2.5D 渲染分支）。
 - 模型入库前必须核实并记录许可证（见 `assets/models/hoshino/README.md`）；禁止提交未核实许可证的模型。
 - 骨骼姿态修正：Filament `TransformManager` 矩阵是相对父节点的完整 4×4，旋转必须按 `T · R` 重组（不能 `R · restMatrix`，否则绕原点旋转把骨骼甩飞）。
 - 骨骼动画（`com.persona.ar.character.animation`）：`GltfRigParser` 从 GLB 读取节点层级 / skins / inverseBindMatrices；`FigureAnimator` 叠加体态（站姿 / 桌沿垂腿坐）、待机呼吸、情绪体态、全部 `ActionType`（WAVE/NOD/SHAKE_HEAD/BOW/JUMP/POUT/BLUSH/YAWN/SLEEP/SMUG/SIT）、4 种触摸反应与面部表情；`PoseSolver` 做 FK 并按 gltfio 同款公式算蒙皮矩阵。
@@ -40,7 +40,7 @@
 
 ## 设备选择与走查证据（真机优先）
 - 测试/走查 Android 客户端前先枚举设备：`adb devices -l` 中状态为 `device` 的设备才可用；有符合条件的真机时一律用真机，只有没有合格真机才用模拟器，并记录原因。完整判定流程（连接状态、版本/ABI、形态能力、数据安全）见用户级 skill `android-emulator-debug`，本节只写 persona_ar 专属判据。
-- persona_ar 专属判据：可安装机型要求 `minSdk 26`（见 `android/app/build.gradle.kts`），ABI 需与打包产物匹配；ARCore 为可选能力（`android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 为 `optional`），无 ARCore / 无 GMS 设备自动降级为 `UniversalSensorSurfaceTracker`。因此「ARCore 物理平面检测 / 空间锚定」的验收必须在支持 ARCore 的真机上：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且应用内 `ArCoreApk.checkAvailability()` 返回支持；`adb -s <serial> logcat` 出现 `ARSessionManager` 的 Universal Sensor 日志即说明走的是降级路径。2.5D 立绘、Filament 3D、动作表情与语音交互可在普通真机验证。
+- persona_ar 专属判据：可安装机型要求 `minSdk 26`（见 `android/app/build.gradle.kts`），ABI 需与打包产物匹配；ARCore 为可选能力（`android.hardware.camera.ar` 声明 `required="false"`、`com.google.ar.core` 为 `optional`），无 ARCore / 无 GMS 设备自动使用基于 IMU 与稀疏光流的 6DoF `UniversalSensorSurfaceTracker`。因此「ARCore 物理平面检测 / 空间锚定」的验收必须在支持 ARCore 的真机上：`adb -s <serial> shell pm list features | grep android.hardware.camera.ar` 有输出，且应用内 `ArCoreApk.checkAvailability()` 返回支持；`adb -s <serial> logcat` 出现 `ARSessionManager` 的 Universal Sensor 日志即说明走的是通用视觉-惯性路径。Filament 3D 渲染与光影融合、6DoF 拖拽定位、动作表情与语音交互可在普通真机验证。
 - 走查记录与 PR 证据必须写明设备型号 + 系统版本 + serial（模拟器写 AVD/实例名），启动/安装/截图等命令固定带 `-s <serial>`；模拟器与降级路径的结论不得当作 ARCore 真机结论。
 
 ## 敏感凭据规范

@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- 允许可选 AR 特性，不支持 ARCore 的机型自动降级为 2.5D 透视模式 -->
+    <!-- 允许可选 AR 特性，不支持 ARCore 的机型自动启用视觉-惯性 6DoF 3D 空间追踪 -->
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 

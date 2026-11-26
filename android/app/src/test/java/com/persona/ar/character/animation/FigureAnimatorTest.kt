@@ -63,7 +63,7 @@ class FigureAnimatorTest {
     fun `bow bends spine forward and shakes head turns sideways`() {
         animator.update(input(ActionType.BOW, 1.1f))
         assertTrue("bow 脊柱应前弯，实际 rx=${angle(HumanoidBone.SPINE, 0)}", angle(HumanoidBone.SPINE, 0) < -3f)
-        animator.update(input(ActionType.SHAKE_HEAD, 0.4f))
+        repeat(20) { animator.update(input(ActionType.SHAKE_HEAD, 0.4f)) }
         assertTrue(kotlin.math.abs(angle(HumanoidBone.HEAD, 1)) > 1f)
     }
 
@@ -216,7 +216,7 @@ class FigureAnimatorTest {
 
         val iRight = input()
         iRight.gazeX = -0.8f
-        animator.update(iRight)
+        repeat(30) { animator.update(iRight) }
         val headYawRight = angle(HumanoidBone.HEAD, 1)
         assertTrue("gazeX < 0 应当向另一侧偏航，实际 headYaw=$headYawRight", headYawRight < -12f)
     }
@@ -289,5 +289,57 @@ class FigureAnimatorTest {
             anim.angles[back1 * 3] < -90f)
         assertTrue("坐姿侧裙摆应顺大腿前倾垂落 (rx > 50)，实际 ${anim.angles[side1 * 3]}",
             anim.angles[side1 * 3] > 50f)
+    }
+
+    @Test
+    fun `crossfade smoothly blends interrupted wave into head touch without single-frame snap`() {
+        val localAnim = FigureAnimator(rig)
+        val waveInput = input(ActionType.WAVE, 1.1f)
+        localAnim.update(waveInput)
+        val armIdx = nodeOf(HumanoidBone.UPPER_ARM_R) * 3 + 2
+        val armBefore = localAnim.angles[armIdx]
+        assertTrue("挥手峰值右臂应举起 (> 40°)，实际 $armBefore", armBefore > 40f)
+
+        val touchInput = input()
+        touchInput.touchReaction = TouchPart.HEAD
+        touchInput.touchElapsed = 0.2f
+        touchInput.dtSeconds = 1f / 60f
+
+        localAnim.update(touchInput)
+        val armFrame1 = localAnim.angles[armIdx]
+        assertTrue(
+            "切换动作首帧应通过四元数插值柔和过渡，不能瞬移跳帧 (before=$armBefore, after=$armFrame1)",
+            abs(armFrame1 - armBefore) < 25f
+        )
+
+        repeat(24) { step ->
+            touchInput.touchElapsed = 0.2f + (step + 1) * (1f / 60f)
+            localAnim.update(touchInput)
+        }
+        val armSettled = localAnim.angles[armIdx]
+        assertTrue("0.4 秒后右臂应平滑回落到抚头站姿 (< -40°)，实际 $armSettled", armSettled < -40f)
+    }
+
+    @Test
+    fun `jump action transitions arms smoothly across takeoff threshold without jump`() {
+        val localAnim = FigureAnimator(rig)
+        val dur = ActionTiming.durationOf(ActionType.JUMP)
+        val armRzIdx = nodeOf(HumanoidBone.UPPER_ARM_R) * 3 + 2
+        var prevRz = 0f
+        var maxDelta = 0f
+
+        for (step in 0..40) {
+            val p = 0.10f + step * 0.005f
+            val i = input(ActionType.JUMP, p * dur)
+            i.dtSeconds = 0.005f * dur
+            localAnim.update(i)
+            val rz = localAnim.angles[armRzIdx]
+            if (step > 0) {
+                val delta = abs(rz - prevRz)
+                if (delta > maxDelta) maxDelta = delta
+            }
+            prevRz = rz
+        }
+        assertTrue("跳跃起跳瞬间 (p=0.18 附近) 右臂插值应连续平滑，最大单步跳变=$maxDelta°", maxDelta < 15f)
     }
 }

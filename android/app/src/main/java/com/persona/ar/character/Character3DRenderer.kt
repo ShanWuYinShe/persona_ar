@@ -1,5 +1,6 @@
 package com.persona.ar.character
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.persona.ar.ar.ARCoreOverlay
@@ -8,8 +9,7 @@ import com.persona.ar.ar.ARTrackingStatus
 import com.persona.ar.data.model.TouchPart
 
 /**
- * AR 3D 空间渲染器
- * 融合 ARCore 物理平面追踪、空间锚点、接触阴影与全手势交互
+ * AR 3D 空间渲染器（唯一 3D 实景交互入口）
  */
 @Composable
 fun Character3DRenderer(
@@ -21,10 +21,10 @@ fun Character3DRenderer(
     partnerName: String = "星野",
     onTapPlace: (Float, Float) -> Unit = { _, _ -> },
     onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
-    onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
-    onDragStateChanged: (Boolean) -> Unit = {},
-    onResetAnchor: () -> Unit = {},
-    onToggleStance: () -> Unit = {}
+    onDragStart: (Float, Float) -> Unit = { _, _ -> },
+    onDragTo: (Float, Float) -> Unit = { _, _ -> },
+    onDragEnd: () -> Unit = {},
+    onFigureCaptureReady: (((() -> Bitmap?)) -> Unit)? = null
 ) {
     ARCoreOverlay(
         trackingStatus = trackingStatus,
@@ -33,42 +33,11 @@ fun Character3DRenderer(
         partnerName = partnerName,
         onTapPlace = onTapPlace,
         onTransformGesture = onTransformGesture,
-        onDragAnchor = onDragAnchor,
-        onDragStateChanged = onDragStateChanged,
-        onResetAnchor = onResetAnchor,
+        onDragStart = onDragStart,
+        onDragTo = onDragTo,
+        onDragEnd = onDragEnd,
         onTouchPart = onTouchPart,
-        onToggleStance = onToggleStance,
+        onFigureCaptureReady = onFigureCaptureReady,
         modifier = modifier
-    )
-}
-
-@Composable
-fun Character3DRenderer(
-    visualState: CharacterVisualState,
-    onTouchPart: (TouchPart) -> Unit,
-    modifier: Modifier = Modifier,
-    trackingStatus: ARTrackingStatus = ARTrackingStatus.ANCHORED,
-    spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(isAnchored = true),
-    partnerName: String = "星野",
-    onTapPlace: (Float, Float) -> Unit = { _, _ -> },
-    onTransformGesture: (Float, Float) -> Unit = { _, _ -> },
-    onDragAnchor: (Float, Float) -> Unit = { _, _ -> },
-    onDragStateChanged: (Boolean) -> Unit = {},
-    onResetAnchor: () -> Unit = {},
-    onToggleStance: () -> Unit = {}
-) {
-    Character3DRenderer(
-        visualState = visualState,
-        onTouchPart = { part, _, _ -> onTouchPart(part) },
-        modifier = modifier,
-        trackingStatus = trackingStatus,
-        spatialAnchor = spatialAnchor,
-        partnerName = partnerName,
-        onTapPlace = onTapPlace,
-        onTransformGesture = onTransformGesture,
-        onDragAnchor = onDragAnchor,
-        onDragStateChanged = onDragStateChanged,
-        onResetAnchor = onResetAnchor,
-        onToggleStance = onToggleStance
     )
 }

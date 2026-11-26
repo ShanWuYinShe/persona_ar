@@ -1,17 +1,14 @@
 package com.persona.ar.ar
 
-import com.persona.ar.character.skeleton.MultiViewProfile
 import com.persona.ar.character.skeleton.SkeletonStance
 
 /**
  * AR 空间追踪器底层驱动类型
  */
 enum class ARTrackerType(val displayName: String, val gmsRequired: Boolean) {
-    /** 通用实景桌面视差追踪器 (基于原生 IMU 传感器与相机视差，0 依赖，全机型 100% 离线可用) */
-    UNIVERSAL_SENSOR("通用实景视差 (零 GMS 依赖)", false),
-    /** 契约阵法召唤模式 (带二游旋转符文光环与召唤光柱) */
-    SUMMONING_CIRCLE("契约阵法召唤 (二游专属)", false),
-    /** Google ARCore 官方 SLAM 引擎 (需要 Google Play AR 服务支持) */
+    /** 视觉-惯性 6DoF 空间追踪器 (基于 IMU 融合与稀疏光流锚点重投影，零 GMS 依赖，全机型离线可用) */
+    UNIVERSAL_SENSOR("视觉惯性 6DoF 追踪 (零 GMS)", false),
+    /** Google ARCore 官方 SLAM 引擎 (需 Google Play AR 服务支持) */
     GOOGLE_ARCORE("Google ARCore (需 GMS)", true)
 }
 
@@ -25,7 +22,7 @@ enum class ARTrackingStatus {
     SEARCHING_PLANE,
     /** 已检测到平坦表面，准心已就绪，提示用户点击放置 */
     PLANE_DETECTED,
-    /** 纸片人角色已成功物理锚定在现实空间中 */
+    /** 3D 角色已成功物理锚定在现实空间中 */
     ANCHORED,
     /** 空间追踪受阻或特征丢失（光线过暗或镜头遮挡） */
     TRACKING_LOST
@@ -33,152 +30,113 @@ enum class ARTrackingStatus {
 
 /**
  * 物理空间锚点数据模型 (AR Spatial Anchor)
+ * 完整承载 6DoF 相机位姿、世界锚点坐标、真实光学 FOV 与多方位环境光照探针。
  */
 data class ARSpatialAnchor(
-    /** 当前生效的追踪器类型 */
     val trackerType: ARTrackerType = ARTrackerType.UNIVERSAL_SENSOR,
-    /** 屏幕投影归一化 X 坐标 (0f..1f) */
+    /** 模型脚底在屏幕上的归一化投影坐标 (0f..1f，左上角原点) */
     val screenX: Float = 0.5f,
-    /** 屏幕投影归一化 Y 坐标 (0f..1f) */
     val screenY: Float = 0.65f,
-    /** 与设备镜头的实际空间物理距离 (米) */
+    /** 相机到模型脚底的实际空间物理距离 (米) */
     val distanceMeters: Float = 0.65f,
-    /** 空间缩放比例 (基于手势或距离自适应，0.35f..2.5f) */
+    /** 空间缩放比例 (基于双指手势，0.4f..2.5f) */
     val scaleFactor: Float = 1.0f,
-    /** 面对指挥官的偏航朝向角 (度数, 0..360) */
+    /** 角色在世界水平面上的自身偏航朝向角 (度数, 0 为锚定瞬间正面朝向用户) */
     val rotationYaw: Float = 0.0f,
-    /** 现实环境光照强度估计 (0f..1.2f) */
+    /** 现实环境光照强度估计 (0.18f..1.35f) */
     val lightIntensity: Float = 0.8f,
-    /** 实时视差动态偏移量 X (像素 DP) */
-    val parallaxShiftX: Float = 0f,
-    /** 实时视差动态偏移量 Y (像素 DP) */
-    val parallaxShiftY: Float = 0f,
-    /** 是否处于昏暗环境 (触发伴侣温馨关怀与暗调环境光) */
+    /** 是否处于昏暗环境 */
     val isLowLight: Boolean = false,
-    /** 现实环境色调倾向 (ARGB) */
-    val ambientColorTint: Long = 0xFFFFFFFF,
     /** 现实环境色温偏向 (-1.0f 冷蓝 ~ +1.0f 暖黄) */
     val ambientColorTemp: Float = 0f,
-    /** 环境光红绿蓝三原色增益 */
+    /** 全局环境光红绿蓝三原色增益 */
     val ambientTintRed: Float = 1.0f,
     val ambientTintGreen: Float = 1.0f,
     val ambientTintBlue: Float = 1.0f,
+    /** 6 方向环境光色调（天顶、桌面底面、左、右），驱动动态 IBL 球谐与环境反射贴图 */
+    val envTopRed: Float = 1.0f,
+    val envTopGreen: Float = 1.0f,
+    val envTopBlue: Float = 1.0f,
+    val envBottomRed: Float = 1.0f,
+    val envBottomGreen: Float = 0.96f,
+    val envBottomBlue: Float = 0.92f,
+    val envLeftRed: Float = 1.0f,
+    val envLeftGreen: Float = 1.0f,
+    val envLeftBlue: Float = 1.0f,
+    val envRightRed: Float = 1.0f,
+    val envRightGreen: Float = 1.0f,
+    val envRightBlue: Float = 1.0f,
     /** 现实相机暗光 ISO 微噪点强度 (0.0f ~ 1.0f) */
     val sensorGrainIntensity: Float = 0f,
-    /** 镜头注视微动偏移 X (-1f..1f) */
+    /** 镜头注视微动偏移 (-1f..1f) */
     val cameraGazeOffsetX: Float = 0f,
-    /** 镜头注视微动偏移 Y (-1f..1f) */
     val cameraGazeOffsetY: Float = 0f,
-    /** 真实广角镜头边缘径向色散强度 (0.0f ~ 1.0f) */
     val chromaticAberrationIntensity: Float = 0f,
-    /** 镜头色散径向倾角弧度 */
     val chromaticAngleRad: Float = 0f,
-    /** 强光逆光环境下的镜头光渗与边缘光晕 (0.0f ~ 1.0f) */
     val bloomIntensity: Float = 0f,
-    /** 镜头景深焦外弥散度 (0.0f ~ 1.0f) */
     val depthOfFieldBlur: Float = 0f,
-    /** 镜头微距特写状态 */
     val isMacroProximity: Boolean = false,
-    /** 桌面边缘深度遮挡切片比例 (0.0f ~ 1.0f) */
-    val surfaceOcclusionBottomCutoff: Float = 0f,
-    /** 相机相对物理桌面的 3D 俯仰倾角 (度数, 0° 垂直正立 ~ 90° 水平俯视桌面) */
+    /** 相机相对物理桌面的 3D 俯仰倾角 (度数, 0° 平视 ~ 90° 垂直俯视桌面) */
     val cameraPitchDegrees: Float = 45f,
-    /** 相机左右横滚倾角 (度数, -90° ~ 90°，用于重力铅垂锁定) */
+    /** 相机左右横滚倾角 (度数, -90° ~ 90°) */
     val cameraRollDegrees: Float = 0f,
-    /** 3D 空间透视投影虚拟相机视距 (Focal Distance) */
-    val cameraFocalDistance: Float = 10f,
-    /** 伴侣脚底采样到的现实桌面材质底色 (ARGB) */
-    val localSurfaceTintHex: Long = 0xFFFFFFFF,
-    /** 当前落脚点局部桌面底色红绿蓝反射分量 (用于木质桌面、深色桌面精细漫反射) */
+    /** 当前落脚点局部桌面底色红绿蓝反射分量 */
     val localSurfaceTintRed: Float = 1.0f,
     val localSurfaceTintGreen: Float = 1.0f,
     val localSurfaceTintBlue: Float = 1.0f,
-    /** 当前落脚点局部照度 */
     val localSurfaceLuminance: Float = 1.0f,
-    /** 主光源二维方向向量 (X: -1.0 左侧光源 ~ +1.0 右侧光源, Y: -1.0 上方光源 ~ +1.0 下方光源) */
+    /** 主光源在屏幕空间的二维方向与强度 */
     val lightDirectionX: Float = 0.0f,
     val lightDirectionY: Float = -0.5f,
-    /** 主光源定向直射强度 (用于地面斜向定向阴影与发丝立体轮廓光) */
-    val lightDirectionalStrength: Float = 0.2f,
+    val lightDirectionalStrength: Float = 0.25f,
+    /** 锁定在物理世界坐标系中的主方向光矢量（绕模型走动时影子稳定不转圈） */
+    val hasWorldLightDir: Boolean = false,
+    val worldLightDirX: Float = 0.25f,
+    val worldLightDirY: Float = -0.85f,
+    val worldLightDirZ: Float = 0.45f,
     /** 桌面特征纹理置信度 (0.0f ~ 1.0f) */
     val deskTextureConfidence: Float = 0.5f,
-    /** 端侧零 GMS 视觉光流防抖微偏移 (像素) */
-    val visualFlowOffsetX: Float = 0f,
-    val visualFlowOffsetY: Float = 0f,
-    /** 镜头边缘暗角自然失光衰减系数 (0.72f 边缘 ~ 1.0f 中心) */
+    val visualTrackingConfidence: Float = 0f,
     val lensVignetteFactor: Float = 1.0f,
-    /** 物理相机是否正在自动对焦中 (触发相机黄色专业对焦环动画) */
+    /** 物理相机自动对焦提示状态 */
     val isCameraFocusing: Boolean = false,
-    /** 触发对焦时间戳 (供合焦对焦框动画显示) */
     val cameraFocusTimestamp: Long = 0L,
-    /** 用户是否正在地面自由拖拽伴侣滑行中 */
+    /** 用户是否正在拖拽模型重定位 */
     val isDragging: Boolean = false,
-    /** 镜头注视微偏移 (视线跟踪 Eye Contact) */
-    val gazeTrackingEyeX: Float = 0f,
-    val gazeTrackingEyeY: Float = 0f,
-    /** 物理拖拽与重力加速度惯性摆角 */
+    /** 物理拖拽与移动惯性摆角 (度数) */
     val inertialSwayAngle: Float = 0f,
-    val inertialSquishY: Float = 1.0f,
-    /** 前景键盘/桌面切片遮挡比例 (0.0f ~ 0.45f) */
-    val foregroundOcclusionRatio: Float = 0f,
-    /** 是否正逼近真实桌面悬崖边缘 (例如靠近木质桌沿或桌垫边缘) */
-    val isNearCliffEdge: Boolean = false,
-    /** 悬崖边缘警惕强度 (0.0f 远离边缘安全 ~ 1.0f 濒临跌落边缘) */
-    val cliffEdgeIntensity: Float = 0f,
-    /** 悬崖边缘法线方向向量 (默认桌面前沿向近景 Y > 0) */
-    val cliffNormalX: Float = 0f,
-    val cliffNormalY: Float = 1.0f,
-    /** 是否已滑出桌面边缘处于悬空状态 (Dangling Over Cliff) */
-    val isDanglingOverCliff: Boolean = false,
-    /** 悬空离地高度比例 (0.0f 贴地 ~ 1.0f 高度悬空) */
-    val dangleAirDistance: Float = 0f,
-    /** 桌面物理支撑度 (1.0f 坚实桌面支撑 ~ 0.0f 完全悬空) */
-    val surfaceSupportConfidence: Float = 1.0f,
-    /** 机械键盘等立体障碍物台阶垂直抬升量 (0.0f ~ 18f dp) */
-    val surfaceStepHeightOffset: Float = 0f,
-    /** 高精动作姿态与微表情 (DEFAULT / SLEEPY / SHY / POUT / SMUG / SURPRISED) */
-    val highResPose: String = "DEFAULT",
-    val blushIntensity: Float = 0f,
-    val sleepinessFactor: Float = 0f,
-    val poutIntensity: Float = 0f,
-    val smugTiltDegrees: Float = 0f,
-    val haloSparkleIntensity: Float = 0f,
-    /** 全身 3D 骨骼体态 */
+    /** 全身 3D 骨骼体态 (站姿 / 坐姿) */
     val skeletonStance: SkeletonStance = SkeletonStance.STANDING,
-    /** 桌面边缘折腿坐姿过渡平滑系数 (0.0f 站立 ~ 1.0f 垂腿坐下) */
-    val sitProgress: Float = 0f,
-    /** 当前 360 度视角剖面 (正面 / 3/4 侧身 / 正侧面 / 背面回眸) */
-    val multiViewProfile: MultiViewProfile = MultiViewProfile.FRONT,
-    val threeQuarterProfileProgress: Float = 0f,
-    val backProfileProgress: Float = 0f,
-    val cylinderContractionX: Float = 1.0f,
-    val depthDisparityHead: Float = 0f,
-    val depthDisparityHairBack: Float = 0f,
-    val depthDisparityFace: Float = 0f,
     /** 是否已将角色锚定在现实平面 */
     val isAnchored: Boolean = false,
-    /** 物理平面类型名称 (例如 "桌面"、"地面") */
-    val planeTypeDescription: String = "书桌实景 (零 GMS 通用视差)",
-    /** 真实 3D 物理世界空间锚定与姿态追踪 */
-    val isWorldAnchored: Boolean = true,
+    val planeTypeDescription: String = "桌面实景 6DoF 空间追踪",
+    /** 真实 3D 物理世界坐标系下的锚点位置与 6DoF 相机位姿 */
+    val isWorldAnchored: Boolean = false,
     val worldAnchorX: Float = 0f,
     val worldAnchorY: Float = -0.12f,
     val worldAnchorZ: Float = -0.65f,
+    val cameraPosX: Float = 0f,
+    val cameraPosY: Float = 0f,
+    val cameraPosZ: Float = 0f,
+    val cameraRightX: Float = 1f,
+    val cameraRightY: Float = 0f,
+    val cameraRightZ: Float = 0f,
     val cameraForwardX: Float = 0f,
     val cameraForwardY: Float = 0f,
     val cameraForwardZ: Float = -1f,
     val cameraUpX: Float = 0f,
     val cameraUpY: Float = 1f,
     val cameraUpZ: Float = 0f,
-    /** 手办是否处于当前相机视锥体范围内（移开镜头自然出画，移回重现） */
+    /** 当前真实屏幕有效垂直视场角 (度) */
+    val effectiveVerticalFovDegrees: Float = 62f,
+    /** 手办是否处于当前相机视锥体范围内 */
     val isInView: Boolean = true,
-    /** 当手办处于视锥体外时，相对相机中心的水平方位偏角（负为左，正为右，用于边缘雷达寻回指示） */
-    val azimuthDeltaDegrees: Float = 0f
+    /** 相对相机中心的水平方位偏角 (负=左侧，正=右侧，用于边缘寻回提示与回眸注视) */
+    val azimuthDeltaDegrees: Float = 0f,
+    /** 绕模型观察时的相对轨道偏航角（度，用于角色在合理范围内侧目注视相机） */
+    val orbitRelativeYawDegrees: Float = 0f
 )
 
-/**
- * 空间准心引导点 (AR Reticle)
- */
 data class ARReticle(
     val normalizedX: Float = 0.5f,
     val normalizedY: Float = 0.65f,

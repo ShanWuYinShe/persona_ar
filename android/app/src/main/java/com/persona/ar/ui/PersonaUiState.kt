@@ -1,6 +1,5 @@
 package com.persona.ar.ui
 
-import com.persona.ar.ar.ARMode
 import com.persona.ar.ar.ARSpatialAnchor
 import com.persona.ar.ar.ARTrackingStatus
 import com.persona.ar.character.CharacterVisualState
@@ -12,12 +11,10 @@ import com.persona.ar.data.model.PersonaStatus
 import com.persona.ar.data.model.VoiceMode
 
 data class PersonaUiState(
-    /** 当前 AR 渲染模式；初始值在 setupModelManager 中按人格是否拥有 3D 手办资产自动决定 */
-    val arMode: ARMode = ARMode.BILLBOARD_2_5D,
-    /** 用户是否手动切换过 AR 模式（true 后不再按人格能力自动改写） */
-    val arModeExplicitlySet: Boolean = false,
     val arTrackingStatus: ARTrackingStatus = ARTrackingStatus.PLANE_DETECTED,
     val spatialAnchor: ARSpatialAnchor = ARSpatialAnchor(),
+    /** 非 0 时触发 CameraXView 重新采集周围真实特征点（放置、拖拽结束或重置后） */
+    val resetFeaturesSignal: Long = 0L,
     val visualState: CharacterVisualState = CharacterVisualState(),
     val personaStatus: PersonaStatus? = null,
     val messages: List<ChatMessage> = emptyList(),

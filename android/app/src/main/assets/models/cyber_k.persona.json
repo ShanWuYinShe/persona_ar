@@ -4,6 +4,7 @@
   "author": "Neon Future 3D",
   "version": "2.0.0",
   "modelType": "GLTF_3D",
+  "modelAsset": "models/hoshino/figure.glb",
   "description": "从未来赛博空间穿越而来的全息机甲少女，具备 3D 空间立体投射网格。",
   "previewColorHex": "#00E5FF",
   "hairColorHex": "#00E5FF",

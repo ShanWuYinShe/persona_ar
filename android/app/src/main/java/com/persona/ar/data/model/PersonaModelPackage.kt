@@ -3,22 +3,20 @@ package com.persona.ar.data.model
 import com.google.gson.annotations.SerializedName
 
 enum class PersonaModelType {
-    SPRITE_2_5D, // 2.5D 动态立绘图集
-    GLTF_3D,     // 3D glTF/GLB 空间模型
-    LIVE2D       // Live2D Cubism 模型
+    GLTF_3D      // 3D glTF/GLB 空间模型
 }
 
 /**
- * 纸片人模型资产包 Manifest 配置规范
+ * 3D 角色模型资产包 Manifest 配置规范
  */
 data class PersonaModelManifest(
     val id: String,
     val name: String,
     val author: String = "Official",
     val version: String = "1.0.0",
-    @SerializedName("model_type") val modelType: PersonaModelType = PersonaModelType.SPRITE_2_5D,
-    /** 3D 模型资产在 assets 内的相对路径（如 models/hoshino/figure.glb）；空则该人格无 3D 身体 */
-    @SerializedName("model_asset") val modelAsset: String? = null,
+    @SerializedName("model_type") val modelType: PersonaModelType = PersonaModelType.GLTF_3D,
+    /** 3D 模型资产在 assets 内的相对路径（如 models/hoshino/figure.glb） */
+    @SerializedName("model_asset") val modelAsset: String = "models/hoshino/figure.glb",
     val description: String,
     @SerializedName("preview_color") val previewColorHex: String = "#FF7B61FF",
     @SerializedName("hair_color") val hairColorHex: String = "#6B4E71",

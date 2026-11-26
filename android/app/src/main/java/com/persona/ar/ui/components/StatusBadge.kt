@@ -11,9 +11,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HistoryEdu
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SentimentVerySatisfied
-import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -30,26 +30,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.persona.ar.ar.ARMode
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
 
 /**
  * 极简通透且充满二次元精致感的顶部 HUD 状态栏
- * 包含萌系羁绊经验条（Bond EXP Bar）、心跳微律动与手账/工坊/设置快捷入口，全纯矢量图标。
+ * 包含萌系羁绊经验条（Bond EXP Bar）、心跳微律动与重放/手账/工坊/设置快捷入口，全纯矢量图标。
  */
 @Composable
 fun StatusBadge(
     status: PersonaStatus?,
     activeModel: PersonaModelManifest?,
-    arMode: ARMode,
+    isAnchored: Boolean,
     currentEmotion: EmotionType = EmotionType.NEUTRAL,
     bondLevel: Int = 1,
     bondExp: Int = 45,
     bondExpNext: Int = 100,
     bondTitle: String = "初遇契约",
-    onToggleARMode: () -> Unit,
+    onResetAnchor: () -> Unit,
     onOpenStore: () -> Unit,
     onOpenMemoryNotebook: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -70,16 +69,6 @@ fun StatusBadge(
             repeatMode = RepeatMode.Reverse
         ),
         label = "heartScale"
-    )
-
-    val arGlowPulse by infiniteTransition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "arGlowPulse"
     )
 
     Row(
@@ -230,26 +219,24 @@ fun StatusBadge(
             }
         }
 
-        // 右侧：AR 模式秒切、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标 + 直观微标签，告别看图标猜功能）
+        // 右侧：3D 重放定位、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标 + 直观微标签）
         Row(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.Top
         ) {
-            val isARActive = arMode == ARMode.ARCORE_3D
-
             HudActionButton(
-                label = if (isARActive) "3D" else "2.5D",
-                icon = Icons.Filled.ViewInAr,
-                contentDescription = if (isARActive) "切换至 2.5D 立绘模式" else "切换至 3D 空间模式",
-                tint = if (isARActive) Color.White else borderColor,
-                borderColor = if (isARActive) Color(0xFFFF8DA1) else borderColor.copy(alpha = 0.85f),
-                bgBrush = if (isARActive) {
-                    Brush.linearGradient(listOf(Color(0xFFFF5277), Color(0xFFFF2A6D)))
+                label = "重放",
+                icon = Icons.Filled.Refresh,
+                contentDescription = "重新定位放置 3D 模型",
+                tint = if (isAnchored) Color.White else borderColor,
+                borderColor = if (isAnchored) Color(0xFF00B0FF) else borderColor.copy(alpha = 0.85f),
+                bgBrush = if (isAnchored) {
+                    Brush.linearGradient(listOf(Color(0xFF29B6F6), Color(0xFF0288D1)))
                 } else {
                     Brush.linearGradient(listOf(Color(0xF5FFFDF9), Color(0xEEF8F3FC)))
                 },
-                scale = if (isARActive) arGlowPulse else 1f,
-                onClick = onToggleARMode
+                scale = 1f,
+                onClick = onResetAnchor
             )
 
             HudActionButton(

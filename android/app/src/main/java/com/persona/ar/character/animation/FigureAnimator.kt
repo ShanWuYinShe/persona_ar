@@ -7,6 +7,7 @@ import com.persona.ar.data.model.TouchPart
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -50,26 +51,23 @@ class AnimationInput {
 
 /**
  * 3D 手办全身动画器：
- * 1. 先构建基础姿态层（站立/坐姿 + 待机呼吸/注视 + 情绪体态）；
- * 2. 对激活的动作或触摸反应写入「绝对目标骨骼姿态」并沿四元数最短球面弧 (SLERP) 平滑混合，
- *    避免线性欧拉角累加在中途穿越躯干/背部；
- * 3. 在腿部屈伸解算完成后执行裙摆链反向物理补偿，消除坐姿/跳跃/害羞时的裙摆穿模；
- * 4. 驱动 VRM 面部表情预设、自然眨眼与真实音频口型。
- *
- * 角度约定（每根骨骼的静止局部坐标系，单位度，组合顺序 先 Z 再 Y 最后 X）：
- * - 躯干/头部：rx > 0 后仰 / rx < 0 前倾；ry 左右转体；rz 左右侧倾；
- * - 手臂（T-pose 左腕沿 -X、右腕沿 +X）：左臂 rz > 0 垂落 / rz < 0 上举，ry < 0 前摆；右臂镜像反号；
- * - 腿（沿 -Y）：rx > 0 大腿前抬 / rx < 0 小腿后屈。
+ * 1. 构建基础姿态层（站立/坐姿 + 非机械复合呼吸 + 自主微动作 + 镜头协同注视 + 情绪体态）；
+ * 2. 对激活的动作或触摸反应写入「绝对目标骨骼姿态」并沿四元数最短球面弧 (SLERP) 混合；
+ * 3. **全骨骼跨动作四元数过渡（Crossfade SLERP）**：动作切换、触摸打断或自然结束回落时，
+ *    自动以 0.28s 过渡窗从上一刻实际姿态无缝滑向新姿态，彻底消除跨动作跳帧与抽搐；
+ * 4. 在腿部屈伸解算完成后执行裙摆链反向物理补偿，消除坐姿/跳跃/害羞时的裙摆穿模；
+ * 5. 驱动 VRM 面部表情、偶发双连眨眼与真实音频口型。
  */
 class FigureAnimator(private val rig: GltfRig) {
 
     companion object {
-        private const val BREATH_PERIOD = 3.8f
-        private const val BLEND_RATE = 7.5f
+        private const val BREATH_PERIOD = 3.9f
+        private const val BLEND_RATE = 7.8f
         private const val SIT_HIPS_DOWN = 0.40f
         private const val SIT_HIPS_FORWARD = 0.02f
         private const val SIT_THIGH_FLEX = 80f
         private const val TOUCH_DURATION = 2.6f
+        private const val CROSSFADE_DURATION = 0.28f
     }
 
     /** 逐节点最终欧拉角（度），3 个 float / 节点；直接供 PoseSolver 解算 */
@@ -100,12 +98,31 @@ class FigureAnimator(private val rig: GltfRig) {
     private val qBlend = FloatArray(4)
     private val eulerTmp = FloatArray(3)
 
+    // ---- 跨动作四元数无缝过渡状态 ----
+    private var hasPreviousPose = false
+    private val prevFinalQuats = FloatArray(rig.nodeCount * 4)
+    private val crossfadeStartQuats = FloatArray(rig.nodeCount * 4)
+    private var prevHipsY = 0f
+    private var prevHipsZ = 0f
+    private var crossfadeStartHipsY = 0f
+    private var crossfadeStartHipsZ = 0f
+    private var lastActionSignature: String = ""
+    private var crossfadeElapsed = CROSSFADE_DURATION
+    private val qPrevTmp = FloatArray(4)
+    private val qCurrTmp = FloatArray(4)
+    private val qOutTmp = FloatArray(4)
+
+    // ---- 平滑与微动作状态 ----
     private var sitBlend = 0f
     val currentSitBlend: Float get() = sitBlend
     private var smoothMouth = 0f
+    private var smoothGazeX = 0f
+    private var smoothGazeY = 0f
     private var blinkCountdown = 2.2f
     private var blinkClock = -1f
+    private var doubleBlinkPending = false
     private var hairPhase = 0f
+    private var fingerExtraOpen = 0f // 挥手/牵手时手指微微张开更灵动
 
     private val nodeByBone: Map<HumanoidBone, Int> = rig.humanoid
 
@@ -117,15 +134,20 @@ class FigureAnimator(private val rig: GltfRig) {
         java.util.Arrays.fill(actionHasBone, false)
         hipsOffsetX = 0f; hipsOffsetY = 0f; hipsOffsetZ = 0f
         airborne = 0f
+        fingerExtraOpen = 0f
 
         // 1) 体态层：站立 ↔ 桌面边缘垂腿坐姿
         val sitTarget = if (input.stance == SkeletonStance.SITTING) 1f else 0f
         sitBlend += (sitTarget - sitBlend) * min(1f, dt * BLEND_RATE * 0.55f)
 
-        // 计算头部主导权：强表情动作或触摸期间减弱待机镜头追焦，防止眼神偏移打架
+        // 视线平滑阻尼，消除传感器微小跳跃
+        val gazeLerp = if (!hasPreviousPose) 1f else (1f - exp(-10f * dt)).coerceIn(0f, 1f)
+        smoothGazeX += (input.gazeX.coerceIn(-1f, 1f) - smoothGazeX) * gazeLerp
+        smoothGazeY += (input.gazeY.coerceIn(-1f, 1f) - smoothGazeY) * gazeLerp
+
         val headDominance = computeHeadOverrideWeight(input)
 
-        // 2) 待机呼吸 / 重心 / 镜头注视
+        // 2) 生动待机呼吸 / 重心转移 / 自主小微动 / 镜头协同注视
         applyIdle(t, input, gazeWeight = 1f - headDominance * 0.85f)
         // 3) 情绪微姿态
         applyEmotion(input.emotion)
@@ -133,7 +155,7 @@ class FigureAnimator(private val rig: GltfRig) {
         val hasTouchReaction = input.touchReaction != null && input.touchElapsed in 0f..TOUCH_DURATION
         if (sitBlend > 0.001f) applySitting(t, sitBlend)
 
-        // 5) 动作或触摸绝对目标骨骼姿态 → 四元数 SLERP 平滑混合（杜绝欧拉穿模）
+        // 5) 动作或触摸绝对目标骨骼姿态 → 四元数 SLERP 混合
         if (hasTouchReaction) {
             actionActive = false
             actionProgress = 0f
@@ -145,12 +167,72 @@ class FigureAnimator(private val rig: GltfRig) {
         // 6) 裙摆链物理补偿（跟随最终大腿/躯干屈伸防穿模）
         applySkirtPhysics(t, input)
 
-        // 7) 面部表情 / 眨眼 / 口型
+        // 7) 面部表情 / 双连眨眼 / 口型
         updateFace(dt, input)
 
         // 8) 手指弯曲与头发次级惯性
         applyFingerCurl()
         applyHairSecondary(dt, t, input)
+
+        // 9) 跨动作四元数无缝过渡：检测状态切换，使用 0.28s 平滑过渡窗消除一切跳帧
+        val activeTag = when {
+            hasTouchReaction -> "T:${input.touchReaction?.name}"
+            actionActive -> "A:${input.action.name}"
+            else -> "I:${input.stance.name}:${input.emotion.name}"
+        }
+        applyCrossfadeSmoothing(dt, activeTag)
+    }
+
+    private fun applyCrossfadeSmoothing(dt: Float, activeTag: String) {
+        if (!hasPreviousPose) {
+            // 首帧立即保存并就位，保证无历史时的初始测试/渲染准确到位
+            for (node in 0 until rig.nodeCount) {
+                val i3 = node * 3
+                val i4 = node * 4
+                QuatMath.fromEulerDegrees(qCurrTmp, angles[i3], angles[i3 + 1], angles[i3 + 2])
+                QuatMath.copy(prevFinalQuats, i4, qCurrTmp, 0)
+            }
+            prevHipsY = hipsOffsetY
+            prevHipsZ = hipsOffsetZ
+            lastActionSignature = activeTag
+            crossfadeElapsed = CROSSFADE_DURATION
+            hasPreviousPose = true
+            return
+        }
+
+        if (activeTag != lastActionSignature) {
+            System.arraycopy(prevFinalQuats, 0, crossfadeStartQuats, 0, rig.nodeCount * 4)
+            crossfadeStartHipsY = prevHipsY
+            crossfadeStartHipsZ = prevHipsZ
+            crossfadeElapsed = 0f
+            lastActionSignature = activeTag
+        }
+
+        if (crossfadeElapsed < CROSSFADE_DURATION) {
+            crossfadeElapsed = (crossfadeElapsed + dt).coerceAtMost(CROSSFADE_DURATION)
+            val w = smoothIn(crossfadeElapsed / CROSSFADE_DURATION)
+            hipsOffsetY = crossfadeStartHipsY + (hipsOffsetY - crossfadeStartHipsY) * w
+            hipsOffsetZ = crossfadeStartHipsZ + (hipsOffsetZ - crossfadeStartHipsZ) * w
+
+            for (node in 0 until rig.nodeCount) {
+                val i3 = node * 3
+                val i4 = node * 4
+                QuatMath.copy(qPrevTmp, 0, crossfadeStartQuats, i4)
+                QuatMath.fromEulerDegrees(qCurrTmp, angles[i3], angles[i3 + 1], angles[i3 + 2])
+                QuatMath.slerp(qOutTmp, qPrevTmp, qCurrTmp, w)
+                QuatMath.toEulerDegrees(qOutTmp, angles, i3)
+                QuatMath.copy(prevFinalQuats, i4, qOutTmp, 0)
+            }
+        } else {
+            for (node in 0 until rig.nodeCount) {
+                val i3 = node * 3
+                val i4 = node * 4
+                QuatMath.fromEulerDegrees(qCurrTmp, angles[i3], angles[i3 + 1], angles[i3 + 2])
+                QuatMath.copy(prevFinalQuats, i4, qCurrTmp, 0)
+            }
+        }
+        prevHipsY = hipsOffsetY
+        prevHipsZ = hipsOffsetZ
     }
 
     // ============================================================ 基础工具
@@ -220,49 +302,67 @@ class FigureAnimator(private val rig: GltfRig) {
     // ============================================================ 待机与情绪
 
     private fun applyIdle(t: Float, input: AnimationInput, gazeWeight: Float) {
-        // 自然垂臂：左臂 rz > 0 / 右臂 rz < 0 垂向地面
-        add(HumanoidBone.UPPER_ARM_L, rz = 72f)
-        add(HumanoidBone.UPPER_ARM_R, rz = -72f)
-        add(HumanoidBone.LOWER_ARM_L, ry = -14f)
-        add(HumanoidBone.LOWER_ARM_R, ry = 14f)
+        // 自然垂臂：微屈肘、轻靠身侧，消除僵直木偶感
+        add(HumanoidBone.UPPER_ARM_L, rx = 2f, ry = -6f, rz = 72f)
+        add(HumanoidBone.UPPER_ARM_R, rx = 2f, ry = 6f, rz = -72f)
+        add(HumanoidBone.LOWER_ARM_L, ry = -16f)
+        add(HumanoidBone.LOWER_ARM_R, ry = 16f)
 
-        val breath = sin(t * 2f * PI.toFloat() / BREATH_PERIOD)
-        val breath2 = sin(t * 2f * PI.toFloat() / BREATH_PERIOD + 0.45f)
-        add(HumanoidBone.CHEST, rx = breath * 0.95f, rz = breath * 0.22f)
-        add(HumanoidBone.SPINE, rx = breath2 * 0.40f)
-        add(HumanoidBone.UPPER_CHEST, rx = breath * 0.30f)
+        // 双频呼吸叠加：自然深浅律动 + 微肩起伏
+        val breath = sin(t * 2f * PI.toFloat() / BREATH_PERIOD) * 0.78f +
+                sin(t * 2f * PI.toFloat() / (BREATH_PERIOD * 1.7f) + 0.8f) * 0.22f
+        val breathLag = sin(t * 2f * PI.toFloat() / BREATH_PERIOD + 0.45f)
+        add(HumanoidBone.CHEST, rx = breath * 1.05f, rz = breath * 0.25f)
+        add(HumanoidBone.SPINE, rx = breathLag * 0.45f)
+        add(HumanoidBone.UPPER_CHEST, rx = breath * 0.35f)
+        add(HumanoidBone.SHOULDER_L, rz = -breath * 0.55f)
+        add(HumanoidBone.SHOULDER_R, rz = breath * 0.55f)
 
-        val weightPhase = t * 2f * PI.toFloat() / 6.8f
-        val swayHips = sin(weightPhase) * 1.2f
-        add(HumanoidBone.HIPS, rz = swayHips, ry = sin(weightPhase * 0.7f) * 0.8f)
-        add(HumanoidBone.SPINE, rz = -swayHips * 0.45f)
+        // 缓慢自然重心转移
+        val weightPhase = t * 2f * PI.toFloat() / 7.2f
+        val swayHips = sin(weightPhase) * 1.35f + sin(weightPhase * 0.5f + 1.1f) * 0.45f
+        add(HumanoidBone.HIPS, rz = swayHips, ry = sin(weightPhase * 0.7f) * 1.1f)
+        add(HumanoidBone.SPINE, rz = -swayHips * 0.48f)
 
+        // 自主可爱小微动：每 ~6.5s 轻偏头思考一下、偶尔微侧耳聆听
+        val curiosityWindow = ((t % 6.8f) / 2.2f).coerceIn(0f, 1f)
+        val idleHeadTilt = if ((t % 6.8f) < 2.2f) sin(curiosityWindow * PI.toFloat()) * 3.8f else 0f
+
+        // 镜头协同注视（分配给 头+颈+上胸，避免只扭脖子）
         val microGazeYaw = sin(t * 0.42f) * 1.8f + sin(t * 0.85f) * 0.7f
-        val targetGazeYaw = input.gazeX.coerceIn(-1f, 1f) * 20.0f * gazeWeight
-        val targetNeckYaw = input.gazeX.coerceIn(-1f, 1f) * 9.0f * gazeWeight
-        val targetGazePitch = input.gazeY.coerceIn(-1f, 1f) * 14.0f * gazeWeight
-        val targetNeckPitch = input.gazeY.coerceIn(-1f, 1f) * 6.0f * gazeWeight
+        val gx = smoothGazeX
+        val gy = smoothGazeY
+        val targetChestYaw = gx * 4.5f * gazeWeight
+        val targetNeckYaw = gx * 9.5f * gazeWeight
+        val targetHeadYaw = gx * 20.5f * gazeWeight
 
-        val headYaw = microGazeYaw * (0.3f + 0.7f * gazeWeight) + targetGazeYaw
+        val targetNeckPitch = gy * 6.0f * gazeWeight
+        val targetHeadPitch = gy * 14.0f * gazeWeight
+
+        val headYaw = microGazeYaw * (0.3f + 0.7f * gazeWeight) + targetHeadYaw
         val neckYaw = (microGazeYaw * 0.25f) * gazeWeight + targetNeckYaw
-        val headPitch = sin(t * 0.55f) * 1.1f * (0.4f + 0.6f * gazeWeight) + targetGazePitch - smoothMouth * 2.4f
+        val headPitch = sin(t * 0.55f) * 1.1f * (0.4f + 0.6f * gazeWeight) + targetHeadPitch - smoothMouth * 2.4f
         val neckPitch = targetNeckPitch + sin(t * 0.55f) * 0.4f * gazeWeight
-        val headRoll = sin(t * 0.31f) * 1.1f * gazeWeight - (input.gazeX.coerceIn(-1f, 1f) * 2.5f * gazeWeight)
+        val headRoll = (sin(t * 0.31f) * 1.2f + idleHeadTilt) * gazeWeight - (gx * 2.5f * gazeWeight)
 
+        add(HumanoidBone.UPPER_CHEST, ry = targetChestYaw)
         add(HumanoidBone.HEAD, rx = headPitch, ry = headYaw, rz = headRoll)
         add(HumanoidBone.NECK, rx = neckPitch, ry = neckYaw)
 
-        add(HumanoidBone.UPPER_ARM_L, rz = sin(t * 0.41f) * 1.4f, ry = -breath * 0.6f)
-        add(HumanoidBone.UPPER_ARM_R, rz = -sin(t * 0.37f + 0.8f) * 1.4f, ry = breath2 * 0.6f)
-        add(HumanoidBone.LOWER_ARM_L, ry = -sin(t * 0.33f + 0.4f) * 1.6f)
-        add(HumanoidBone.LOWER_ARM_R, ry = sin(t * 0.31f + 1.1f) * 1.6f)
+        // 呼吸带动手臂轻微随动 + 说话时手部微小手势
+        val talkGesture = smoothMouth * sin(t * 5.2f) * 3.2f
+        add(HumanoidBone.UPPER_ARM_L, rz = sin(t * 0.41f) * 1.5f, ry = -breath * 0.7f - talkGesture * 0.4f)
+        add(HumanoidBone.UPPER_ARM_R, rz = -sin(t * 0.37f + 0.8f) * 1.5f, ry = breathLag * 0.7f + talkGesture * 0.6f)
+        add(HumanoidBone.LOWER_ARM_L, ry = -sin(t * 0.33f + 0.4f) * 1.8f - talkGesture)
+        add(HumanoidBone.LOWER_ARM_R, ry = sin(t * 0.31f + 1.1f) * 1.8f + talkGesture)
 
+        // 拖拽与移动惯性摆动
         val sway = input.inertialSway.coerceIn(-18f, 18f)
         if (abs(sway) > 0.05f) {
-            add(HumanoidBone.HIPS, rz = sway * 0.35f)
-            add(HumanoidBone.SPINE, rz = sway * 0.25f)
+            add(HumanoidBone.HIPS, rz = sway * 0.32f)
+            add(HumanoidBone.SPINE, rz = sway * 0.24f)
             add(HumanoidBone.CHEST, rz = sway * 0.18f)
-            add(HumanoidBone.HEAD, rz = -sway * 0.12f)
+            add(HumanoidBone.HEAD, rz = -sway * 0.14f)
         }
     }
 
@@ -315,12 +415,6 @@ class FigureAnimator(private val rig: GltfRig) {
 
     // ============================================================ 坐姿层
 
-    /**
-     * 优雅自然的桌沿斜坐姿：
-     * - 骨盆微转 10° 并小幅度错开左右小腿/脚尖，在正前方镜头下也能清晰呈「曲腿坐在桌沿」轮廓而非正视角短腿感；
-     * - 双手自然扶于大腿外侧/膝侧，避免穿透腿部网格；
-     * - 垂落的双腿附带轻柔闲适的脚尖晃动。
-     */
     private fun applySitting(t: Float, k: Float) {
         val legScale = k * (1f - airborne * 0.85f).coerceIn(0.15f, 1f)
         hipsOffsetY -= SIT_HIPS_DOWN * legScale
@@ -332,8 +426,8 @@ class FigureAnimator(private val rig: GltfRig) {
         setTarget(HumanoidBone.NECK, rx = 0f, ry = -2f, rz = -2f)
         setTarget(HumanoidBone.HEAD, rx = -2f, ry = -4f, rz = -4f)
 
-        val kickL = sin(t * 2.1f) * 3.2f
-        val kickR = sin(t * 2.1f + 1.1f) * 3.2f
+        val kickL = sin(t * 2.1f) * 3.8f
+        val kickR = sin(t * 2.1f + 1.2f) * 3.8f
         setTarget(HumanoidBone.UPPER_LEG_L, rx = SIT_THIGH_FLEX * (legScale / k.coerceAtLeast(0.01f)), ry = 3f, rz = 2f)
         setTarget(HumanoidBone.UPPER_LEG_R, rx = SIT_THIGH_FLEX * (legScale / k.coerceAtLeast(0.01f)), ry = -2f, rz = -2f)
         setTarget(HumanoidBone.LOWER_LEG_L, rx = -78f + kickL, ry = 0f, rz = -2f)
@@ -341,7 +435,6 @@ class FigureAnimator(private val rig: GltfRig) {
         setTarget(HumanoidBone.FOOT_L, rx = -14f + kickL * 0.5f, ry = 0f, rz = 0f)
         setTarget(HumanoidBone.FOOT_R, rx = -16f + kickR * 0.5f, ry = 0f, rz = 0f)
 
-        // 双手轻扶大腿两侧（绝对姿态 rz = ±70, ry = ∓36, 肘 -32/32，清晰落在膝上且不穿大腿）
         setTarget(HumanoidBone.UPPER_ARM_L, rx = 4f, ry = -36f, rz = 70f)
         setTarget(HumanoidBone.LOWER_ARM_L, rx = 0f, ry = -32f, rz = 0f)
         setTarget(HumanoidBone.HAND_L, rx = 0f, ry = -8f, rz = 6f)
@@ -386,10 +479,11 @@ class FigureAnimator(private val rig: GltfRig) {
         return true
     }
 
-    /** 挥手：右肩外展至头部右上方（绝不贴耳遮脸），前臂向上欢快挥摆 */
+    /** 挥手：右肩外展至头部右上方（绝不贴耳遮脸），前臂与手腕欢快柔摆 + 手指自然舒展 */
     private fun applyWave(p: Float) {
         val w = envelope(p, 0.16f, 0.84f)
         if (w <= 0f) return
+        fingerExtraOpen = 0.65f * w
         val wave = sin(p * 2f * PI.toFloat() * 3.0f)
         setTarget(HumanoidBone.HIPS, rz = 3f)
         setTarget(HumanoidBone.SPINE, rx = -2f, ry = 2f, rz = -4f)
@@ -397,21 +491,17 @@ class FigureAnimator(private val rig: GltfRig) {
         setTarget(HumanoidBone.NECK, rx = 2f, ry = 2f, rz = 4f)
         setTarget(HumanoidBone.HEAD, rx = 4f, ry = 6f, rz = 8f)
         setTarget(HumanoidBone.SHOULDER_R, rz = 8f)
-        // 右上臂抬起至右上方 (rz = +46°)，手肘在头右侧 (+0.27, 1.51) 完全脱离发丝
         setTarget(HumanoidBone.UPPER_ARM_R, rx = 8f, ry = 16f, rz = 46f)
         setTarget(HumanoidBone.LOWER_ARM_R, rx = 0f, ry = 20f, rz = 52f + wave * 18f)
         setTarget(HumanoidBone.HAND_R, ry = -wave * 10f, rz = wave * 20f)
-        // 左臂轻扶身侧
         setTarget(HumanoidBone.UPPER_ARM_L, rx = 4f, ry = -14f, rz = 78f)
         setTarget(HumanoidBone.LOWER_ARM_L, ry = -24f)
         blendTargetsSlerp(w)
     }
 
-    /** 点头：爽朗二连点头 + 轻微肩胸伴随 */
     private fun applyNod(p: Float) {
         val w = bell(p)
         if (w <= 0f) return
-        // 前半程与后半程各点一次，在 p≈0.30（即 0.5s）处于清晰低头峰值
         val nodWave = sin(p * 2f * PI.toFloat() * 2.0f - PI.toFloat() * 0.15f)
         val dip = (-15f - 10f * nodWave).coerceAtMost(-4f)
         setTarget(HumanoidBone.HEAD, rx = dip, rz = sin(p * PI.toFloat()) * 3f)
@@ -428,10 +518,10 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 摇头：清晰左右摆头 + 胸前双手分离轻摆否认（手掌留安全间距不互插） */
     private fun applyShakeHead(p: Float) {
         val w = envelope(p, 0.14f, 0.86f)
         if (w <= 0f) return
+        fingerExtraOpen = 0.35f * w
         val shake = sin(p * 2f * PI.toFloat() * 2.5f)
         setTarget(HumanoidBone.HEAD, rx = -3f, ry = shake * 26f, rz = -shake * 6f)
         setTarget(HumanoidBone.NECK, ry = shake * 11f)
@@ -443,7 +533,6 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 鞠躬：脊柱前躬、骨盆微后移保重心；坐姿自动收敛倾角与手部高度防穿大腿 */
     private fun applyBow(p: Float) {
         val w = envelope(p, 0.22f, 0.78f)
         if (w <= 0f) return
@@ -464,38 +553,50 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 跳跃：清晰蓄力下蹲 → 高跃展臂欢呼 → 缓冲落地（四元数 SLERP 同步双臂） */
+    /**
+     * 跳跃：连续无断点的 4 阶段（蓄力微后摆 → 起跳高举展臂 → 空中欢呼 → 落地屈膝前伸缓冲）。
+     * 修复旧版 p=0.18 瞬间手臂归零跳帧问题：全程使用连续插值的手臂关键姿态！
+     */
     private fun applyJump(p: Float) {
         val hipsY: Float
         val legBend: Float
-        val armCheer: Float
+        val crouchArmWeight: Float
+        val cheerArmWeight: Float
         when {
             p < 0.18f -> {
                 val k = smoothIn(p / 0.18f)
-                hipsY = -0.11f * k; legBend = k; armCheer = 0f
-                setTarget(HumanoidBone.UPPER_ARM_L, rx = -12f, ry = 16f, rz = 74f)
-                setTarget(HumanoidBone.UPPER_ARM_R, rx = -12f, ry = -16f, rz = -74f)
-                blendTargetsSlerp(k)
+                hipsY = -0.11f * k
+                legBend = k
+                crouchArmWeight = k
+                cheerArmWeight = 0f
             }
             p < 0.52f -> {
                 val k = smoothIn((p - 0.18f) / 0.34f)
                 hipsY = -0.11f + 0.44f * k
                 legBend = 1f - k * 0.65f
-                armCheer = k
+                crouchArmWeight = (1f - k * 2.2f).coerceIn(0f, 1f)
+                cheerArmWeight = k
             }
             p < 0.72f -> {
                 val k = (p - 0.52f) / 0.20f
                 hipsY = 0.33f * (1f - k * k)
                 legBend = 0.35f + 0.55f * k
-                armCheer = 1f - smoothIn(k)
+                crouchArmWeight = 0f
+                cheerArmWeight = 1f - smoothIn(k)
             }
             p < 0.86f -> {
                 val k = smoothIn((p - 0.72f) / 0.14f)
-                hipsY = -0.08f * k; legBend = 0.90f * (1f - k) + 0.75f * k; armCheer = 0f
+                hipsY = -0.08f * k
+                legBend = 0.90f * (1f - k) + 0.75f * k
+                crouchArmWeight = k * 0.45f
+                cheerArmWeight = 0f
             }
             else -> {
                 val k = 1f - smoothIn((p - 0.86f) / 0.14f)
-                hipsY = -0.08f * k; legBend = k * 0.75f; armCheer = 0f
+                hipsY = -0.08f * k
+                legBend = k * 0.75f
+                crouchArmWeight = k * 0.45f
+                cheerArmWeight = 0f
             }
         }
         val standOnly = (1f - sitBlend).coerceIn(0f, 1f)
@@ -509,21 +610,31 @@ class FigureAnimator(private val rig: GltfRig) {
             add(HumanoidBone.FOOT_L, rx = 18f * legBend * standOnly)
             add(HumanoidBone.FOOT_R, rx = 18f * legBend * standOnly)
         }
-        if (armCheer > 0.001f) {
-            setTarget(HumanoidBone.SPINE, rx = 5f)
-            setTarget(HumanoidBone.CHEST, rx = 6f)
-            setTarget(HumanoidBone.HEAD, rx = 8f)
-            setTarget(HumanoidBone.SHOULDER_L, rz = -10f)
-            setTarget(HumanoidBone.SHOULDER_R, rz = 10f)
-            setTarget(HumanoidBone.UPPER_ARM_L, rx = 10f, ry = -16f, rz = -42f)
-            setTarget(HumanoidBone.LOWER_ARM_L, rz = -22f, ry = -10f)
-            setTarget(HumanoidBone.UPPER_ARM_R, rx = 10f, ry = 16f, rz = 42f)
-            setTarget(HumanoidBone.LOWER_ARM_R, rz = 22f, ry = 10f)
-            blendTargetsSlerp(armCheer)
+        // 在单一目标中连续插值蓄力姿态 ↔ 欢呼姿态，彻底消除阶段交界跳变
+        val armTotalWeight = maxOf(crouchArmWeight, cheerArmWeight)
+        if (armTotalWeight > 0.001f) {
+            fingerExtraOpen = 0.55f * cheerArmWeight
+            val mix = if (crouchArmWeight + cheerArmWeight > 1e-4f) {
+                cheerArmWeight / (crouchArmWeight + cheerArmWeight)
+            } else 0f
+            val rxArm = -12f + 22f * mix
+            val ryArmL = 16f - 32f * mix
+            val rzArmL = 74f - 116f * mix
+            val ryArmR = -16f + 32f * mix
+            val rzArmR = -74f + 116f * mix
+            setTarget(HumanoidBone.SPINE, rx = -4f + 9f * mix)
+            setTarget(HumanoidBone.CHEST, rx = -4f + 10f * mix)
+            setTarget(HumanoidBone.HEAD, rx = -3f + 11f * mix)
+            setTarget(HumanoidBone.SHOULDER_L, rz = -10f * mix)
+            setTarget(HumanoidBone.SHOULDER_R, rz = 10f * mix)
+            setTarget(HumanoidBone.UPPER_ARM_L, rx = rxArm, ry = ryArmL, rz = rzArmL)
+            setTarget(HumanoidBone.LOWER_ARM_L, rz = -22f * mix, ry = -16f + 6f * mix)
+            setTarget(HumanoidBone.UPPER_ARM_R, rx = rxArm, ry = ryArmR, rz = rzArmR)
+            setTarget(HumanoidBone.LOWER_ARM_R, rz = 22f * mix, ry = 16f - 6f * mix)
+            blendTargetsSlerp(armTotalWeight)
         }
     }
 
-    /** 傲娇抱臂撇嘴：转身偏头歪睨 + 双臂于胸前干净交叉（SLERP 过胸不刮背） */
     private fun applyPout(p: Float) {
         val w = envelope(p, 0.16f, 0.84f)
         if (w <= 0f) return
@@ -543,7 +654,6 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 害羞娇颤：耸肩低头 + 双手对称捧在颊前（SLERP 经前方抬起不穿透胸部）+ 轻微娇抖 */
     private fun applyBlush(p: Float) {
         val w = envelope(p, 0.18f, 0.82f)
         if (w <= 0f) return
@@ -568,7 +678,6 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 打哈欠：慵懒仰头伸腰 + 右手真正抬至唇前轻掩（SLERP 上举不再错落胸口） */
     private fun applyYawn(p: Float) {
         val w = envelope(p, 0.22f, 0.72f)
         if (w <= 0f) return
@@ -585,7 +694,6 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(w)
     }
 
-    /** 困倦瞌睡：告别僵直低头机器人——放松微躬、双肩垂软、双臂交叠身前、膝微弯懒洋洋轻晃（坐姿则倚膝浅眠） */
     private fun applySleep(t: Float) {
         val sway = sin(t * 1.15f) * 2.8f
         val headBob = sin(t * 1.15f - 0.5f) * 3.0f
@@ -612,7 +720,6 @@ class FigureAnimator(private val rig: GltfRig) {
         blendTargetsSlerp(1f)
     }
 
-    /** 嚣张得意：顶胯挺胸仰首 + 双手大弧度叉腰（SLERP 流畅外展叉腰，不撞胯骨） */
     private fun applySmug(p: Float) {
         val w = envelope(p, 0.16f, 0.84f)
         if (w <= 0f) return
@@ -639,7 +746,6 @@ class FigureAnimator(private val rig: GltfRig) {
 
         when (part) {
             TouchPart.HEAD -> {
-                // 摸摸头：欢喜蹭手偏头 + 双肩甜美耸起 + 胸前小拳微举 + 站姿微屈膝萌动
                 val purr = sin(p * 2f * PI.toFloat() * 2.5f) * 3.0f
                 setTarget(HumanoidBone.CHEST, rx = 2f + sin(p * 2f * PI.toFloat() * 2.0f) * 1.5f, rz = 4f)
                 setTarget(HumanoidBone.NECK, rx = -2f, rz = 5f)
@@ -658,7 +764,6 @@ class FigureAnimator(private val rig: GltfRig) {
                 }
             }
             TouchPart.CHEEK -> {
-                // 戳戳脸：歪头躲开 + 右手真正上举至右颊旁护脸（告别旧版手臂向下穿肚兜 bug）
                 setTarget(HumanoidBone.CHEST, rx = -3f, ry = -4f, rz = -3f)
                 setTarget(HumanoidBone.NECK, rx = -2f, ry = 5f, rz = -5f)
                 setTarget(HumanoidBone.HEAD, rx = -4f, ry = 12f, rz = -13f)
@@ -669,7 +774,7 @@ class FigureAnimator(private val rig: GltfRig) {
                 setTarget(HumanoidBone.LOWER_ARM_L, ry = -28f)
             }
             TouchPart.HAND -> {
-                // 牵小手：温柔微俯身 + 右手大大方方朝镜头前方 (-Z) 伸出迎握
+                fingerExtraOpen = 0.7f * w
                 setTarget(HumanoidBone.SPINE, rx = -3f)
                 setTarget(HumanoidBone.CHEST, rx = -5f, ry = 4f)
                 setTarget(HumanoidBone.NECK, rx = -2f, ry = -2f, rz = 3f)
@@ -681,7 +786,7 @@ class FigureAnimator(private val rig: GltfRig) {
                 setTarget(HumanoidBone.LOWER_ARM_L, ry = -18f)
             }
             TouchPart.BODY -> {
-                // 抱抱：张开双臂在前方形成温暖环抱弧线，羞怯偏头靠向指挥官
+                fingerExtraOpen = 0.45f * w
                 val beat = sin(p * 2f * PI.toFloat() * 3.0f) * 1.4f
                 setTarget(HumanoidBone.SPINE, rx = -2f)
                 setTarget(HumanoidBone.CHEST, rx = -5f + beat)
@@ -737,7 +842,7 @@ class FigureAnimator(private val rig: GltfRig) {
         }
     }
 
-    // ============================================================ 面部 / 眨眼 / 口型
+    // ============================================================ 面部 / 双连眨眼 / 口型
 
     private fun updateFace(dt: Float, input: AnimationInput) {
         faceEmotion = input.emotion
@@ -748,7 +853,19 @@ class FigureAnimator(private val rig: GltfRig) {
             blinkCountdown -= dt
             if (blinkCountdown <= 0f) {
                 blinkClock = 0f
-                blinkCountdown = 2.2f + (timeNoise(input.timeSeconds) * 3.8f)
+                if (doubleBlinkPending) {
+                    doubleBlinkPending = false
+                    blinkCountdown = 2.6f + (timeNoise(input.timeSeconds) * 3.6f)
+                } else {
+                    // 约 25% 概率触发可爱的双连眨眼
+                    val rollNoise = timeNoise(input.timeSeconds * 3.7f)
+                    if (rollNoise < 0.25f) {
+                        doubleBlinkPending = true
+                        blinkCountdown = 0.08f
+                    } else {
+                        blinkCountdown = 2.1f + (timeNoise(input.timeSeconds) * 3.8f)
+                    }
+                }
             }
         } else {
             blinkClock += dt
@@ -769,7 +886,7 @@ class FigureAnimator(private val rig: GltfRig) {
         blinkAmount = eyesClosed
 
         val mouthTarget = if (input.speaking) input.lipSync.coerceIn(0f, 1f) else 0f
-        val k = min(1f, dt * 20f)
+        val k = min(1f, dt * 22f)
         smoothMouth += (mouthTarget - smoothMouth) * k
         mouthOpen = when {
             input.action == ActionType.YAWN -> maxOf(smoothMouth, yawnMouth(input.actionElapsed))
@@ -815,20 +932,24 @@ class FigureAnimator(private val rig: GltfRig) {
     // ============================================================ 手指 / 头发
 
     private fun applyFingerCurl() {
+        val relax = 1f - fingerExtraOpen * 0.65f
         for (f in rig.fingerJoints) {
-            addNode(f.nodeIndex, rz = f.curlDegrees)
+            addNode(f.nodeIndex, rz = f.curlDegrees * relax)
         }
     }
 
     private fun applyHairSecondary(dt: Float, t: Float, input: AnimationInput) {
         hairPhase += dt
-        val sway = input.inertialSway.coerceIn(-18f, 18f) * 0.09f
+        val sway = input.inertialSway.coerceIn(-18f, 18f) * 0.11f
         for ((chainIdx, chain) in rig.hairChains.withIndex()) {
             for ((level, node) in chain.withIndex()) {
-                val lag = sin(hairPhase * 1.35f - level * 0.55f + chainIdx * 0.7f) *
-                        (0.5f + level * 0.45f)
-                addNode(node, rx = lag * 0.8f + sway * (level + 1) * 0.5f,
-                    rz = lag * 0.55f + sway * (level + 1) * 0.35f)
+                val lag = sin(hairPhase * 1.45f - level * 0.55f + chainIdx * 0.7f) *
+                        (0.55f + level * 0.45f)
+                addNode(
+                    node,
+                    rx = lag * 0.85f + sway * (level + 1) * 0.5f,
+                    rz = lag * 0.60f + sway * (level + 1) * 0.35f
+                )
             }
         }
     }
