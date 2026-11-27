@@ -78,4 +78,11 @@ class PersonaSettingsCodecTest {
         assertEquals(0, sanitized.bondExp)
         assertEquals(100, sanitized.bondExpNext)
     }
+
+    @Test
+    fun autoAsrLanguagePreservedAcrossCodecRoundTrip() {
+        val snap = PersonaSettingsSnapshot(asrLanguage = "auto")
+        val decoded = PersonaSettingsCodec.decode(PersonaSettingsCodec.encode(snap))
+        assertEquals("auto", decoded.asrLanguage)
+    }
 }

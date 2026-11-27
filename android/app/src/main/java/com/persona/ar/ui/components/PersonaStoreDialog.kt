@@ -98,18 +98,23 @@ fun PersonaStoreDialog(
                     }
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFE0E8))
-                            .border(1.5.dp, borderColor, CircleShape)
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = Color(0xFFFF5277),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFE0E8))
+                                .border(1.5.dp, borderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = Color(0xFFFF5277),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
@@ -167,6 +172,7 @@ private fun GameStoreTab(
     val borderColor = Color(0xFF281C38)
     Box(
         modifier = modifier
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(11.dp))
             .background(if (isSelected) Color(0xFFFF5277) else Color.Transparent)
             .border(
@@ -220,7 +226,7 @@ private fun GamePersonaCard(
             // 角色头像圆框
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
                     .background(modelColor.copy(alpha = 0.2f))
                     .border(2.dp, modelColor, CircleShape),
@@ -229,49 +235,30 @@ private fun GamePersonaCard(
                 Text(
                     text = model.name.take(1),
                     color = modelColor,
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Black
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             // 角色基本信息与属性标签
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = model.name,
-                        color = borderColor,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    // 3D 模型标签徽章
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFE1F5FE))
-                            .border(1.dp, Color(0xFF00B0FF), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "3D手办",
-                            color = Color(0xFF0288D1),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
+                Text(
+                    text = model.name,
+                    color = borderColor,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 Text(
-                    text = "画师: ${model.author} · v${model.version}",
+                    text = "${model.author} · v${model.version} · 3D手办",
                     color = Color(0xFF9080A0),
-                    fontSize = 10.sp
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 Text(
@@ -279,11 +266,12 @@ private fun GamePersonaCard(
                     color = Color(0xFF554466),
                     fontSize = 11.sp,
                     maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     lineHeight = 15.sp,
                     modifier = Modifier.padding(top = 2.dp)
                 )
 
-                // 评分与标签栏（矢量五角星）
+                // 评分与标签栏（矢量五角星，标签单行截断防竖折）
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -299,26 +287,33 @@ private fun GamePersonaCard(
                         color = Color(0xFFFF8F00),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(start = 2.dp, end = 6.dp)
                     )
                     Text(
                         text = model.tags.take(2).joinToString(" · "),
                         color = Color(0xFF887799),
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(8.dp))
 
-            // 状态/操作按钮（全矢量组件）
+            // 状态/操作按钮（全矢量组件，保持 >=44dp 触控热区）
             if (isActive) {
                 Box(
                     modifier = Modifier
+                        .heightIn(min = 44.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFFE8F5E9))
                         .border(1.5.dp, Color(0xFF00C853), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -332,7 +327,9 @@ private fun GamePersonaCard(
                             text = "陪伴中",
                             color = Color(0xFF00C853),
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Black
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -341,8 +338,10 @@ private fun GamePersonaCard(
                     onClick = onUseClick,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7B61FF)),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
@@ -351,15 +350,17 @@ private fun GamePersonaCard(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
-                    Text(text = "唤醒", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(text = "唤醒", fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, softWrap = false)
                 }
             } else {
                 Button(
                     onClick = onInstallClick,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5277)),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Download,
@@ -368,7 +369,7 @@ private fun GamePersonaCard(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
-                    Text(text = "获取", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(text = "获取", fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, softWrap = false)
                 }
             }
         }

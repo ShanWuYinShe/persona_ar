@@ -31,29 +31,41 @@ class PersonaWebSocketClient {
     var onReady: ((String) -> Unit)? = null
     var onInterruptAck: (() -> Unit)? = null
     var onAsrResult: ((String) -> Unit)? = null
+    var onAsrEmpty: (() -> Unit)? = null
     var onThinkingStart: (() -> Unit)? = null
     var onStreamChunk: ((String) -> Unit)? = null
     var onResponseComplete: ((text: String, emotion: EmotionType, action: ActionType, expr: String, audioBase64: String?, affinity: Int, mood: String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onDisconnected: ((String) -> Unit)? = null
 
-    fun connect(baseUrl: String = ApiClient.baseUrl, userId: String = "user_default") {
+    fun connect(
+        baseUrl: String = ApiClient.baseUrl,
+        userId: String = "user_default",
+        personaId: String? = null
+    ) {
         if (isConnected || isConnecting) return
         val normalized = PersonaSettingsCodec.normalizeServerUrl(baseUrl)
         val encodedUser = runCatching { URLEncoder.encode(userId, "UTF-8") }.getOrDefault(userId)
+        val personaQuery = personaId?.takeIf { it.isNotBlank() }?.let {
+            val encodedPid = runCatching { URLEncoder.encode(it, "UTF-8") }.getOrDefault(it)
+            "&persona_id=$encodedPid"
+        } ?: ""
         val wsUrl = normalized.replace("http://", "ws://").replace("https://", "wss://")
-            .removeSuffix("/") + "/api/v1/ws/continuous?user_id=$encodedUser"
+            .removeSuffix("/") + "/api/v1/ws/continuous?user_id=$encodedUser$personaQuery"
 
         isConnecting = true
         val request = Request.Builder().url(wsUrl).build()
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+        var createdSocket: WebSocket? = null
+        createdSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (this@PersonaWebSocketClient.webSocket !== webSocket) return
                 isConnecting = false
                 isConnected = true
                 Log.d("PersonaWS", "WebSocket connected: $wsUrl")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (this@PersonaWebSocketClient.webSocket !== webSocket) return
                 try {
                     val obj = JSONObject(text)
                     when (obj.optString("type")) {
@@ -68,6 +80,9 @@ class PersonaWebSocketClient {
                             if (asrText.isNotEmpty()) {
                                 onAsrResult?.invoke(asrText)
                             }
+                        }
+                        "asr_empty" -> {
+                            onAsrEmpty?.invoke()
                         }
                         "thinking_start" -> {
                             onThinkingStart?.invoke()
@@ -103,25 +118,24 @@ class PersonaWebSocketClient {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (this@PersonaWebSocketClient.webSocket !== webSocket) return
                 isConnecting = false
                 isConnected = false
-                if (this@PersonaWebSocketClient.webSocket === webSocket) {
-                    this@PersonaWebSocketClient.webSocket = null
-                }
+                this@PersonaWebSocketClient.webSocket = null
                 Log.w("PersonaWS", "WebSocket failure: ${t.message}")
                 onError?.invoke(t.message ?: "Network error")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (this@PersonaWebSocketClient.webSocket !== webSocket) return
                 isConnecting = false
                 isConnected = false
-                if (this@PersonaWebSocketClient.webSocket === webSocket) {
-                    this@PersonaWebSocketClient.webSocket = null
-                }
+                this@PersonaWebSocketClient.webSocket = null
                 Log.d("PersonaWS", "WebSocket closed: $reason")
                 onDisconnected?.invoke(reason.ifBlank { "连接已断开 ($code)" })
             }
         })
+        webSocket = createdSocket
     }
 
     /**
@@ -138,11 +152,14 @@ class PersonaWebSocketClient {
     /**
      * 发送录音音频数据进行全双工 ASR 识别与连麦应答
      */
-    fun sendAudioMessage(audioBase64: String, format: String = "wav") {
+    fun sendAudioMessage(audioBase64: String, format: String = "wav", personaId: String? = null) {
         val payload = JSONObject().apply {
             put("type", "audio_message")
             put("audio_base64", audioBase64)
             put("audio_format", format)
+            if (!personaId.isNullOrBlank()) {
+                put("persona_id", personaId)
+            }
             put("timestamp", System.currentTimeMillis())
         }
         webSocket?.send(payload.toString())
@@ -151,10 +168,13 @@ class PersonaWebSocketClient {
     /**
      * 发送文本或断句后的对话内容
      */
-    fun sendTextMessage(text: String, audioBase64: String? = null) {
+    fun sendTextMessage(text: String, audioBase64: String? = null, personaId: String? = null) {
         val payload = JSONObject().apply {
             put("type", "text_message")
             put("text", text)
+            if (!personaId.isNullOrBlank()) {
+                put("persona_id", personaId)
+            }
             if (audioBase64 != null) {
                 put("audio_base64", audioBase64)
             }
@@ -163,12 +183,14 @@ class PersonaWebSocketClient {
     }
 
     fun disconnect() {
+        val oldSocket = webSocket
+        webSocket = null
+        isConnecting = false
+        isConnected = false
         try {
-            webSocket?.close(1000, "Client disconnect")
+            oldSocket?.close(1000, "Client disconnect")
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        webSocket = null
-        isConnected = false
     }
 }

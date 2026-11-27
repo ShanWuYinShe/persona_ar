@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -59,6 +60,7 @@ fun SettingsDialog(
     currentAsrBaseUrl: String = "https://api.openai.com/v1",
     currentAsrApiKey: String = "",
     currentAsrModel: String = "whisper-1",
+    currentAsrLanguage: String = "zh",
     onDismiss: () -> Unit,
     onSelectVoiceMode: (VoiceMode) -> Unit,
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
@@ -66,6 +68,18 @@ fun SettingsDialog(
     onTestServerConnection: (serverUrl: String, llmProvider: String, llmBaseUrl: String, llmApiKey: String, llmModel: String) -> Unit = { _, _, _, _, _ -> },
     onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
     onUpdateAsrConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
+    onApplySettings: ((
+        serverUrl: String,
+        llmProvider: String,
+        llmBaseUrl: String,
+        llmApiKey: String,
+        llmModel: String,
+        asrProvider: String,
+        asrBaseUrl: String,
+        asrApiKey: String,
+        asrModel: String,
+        asrLanguage: String
+    ) -> Unit)? = null,
     /** 点击后立即触发 3D 手办动作照出（无需等待对话） */
     onPreviewAction: (ActionType) -> Unit = {},
     /** 直接切换到站立姿态 */
@@ -86,6 +100,7 @@ fun SettingsDialog(
     var asrBaseUrl by remember { mutableStateOf(currentAsrBaseUrl) }
     var asrApiKey by remember { mutableStateOf(currentAsrApiKey) }
     var asrModel by remember { mutableStateOf(currentAsrModel) }
+    var asrLanguage by remember { mutableStateOf(currentAsrLanguage) }
     var showAsrApiKey by remember { mutableStateOf(false) }
 
     val borderColor = Color(0xFF281C38)
@@ -139,18 +154,23 @@ fun SettingsDialog(
                     }
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFE0E8))
-                            .border(1.5.dp, borderColor, CircleShape)
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = Color(0xFFFF5277),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFFE0E8))
+                                .border(1.5.dp, borderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = Color(0xFFFF5277),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
@@ -497,6 +517,7 @@ fun SettingsDialog(
                         OutlinedTextField(
                             value = llmBaseUrl,
                             onValueChange = { llmBaseUrl = it },
+                            singleLine = true,
                             label = { Text("API 端点地址 (Base URL)", fontSize = 10.sp) },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -511,6 +532,7 @@ fun SettingsDialog(
                         OutlinedTextField(
                             value = llmModel,
                             onValueChange = { llmModel = it },
+                            singleLine = true,
                             label = { Text("模型标识 (Model Name)", fontSize = 10.sp) },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -580,6 +602,7 @@ fun SettingsDialog(
                         OutlinedTextField(
                             value = asrBaseUrl,
                             onValueChange = { asrBaseUrl = it },
+                            singleLine = true,
                             label = { Text("ASR API Base URL", fontSize = 10.sp) },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -617,6 +640,7 @@ fun SettingsDialog(
                         OutlinedTextField(
                             value = asrModel,
                             onValueChange = { asrModel = it },
+                            singleLine = true,
                             label = { Text("ASR 模型标识 (Model Name)", fontSize = 10.sp) },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -626,6 +650,27 @@ fun SettingsDialog(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        Text(
+                            text = "语音识别偏好语种",
+                            fontSize = 10.sp,
+                            color = Color(0xFF6E5E80),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf("zh" to "中文", "ja" to "日语", "en" to "英文", "auto" to "自动").forEach { (langCode, label) ->
+                                GameMiniChip(
+                                    title = label,
+                                    isSelected = asrLanguage == langCode || (langCode == "auto" && asrLanguage.isBlank()),
+                                    activeColor = Color(0xFF00B0FF),
+                                    onClick = { asrLanguage = langCode },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -637,7 +682,9 @@ fun SettingsDialog(
                 ) {
                     TextButton(
                         onClick = onDismiss,
-                        modifier = Modifier.padding(end = 8.dp)
+                        modifier = Modifier
+                            .heightIn(min = 44.dp)
+                            .padding(end = 8.dp)
                     ) {
                         Text(text = "取消", color = Color(0xFF7A6B88), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
@@ -645,9 +692,25 @@ fun SettingsDialog(
                         onClick = {
                             onSelectVoiceMode(selectedVoiceMode)
                             onSelectBubbleMode(selectedBubbleMode)
-                            onUpdateServerUrl(serverInput.trim())
-                            onUpdateLlmConfig(llmProvider, llmBaseUrl.trim(), llmApiKey.trim(), llmModel.trim())
-                            onUpdateAsrConfig(asrProvider, asrBaseUrl.trim(), asrApiKey.trim(), asrModel.trim())
+                            val applyHandler = onApplySettings
+                            if (applyHandler != null) {
+                                applyHandler(
+                                    serverInput.trim(),
+                                    llmProvider,
+                                    llmBaseUrl.trim(),
+                                    llmApiKey.trim(),
+                                    llmModel.trim(),
+                                    asrProvider,
+                                    asrBaseUrl.trim(),
+                                    asrApiKey.trim(),
+                                    asrModel.trim(),
+                                    asrLanguage
+                                )
+                            } else {
+                                onUpdateServerUrl(serverInput.trim())
+                                onUpdateLlmConfig(llmProvider, llmBaseUrl.trim(), llmApiKey.trim(), llmModel.trim())
+                                onUpdateAsrConfig(asrProvider, asrBaseUrl.trim(), asrApiKey.trim(), asrModel.trim())
+                            }
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -655,6 +718,7 @@ fun SettingsDialog(
                         ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
+                            .heightIn(min = 44.dp)
                             .border(1.8.dp, borderColor, RoundedCornerShape(14.dp))
                     ) {
                         Text(
@@ -735,13 +799,17 @@ private fun GameOptionChip(
                 text = title,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
-                color = if (isSelected) Color.White else borderColor
+                color = if (isSelected) Color.White else borderColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Normal,
-                color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color(0xFF887A99)
+                color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color(0xFF887A99),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -776,7 +844,8 @@ private fun GameMiniChip(
             fontSize = 10.sp,
             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
             color = if (isSelected) Color.White else Color(0xFF483A5A),
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

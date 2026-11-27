@@ -28,10 +28,11 @@ object SnapshotHelper {
         cameraFrameBitmap: Bitmap? = null,
         figure3DBitmap: Bitmap? = null
     ): Uri? = withContext(Dispatchers.IO) {
+        var bitmap: Bitmap? = null
         try {
             val width = 1080
             val height = 1440
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
 
             // 1. 拍立得相纸底色
@@ -116,6 +117,10 @@ object SnapshotHelper {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        } finally {
+            bitmap?.takeIf { !it.isRecycled }?.recycle()
+            cameraFrameBitmap?.takeIf { !it.isRecycled }?.recycle()
+            figure3DBitmap?.takeIf { !it.isRecycled }?.recycle()
         }
     }
 
