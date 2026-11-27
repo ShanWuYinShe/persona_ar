@@ -56,14 +56,25 @@ func (m *Manager) createProvider(cfg Config) Provider {
 }
 
 func (m *Manager) Transcribe(ctx context.Context, audioData []byte, filename string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	m.mu.RLock()
 	p := m.provider
+	cfg := m.config
 	m.mu.RUnlock()
 
 	text, err := p.Transcribe(ctx, audioData, filename)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		// 自动降级为内置启发式 ASR 识别
-		mock := NewHeuristicMockProvider(m.config)
+		mock := NewHeuristicMockProvider(cfg)
 		fallbackText, fErr := mock.Transcribe(ctx, audioData, filename)
 		if fErr == nil {
 			return fallbackText, nil
@@ -96,14 +107,36 @@ func (m *Manager) GetConfig() Config {
 }
 
 func (m *Manager) TestConnection() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	_, err := m.TestConnectionWithMode()
+	return err
+}
+
+// TestConnectionWithMode 执行 ASR 连通性自测并返回实际生效模式（external / heuristic / heuristic-fallback）。
+func (m *Manager) TestConnectionWithMode() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+
+	m.mu.RLock()
+	p := m.provider
+	cfg := m.config
+	m.mu.RUnlock()
 
 	// 构造 100ms 模拟静音 PCM 帧 (16kHz 16bit = 3200 字节)
 	dummyAudio := make([]byte, 3200)
-	_, err := m.Transcribe(ctx, dummyAudio, "test.wav")
-	if err != nil {
-		return fmt.Errorf("asr connection test failed: %w", err)
+	if _, ok := p.(*HeuristicMockProvider); ok {
+		if _, err := p.Transcribe(ctx, dummyAudio, "test.wav"); err != nil {
+			return "heuristic", fmt.Errorf("asr connection test failed: %w", err)
+		}
+		return "heuristic", nil
 	}
-	return nil
+
+	if _, err := p.Transcribe(ctx, dummyAudio, "test.wav"); err != nil {
+		// 外部 Whisper 不可达时仍可自动降级至内置启发式引擎
+		mock := NewHeuristicMockProvider(cfg)
+		if _, fErr := mock.Transcribe(ctx, dummyAudio, "test.wav"); fErr == nil {
+			return "heuristic-fallback", nil
+		}
+		return "external", fmt.Errorf("asr connection test failed: %w", err)
+	}
+	return "external", nil
 }

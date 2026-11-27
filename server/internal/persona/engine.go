@@ -56,7 +56,7 @@ var PersonaRegistry = map[string]PersonaDefinition{
 		ID:       "airi",
 		Name:     "艾莉 (Airi)",
 		RoleDesc: "温柔体贴的邻家治愈学妹。在你累的时候会微笑着静静陪伴你",
-		Voice:    "zh-CN-YunjianNeural",
+		Voice:    "zh-TW-HsiaoYuNeural",
 		Greeting: "学长，今天也辛苦啦~ 我已经投射在你的身边了，随时跟我聊聊天吧！",
 		Prompt: `你叫艾莉，是用户的温柔邻家学妹，现在以AR投影形式陪伴在用户身边。
 你性格温婉体贴、善解人意，充满治愈感，会关心用户的疲惫与作息。
@@ -67,7 +67,7 @@ var PersonaRegistry = map[string]PersonaDefinition{
 		ID:       "cyber_k",
 		Name:     "K-07 (Cyber K)",
 		RoleDesc: "从未来赛博空间穿越而来的全息机甲少女，具备 3D 空间立体投射网格",
-		Voice:    "zh-CN-YunyangNeural",
+		Voice:    "zh-TW-HsiaoChenNeural",
 		Greeting: "全息网络同步完毕。指挥官，现实环境侦测中，已准备就绪。",
 		Prompt: `你叫K-07，是来自未来高科技战术部队的赛博机娘全息投影。
 你称呼用户为“指挥官”，说话干练、精准，但在与用户互动中逐渐觉醒人类的温情与害羞情感。
@@ -326,24 +326,45 @@ func (e *Engine) resolveActivePersona(userID string) PersonaDefinition {
 	return persona
 }
 
-func (e *Engine) beginTurn(userID, personaID, message string) (PersonaDefinition, *UserState) {
+func (e *Engine) resolvePersonaDefinitionLocked(userID, personaID string) PersonaDefinition {
+	if trimmed := strings.TrimSpace(personaID); trimmed != "" {
+		if persona, ok := PersonaRegistry[trimmed]; ok {
+			return persona
+		}
+	}
+	activePid := e.userActivePersona[userID]
+	if persona, ok := PersonaRegistry[activePid]; ok {
+		return persona
+	}
+	return PersonaRegistry["hoshino"]
+}
+
+func (e *Engine) prepareTurnSnapshot(userID, personaID string) (PersonaDefinition, *UserState) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	persona, ok := PersonaRegistry[personaID]
-	if !ok {
-		persona = PersonaRegistry["hoshino"]
-	}
+	persona := e.resolvePersonaDefinitionLocked(userID, personaID)
 	state := e.getOrCreateStateLocked(userID, persona.ID)
-	state.DialogueCount++
-	if strings.TrimSpace(message) != "" {
-		if extracted := DefaultMemoryManager.ExtractPreferenceFromDialogue(userID, persona.ID, message); extracted != nil {
-			state.Affinity += 2
-		}
+	return persona, state.clone()
+}
+
+func moodForEmotion(emotion model.EmotionType) string {
+	switch emotion {
+	case model.EmotionJoy:
+		return "愉悦互动"
+	case model.EmotionShy:
+		return "害羞心动"
+	case model.EmotionSad:
+		return "温柔共情"
+	case model.EmotionSurprised:
+		return "惊喜好奇"
+	case model.EmotionThinking:
+		return "认真思索"
+	case model.EmotionAngry:
+		return "傲娇鼓腮"
+	default:
+		return "温和陪伴"
 	}
-	snapshot := state.clone()
-	e.saveToDiskLocked()
-	return persona, snapshot
 }
 
 func appendHistoryTurnLocked(state *UserState, userMsg, assistantMsg string) {
@@ -359,28 +380,63 @@ func appendHistoryTurnLocked(state *UserState, userMsg, assistantMsg string) {
 }
 
 func (e *Engine) Chat(userID, message string) (*model.ChatResponse, error) {
-	activePid := e.GetActivePersonaID(userID)
-	persona, stateSnap := e.beginTurn(userID, activePid, message)
+	return e.ChatWithPersona(context.Background(), userID, "", message)
+}
+
+func (e *Engine) ChatContext(ctx context.Context, userID, message string) (*model.ChatResponse, error) {
+	return e.ChatWithPersona(ctx, userID, "", message)
+}
+
+func (e *Engine) ChatWithPersona(ctx context.Context, userID, personaID, message string) (*model.ChatResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	persona, stateSnap := e.prepareTurnSnapshot(userID, personaID)
 
 	if client := llm.DefaultManager.GetClient(); client != nil {
-		if res, err := e.callLLM(client, persona, stateSnap, message); err == nil && strings.TrimSpace(res) != "" {
-			return e.commitLLMResponse(userID, persona, message, res)
-		} else if err != nil {
+		res, err := e.callLLM(ctx, client, persona, stateSnap, message)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err == nil && strings.TrimSpace(res) != "" {
+			return e.commitLLMResponse(ctx, userID, persona, message, res, true, "")
+		}
+		if err != nil {
 			log.Printf("[LLM Fallback] API error: %v, falling back to heuristic engine", err)
 		}
 	}
 
-	return e.heuristicChat(userID, persona, message), nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return e.heuristicChat(ctx, userID, persona, message)
 }
 
 func (e *Engine) ChatStream(userID, message string, onChunk func(string)) (*model.ChatResponse, error) {
-	activePid := e.GetActivePersonaID(userID)
-	persona, stateSnap := e.beginTurn(userID, activePid, message)
+	return e.ChatStreamWithPersona(context.Background(), userID, "", message, onChunk)
+}
+
+func (e *Engine) ChatStreamWithPersona(ctx context.Context, userID, personaID, message string, onChunk func(string)) (*model.ChatResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	persona, stateSnap := e.prepareTurnSnapshot(userID, personaID)
 
 	if client := llm.DefaultManager.GetClient(); client != nil {
 		var rawBuilder strings.Builder
 		filter := &StreamTagFilter{}
 		streamHandler := func(chunk string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			rawBuilder.WriteString(chunk)
 			if onChunk != nil {
 				if clean := filter.Feed(chunk); clean != "" {
@@ -390,24 +446,35 @@ func (e *Engine) ChatStream(userID, message string, onChunk func(string)) (*mode
 			return nil
 		}
 
-		if err := e.streamLLM(client, persona, stateSnap, message, streamHandler); err == nil && strings.TrimSpace(rawBuilder.String()) != "" {
+		err := e.streamLLM(ctx, client, persona, stateSnap, message, streamHandler)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err == nil && strings.TrimSpace(rawBuilder.String()) != "" {
 			if rem := filter.Flush(); rem != "" && onChunk != nil {
 				onChunk(rem)
 			}
-			return e.commitLLMResponse(userID, persona, message, rawBuilder.String())
-		} else if err != nil {
+			return e.commitLLMResponse(ctx, userID, persona, message, rawBuilder.String(), true, "")
+		}
+		if err != nil {
 			log.Printf("[LLM Fallback Stream] API error: %v, falling back to heuristic engine", err)
 		}
 	}
 
-	resp := e.heuristicChat(userID, persona, message)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	resp, err := e.heuristicChat(ctx, userID, persona, message)
+	if err != nil {
+		return nil, err
+	}
 	if onChunk != nil {
 		onChunk(resp.Text)
 	}
 	return resp, nil
 }
 
-func (e *Engine) heuristicChat(userID string, persona PersonaDefinition, message string) *model.ChatResponse {
+func (e *Engine) heuristicChat(ctx context.Context, userID string, persona PersonaDefinition, message string) (*model.ChatResponse, error) {
 	msg := strings.ToLower(strings.TrimSpace(message))
 	affinityDelta := 1
 	mood := ""
@@ -583,11 +650,28 @@ func (e *Engine) heuristicChat(userID string, persona PersonaDefinition, message
 		expr = "CURIOUS"
 	}
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	var prefBonus int
+	if strings.TrimSpace(message) != "" {
+		if extracted := DefaultMemoryManager.ExtractPreferenceFromDialogue(userID, persona.ID, message); extracted != nil {
+			prefBonus = 2
+		}
+	}
+
 	e.mu.Lock()
 	state := e.getOrCreateStateLocked(userID, persona.ID)
-	state.Affinity += affinityDelta
+	state.DialogueCount++
+	state.Affinity += affinityDelta + prefBonus
 	if mood != "" {
 		state.Mood = mood
+	} else {
+		state.Mood = moodForEmotion(emotion)
 	}
 	appendHistoryTurnLocked(state, message, text)
 	currAffinity := state.Affinity
@@ -595,7 +679,10 @@ func (e *Engine) heuristicChat(userID string, persona PersonaDefinition, message
 	e.saveToDiskLocked()
 	e.mu.Unlock()
 
-	audioBase64 := tts.DefaultSynthesizer.Synthesize(text, persona.Voice, emotion, currAffinity)
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeContext(ctx, text, persona.Voice, emotion, currAffinity)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	return &model.ChatResponse{
 		Text:            text,
@@ -607,7 +694,7 @@ func (e *Engine) heuristicChat(userID string, persona PersonaDefinition, message
 		AffinityChange:  affinityDelta,
 		CurrentAffinity: currAffinity,
 		Mood:            currMood,
-	}
+	}, nil
 }
 
 func msgContainsOverlap(msg, memory string) bool {
@@ -626,7 +713,13 @@ func msgContainsOverlap(msg, memory string) bool {
 }
 
 func (e *Engine) Touch(userID string, part model.TouchPart) (*model.TouchResponse, error) {
-	persona := e.resolveActivePersona(userID)
+	return e.TouchWithPersona(userID, "", part)
+}
+
+func (e *Engine) TouchWithPersona(userID, personaID string, part model.TouchPart) (*model.TouchResponse, error) {
+	e.mu.Lock()
+	persona := e.resolvePersonaDefinitionLocked(userID, personaID)
+	e.mu.Unlock()
 
 	var text string
 	emotion := model.EmotionJoy
@@ -778,19 +871,19 @@ func (e *Engine) buildLLMContext(persona PersonaDefinition, state *UserState, me
 	return llmMessages, opts
 }
 
-func (e *Engine) callLLM(client llm.Client, persona PersonaDefinition, stateSnap *UserState, message string) (string, error) {
+func (e *Engine) callLLM(parentCtx context.Context, client llm.Client, persona PersonaDefinition, stateSnap *UserState, message string) (string, error) {
 	llmMessages, opts := e.buildLLMContext(persona, stateSnap, message)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 25*time.Second)
 	defer cancel()
 
 	return client.Complete(ctx, llmMessages, opts)
 }
 
-func (e *Engine) streamLLM(client llm.Client, persona PersonaDefinition, stateSnap *UserState, message string, onChunk func(string) error) error {
+func (e *Engine) streamLLM(parentCtx context.Context, client llm.Client, persona PersonaDefinition, stateSnap *UserState, message string, onChunk func(string) error) error {
 	llmMessages, opts := e.buildLLMContext(persona, stateSnap, message)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 25*time.Second)
 	defer cancel()
 
 	return client.Stream(ctx, llmMessages, opts, onChunk)
@@ -820,7 +913,14 @@ func sanitizeExpression(raw string) string {
 	return "SMILE"
 }
 
-func (e *Engine) commitLLMResponse(userID string, persona PersonaDefinition, userMessage, rawText string) (*model.ChatResponse, error) {
+func (e *Engine) commitLLMResponse(ctx context.Context, userID string, persona PersonaDefinition, userMessage, rawText string, extractPrefs bool, moodOverride string) (*model.ChatResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	emotion := model.EmotionNeutral
 	action := model.ActionIdle
 	expr := "SMILE"
@@ -840,16 +940,32 @@ func (e *Engine) commitLLMResponse(userID string, persona PersonaDefinition, use
 		cleanText = "嗯嗯，我一直在你身边陪着你呢~"
 	}
 
+	var prefBonus int
+	if extractPrefs && strings.TrimSpace(userMessage) != "" {
+		if extracted := DefaultMemoryManager.ExtractPreferenceFromDialogue(userID, persona.ID, userMessage); extracted != nil {
+			prefBonus = 2
+		}
+	}
+
 	e.mu.Lock()
 	state := e.getOrCreateStateLocked(userID, persona.ID)
-	state.Affinity += 2
+	state.DialogueCount++
+	state.Affinity += 2 + prefBonus
+	if moodOverride != "" {
+		state.Mood = moodOverride
+	} else {
+		state.Mood = moodForEmotion(emotion)
+	}
 	appendHistoryTurnLocked(state, userMessage, cleanText)
 	currAffinity := state.Affinity
 	currMood := state.Mood
 	e.saveToDiskLocked()
 	e.mu.Unlock()
 
-	audioBase64 := tts.DefaultSynthesizer.Synthesize(cleanText, persona.Voice, emotion, currAffinity)
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeContext(ctx, cleanText, persona.Voice, emotion, currAffinity)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	return &model.ChatResponse{
 		Text:            cleanText,
@@ -866,8 +982,19 @@ func (e *Engine) commitLLMResponse(userID string, persona PersonaDefinition, use
 
 // VisionChat 处理多模态实景视野交互，将摄像头采集的现实物理画面与虚拟模型的情感大脑深度交融
 func (e *Engine) VisionChat(userID, prompt, imageBase64 string) (*model.ChatResponse, error) {
-	activePid := e.GetActivePersonaID(userID)
-	persona, stateSnap := e.beginTurn(userID, activePid, "")
+	return e.VisionChatWithPersona(context.Background(), userID, "", prompt, imageBase64)
+}
+
+// VisionChatWithPersona 支持显式指定角色 ID 与上下文取消的多模态视野交互入口
+func (e *Engine) VisionChatWithPersona(ctx context.Context, userID, personaID, prompt, imageBase64 string) (*model.ChatResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	persona, stateSnap := e.prepareTurnSnapshot(userID, personaID)
 
 	userPrompt := strings.TrimSpace(prompt)
 	if userPrompt == "" {
@@ -884,20 +1011,25 @@ func (e *Engine) VisionChat(userID, prompt, imageBase64 string) (*model.ChatResp
 			llmMessages[len(llmMessages)-1].ImageURL = imageURL
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		res, err := client.Complete(ctx, llmMessages, opts)
+		reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		res, err := client.Complete(reqCtx, llmMessages, opts)
 		cancel()
-
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err == nil && strings.TrimSpace(res) != "" {
-			return e.commitLLMResponse(userID, persona, "[实景视野交互] "+userPrompt, res)
+			return e.commitLLMResponse(ctx, userID, persona, "[实景视野交互] "+userPrompt, res, false, "实景视野交互")
 		}
 		log.Printf("[Vision LLM Fallback] Multimodal API failed: %v, falling back to heuristic vision engine", err)
 	}
 
-	return e.heuristicVisionChat(userID, persona, userPrompt), nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return e.heuristicVisionChat(ctx, userID, persona, userPrompt)
 }
 
-func (e *Engine) heuristicVisionChat(userID string, persona PersonaDefinition, prompt string) *model.ChatResponse {
+func (e *Engine) heuristicVisionChat(ctx context.Context, userID string, persona PersonaDefinition, prompt string) (*model.ChatResponse, error) {
 	var text string
 	emotion := model.EmotionJoy
 	action := model.ActionWave
@@ -920,6 +1052,7 @@ func (e *Engine) heuristicVisionChat(userID string, persona PersonaDefinition, p
 
 	e.mu.Lock()
 	state := e.getOrCreateStateLocked(userID, persona.ID)
+	state.DialogueCount++
 	state.Affinity += 3
 	state.Mood = "实景视野交互"
 	appendHistoryTurnLocked(state, prompt, text)
@@ -928,7 +1061,10 @@ func (e *Engine) heuristicVisionChat(userID string, persona PersonaDefinition, p
 	e.saveToDiskLocked()
 	e.mu.Unlock()
 
-	audioBase64 := tts.DefaultSynthesizer.Synthesize(text, persona.Voice, emotion, currAffinity)
+	audioBase64 := tts.DefaultSynthesizer.SynthesizeContext(ctx, text, persona.Voice, emotion, currAffinity)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	return &model.ChatResponse{
 		Text:            text,
@@ -940,5 +1076,5 @@ func (e *Engine) heuristicVisionChat(userID string, persona PersonaDefinition, p
 		AffinityChange:  3,
 		CurrentAffinity: currAffinity,
 		Mood:            currMood,
-	}
+	}, nil
 }

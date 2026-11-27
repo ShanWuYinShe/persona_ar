@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -38,7 +39,9 @@ func EdgeSynthFunc(proxy, format string, handshakeTimeout time.Duration) SynthFu
 	return func(ctx context.Context, req SynthRequest) ([]byte, error) {
 		_ = ctx // 库不支持 context；总超时由调用方控制
 
-		communicate, err := edge_tts.NewCommunicate(req.Text,
+		// edge-tts-go 直接拼接 SSML 模板，未转义的 '&' / '<' / '>' 会破坏 XML 结构导致服务端拒绝合成
+		escapedText := html.EscapeString(req.Text)
+		communicate, err := edge_tts.NewCommunicate(escapedText,
 			edge_tts.SetVoice(req.Voice),
 			edge_tts.SetRate(req.Rate),
 			edge_tts.SetPitch(req.Pitch),

@@ -106,16 +106,27 @@ func handleUpdateASRConfig(c *gin.Context) {
 }
 
 func handleTestASR(c *gin.Context) {
-	if err := asr.DefaultManager.TestConnection(); err != nil {
+	mode, err := asr.DefaultManager.TestConnectionWithMode()
+	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "error",
+			"mode":   mode,
 			"error":  err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	msg := "ASR 语音识别服务连通性自测通过"
+	resp := gin.H{
 		"status":  "ok",
-		"message": "ASR 语音识别服务连通性自测通过",
-	})
+		"mode":    mode,
+		"message": msg,
+	}
+	if mode == "heuristic" {
+		resp["message"] = "当前处于内置启发式 ASR 模式（无需外部 Whisper Key）"
+	} else if mode == "heuristic-fallback" {
+		resp["message"] = "外部 Whisper 不可达，已自动降级为内置启发式 ASR 模式"
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

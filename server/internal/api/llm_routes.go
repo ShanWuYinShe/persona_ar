@@ -47,7 +47,7 @@ func handleTestLLMConnection(c *gin.Context) {
 	}
 
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
 	defer cancel()
 
 	err := llm.DefaultManager.TestConnection(ctx, req)

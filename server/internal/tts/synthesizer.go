@@ -86,9 +86,11 @@ type Options struct {
 }
 
 type inflightCall struct {
-	done chan struct{}
-	data []byte
-	err  error
+	done    chan struct{}
+	cancel  context.CancelFunc
+	waiters int
+	data    []byte
+	err     error
 }
 
 // Synthesizer 线程安全的语音合成器：磁盘缓存 + 并发去重 + 超时保护 + 可注入合成实现。
@@ -293,7 +295,12 @@ func (s *Synthesizer) cachePath(cleanedText, voice string, emotion model.Emotion
 // Synthesize 合成语音并返回 base64；文本会先做 TTS 专用清洗（不影响返回给客户端的显示文本）。
 // 失败（未启用/空文本/网络错误/超时/空音频/过短音频）统一返回 nil，绝不返回假音频。
 func (s *Synthesizer) Synthesize(text, voice string, emotion model.EmotionType, affinity int) *string {
-	if !s.Enabled() {
+	return s.SynthesizeContext(context.Background(), text, voice, emotion, affinity)
+}
+
+// SynthesizeContext 支持通过 ctx 及时取消等待（如全双工连麦用户插话打断）。
+func (s *Synthesizer) SynthesizeContext(ctx context.Context, text, voice string, emotion model.EmotionType, affinity int) *string {
+	if !s.Enabled() || ctx.Err() != nil {
 		return nil
 	}
 	cleaned := CleanText(text)
@@ -312,7 +319,7 @@ func (s *Synthesizer) Synthesize(text, voice string, emotion model.EmotionType, 
 		return encodeAudio(data)
 	}
 
-	// 2. 未命中：并发去重 + 总超时保护
+	// 2. 未命中：并发去重 + 总超时保护 + 可取消等待
 	req := SynthRequest{
 		Text:    cleaned,
 		Voice:   targetVoice,
@@ -321,7 +328,7 @@ func (s *Synthesizer) Synthesize(text, voice string, emotion model.EmotionType, 
 		Pitch:   prosody.Pitch,
 		Volume:  prosody.Volume,
 	}
-	data, err := s.synthesizeOnce(cacheFile, req)
+	data, err := s.synthesizeOnceContext(ctx, cacheFile, req)
 	if err != nil || len(data) == 0 {
 		return nil
 	}
@@ -379,46 +386,80 @@ func isValidAudio(data []byte) bool {
 	return false
 }
 
-// synthesizeOnce 并发去重合成：同一缓存 key 的并发请求只真正调用一次合成函数。
-func (s *Synthesizer) synthesizeOnce(cacheFile string, req SynthRequest) ([]byte, error) {
-	s.inflightMu.Lock()
-	if call, ok := s.inflight[cacheFile]; ok {
-		s.inflightMu.Unlock()
-		<-call.done
-		return call.data, call.err
+// synthesizeOnceContext 并发去重合成：同一缓存 key 的并发请求只真正调用一次合成函数；
+// 当所有等待者都被取消时，自动取消底层 TTS 请求并避免写无效缓存。
+func (s *Synthesizer) synthesizeOnceContext(ctx context.Context, cacheFile string, req SynthRequest) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	call := &inflightCall{done: make(chan struct{})}
-	s.inflight[cacheFile] = call
-	s.inflightMu.Unlock()
-
-	data, err := s.callSynth(req)
-	if err == nil && len(data) > 0 {
-		// 写缓存失败不影响本次返回，最多下次重新合成
-		if werr := s.writeCache(cacheFile, data); werr != nil {
-			log.Printf("[TTS] 写缓存失败 voice=%s err=%v", req.Voice, werr)
+	s.inflightMu.Lock()
+	call, ok := s.inflight[cacheFile]
+	if !ok {
+		synthCtx, synthCancel := context.WithCancel(context.Background())
+		call = &inflightCall{
+			done:    make(chan struct{}),
+			cancel:  synthCancel,
+			waiters: 1,
 		}
+		s.inflight[cacheFile] = call
+		s.inflightMu.Unlock()
+
+		go func(c *inflightCall, cctx context.Context) {
+			defer c.cancel()
+			data, err := s.callSynthContext(cctx, req)
+			if err == nil && len(data) > 0 && cctx.Err() == nil {
+				// 写缓存失败不影响本次返回，最多下次重新合成
+				if werr := s.writeCache(cacheFile, data); werr != nil {
+					log.Printf("[TTS] 写缓存失败 voice=%s err=%v", req.Voice, werr)
+				}
+			}
+			c.data, c.err = data, err
+			close(c.done)
+			s.inflightMu.Lock()
+			if s.inflight[cacheFile] == c {
+				delete(s.inflight, cacheFile)
+			}
+			s.inflightMu.Unlock()
+		}(call, synthCtx)
+	} else {
+		call.waiters++
+		s.inflightMu.Unlock()
 	}
-	call.data, call.err = data, err
-	close(call.done)
-	s.inflightMu.Lock()
-	delete(s.inflight, cacheFile)
-	s.inflightMu.Unlock()
-	return data, err
+
+	select {
+	case <-call.done:
+		return call.data, call.err
+	case <-ctx.Done():
+		s.inflightMu.Lock()
+		call.waiters--
+		shouldCancel := call.waiters <= 0
+		if shouldCancel && s.inflight[cacheFile] == call {
+			delete(s.inflight, cacheFile)
+		}
+		s.inflightMu.Unlock()
+		if shouldCancel {
+			call.cancel()
+		}
+		return nil, ctx.Err()
+	}
 }
 
-// callSynth 带总超时调用注入的合成函数，并统一做空/过短音频校验与脱敏日志（不打印全文）。
-func (s *Synthesizer) callSynth(req SynthRequest) ([]byte, error) {
+// callSynthContext 带可取消父上下文与总超时调用注入的合成函数，并统一做空/过短音频校验与脱敏日志。
+func (s *Synthesizer) callSynthContext(parentCtx context.Context, req SynthRequest) ([]byte, error) {
 	if s.synthFn == nil {
 		return nil, errors.New("tts: 合成函数未初始化")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, s.timeout)
 	defer cancel()
 
 	type synthResult struct {
 		data []byte
 		err  error
 	}
-	// 带缓冲通道：超时返回后 goroutine 仍可无阻塞退出，不会因发送而泄漏
+	// 带缓冲通道：超时/取消返回后 goroutine 仍可无阻塞退出，不会因发送而泄漏
 	resultCh := make(chan synthResult, 1)
 	start := time.Now()
 	go func() {
@@ -428,6 +469,11 @@ func (s *Synthesizer) callSynth(req SynthRequest) ([]byte, error) {
 
 	select {
 	case <-ctx.Done():
+		if errors.Is(parentCtx.Err(), context.Canceled) {
+			log.Printf("[TTS] 合成已取消 voice=%s emotion=%s chars=%d elapsed=%s",
+				req.Voice, req.Emotion, len([]rune(req.Text)), time.Since(start).Round(time.Millisecond))
+			return nil, context.Canceled
+		}
 		log.Printf("[TTS] 合成超时 voice=%s emotion=%s chars=%d elapsed=%s",
 			req.Voice, req.Emotion, len([]rune(req.Text)), time.Since(start).Round(time.Millisecond))
 		return nil, fmt.Errorf("tts: 合成超时(%s)", s.timeout)
