@@ -85,13 +85,14 @@ fun StatusBadge(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧：萌系角色身份与微光羁绊胶囊（点击呼出心语回忆手账）
+        // 左侧：萌系角色身份与微光羁绊胶囊（点击呼出心语回忆手账，预留足够宽度防与右侧按钮撞车）
         Box(
             modifier = Modifier
+                .weight(1f, fill = false)
                 .shadow(elevation = 3.dp, shape = RoundedCornerShape(20.dp))
                 .clip(RoundedCornerShape(20.dp))
                 .background(
@@ -113,7 +114,7 @@ fun StatusBadge(
                     RoundedCornerShape(20.dp)
                 )
                 .clickable { onOpenMemoryNotebook() }
-                .padding(horizontal = 10.dp, vertical = 5.dp)
+                .padding(horizontal = 9.dp, vertical = 5.dp)
         ) {
             Column {
                 Row(
@@ -122,7 +123,7 @@ fun StatusBadge(
                     // 心情表情矢量小图标
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(19.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFFFE0E8)),
                         contentAlignment = Alignment.Center
@@ -131,23 +132,24 @@ fun StatusBadge(
                             imageVector = Icons.Filled.SentimentVerySatisfied,
                             contentDescription = "角色心情",
                             tint = Color(0xFFFF4E8E),
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(5.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     // 角色名与等级称号
                     Text(
                         text = "$displayName · Lv.$bondLevel",
                         color = borderColor,
-                        fontSize = 11.5.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
 
                     // 好感爱心律动图标
                     Icon(
@@ -155,36 +157,37 @@ fun StatusBadge(
                         contentDescription = "好感度",
                         tint = Color(0xFFFF4E8E),
                         modifier = Modifier
-                            .size(11.dp)
+                            .size(10.dp)
                             .scale(heartScale)
                     )
 
-                    // 纯矢量图标 + 文字动态情绪胶囊（不使用 Emoji 字符）
+                    // 纯矢量图标 + 文字动态情绪胶囊（始终保留完整可读性）
                     val (emotionIcon, emotionText, emotionColor, emotionBg) = emotionChipVisuals(currentEmotion)
 
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(emotionBg)
                             .border(0.8.dp, emotionColor.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
                         Icon(
                             imageVector = emotionIcon,
                             contentDescription = null,
                             tint = emotionColor,
-                            modifier = Modifier.size(10.dp)
+                            modifier = Modifier.size(9.dp)
                         )
                         Text(
                             text = emotionText,
                             color = emotionColor,
                             fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
-                            maxLines = 1
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -194,7 +197,7 @@ fun StatusBadge(
                 // 萌系羁绊经验条 + 在线状态指示点
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.widthIn(min = 104.dp, max = 128.dp)
+                    modifier = Modifier.widthIn(min = 96.dp, max = 122.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -240,9 +243,11 @@ fun StatusBadge(
             }
         }
 
+        Spacer(modifier = Modifier.width(6.dp))
+
         // 右侧：3D 重放定位、手账快捷入口、工坊快捷按钮与设置入口（纯矢量图标 + 直观微标签）
         Row(
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.Top
         ) {
             HudActionButton(

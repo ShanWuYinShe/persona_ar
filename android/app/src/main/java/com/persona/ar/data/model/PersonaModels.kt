@@ -61,17 +61,20 @@ enum class BubbleDisplayMode {
 data class ChatRequest(
     val message: String,
     @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("persona_id") val personaId: String? = null,
     @SerializedName("session_id") val sessionId: String? = null
 )
 
 data class VisionInteractRequest(
     @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("persona_id") val personaId: String? = null,
     val message: String = "",
     @SerializedName("image_base64") val imageBase64: String
 )
 
 data class VoiceInteractRequest(
     @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("persona_id") val personaId: String? = null,
     @SerializedName("audio_base64") val audioBase64: String? = null,
     @SerializedName("audio_format") val audioFormat: String = "wav",
     @SerializedName("text_prompt") val textPrompt: String? = null
@@ -91,7 +94,8 @@ data class ChatResponse(
 
 data class TouchRequest(
     val part: TouchPart,
-    @SerializedName("user_id") val userId: String = "user_default"
+    @SerializedName("user_id") val userId: String = "user_default",
+    @SerializedName("persona_id") val personaId: String? = null
 )
 
 data class TouchResponse(

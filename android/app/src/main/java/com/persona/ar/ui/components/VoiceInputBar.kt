@@ -99,36 +99,39 @@ fun VoiceInputBar(
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .padding(bottom = 12.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(creamBg)
                     .border(1.5.dp, borderColor, RoundedCornerShape(20.dp))
                     .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    VectorActionChip(icon = Icons.Filled.TouchApp, text = "摸摸头") {
+                    VectorActionChip(icon = Icons.Filled.TouchApp, text = "摸摸头", modifier = Modifier.weight(1f)) {
                         onTouchPart(TouchPart.HEAD)
                         showInteractSheet = false
                     }
-                    VectorActionChip(icon = Icons.Filled.Face, text = "戳戳脸") {
+                    VectorActionChip(icon = Icons.Filled.Face, text = "戳戳脸", modifier = Modifier.weight(1f)) {
                         onTouchPart(TouchPart.CHEEK)
                         showInteractSheet = false
                     }
-                    VectorActionChip(icon = Icons.Filled.PanTool, text = "牵小手") {
+                    VectorActionChip(icon = Icons.Filled.PanTool, text = "牵小手", modifier = Modifier.weight(1f)) {
                         onTouchPart(TouchPart.HAND)
                         showInteractSheet = false
                     }
-                    VectorActionChip(icon = Icons.Filled.Favorite, text = "抱一抱") {
+                    VectorActionChip(icon = Icons.Filled.Favorite, text = "抱一抱", modifier = Modifier.weight(1f)) {
                         onTouchPart(TouchPart.BODY)
                         showInteractSheet = false
                     }
                 }
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -143,20 +146,25 @@ fun VoiceInputBar(
                     quickActions.forEach { (label, action) ->
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .weight(1f)
+                                .heightIn(min = 42.dp)
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFFFFEDF3))
-                                .border(1.dp, borderColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .border(1.dp, borderColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                                 .clickable {
                                     onPreviewAction(action)
                                     showInteractSheet = false
                                 }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
                                 color = borderColor,
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -222,13 +230,13 @@ fun VoiceInputBar(
 
                 IconButton(
                     onClick = { showTextInput = false },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "关闭输入栏",
                         tint = Color(0xFF887799),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -408,30 +416,35 @@ fun VoiceInputBar(
 private fun VectorActionChip(
     icon: ImageVector,
     text: String,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val borderColor = Color(0xFF281C38)
     Row(
-        modifier = Modifier
+        modifier = modifier
+            .heightIn(min = 42.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
             .border(1.2.dp, borderColor, RoundedCornerShape(12.dp))
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = text,
             tint = Color(0xFFFF5277),
-            modifier = Modifier.size(14.dp)
+            modifier = Modifier.size(13.dp)
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(3.dp))
         Text(
             text = text,
             color = borderColor,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

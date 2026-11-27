@@ -69,13 +69,13 @@ fun ChatOverlay(
         }
     }
 
-    LaunchedEffect(displayList.size, isHistoryExpanded, streamingText, displayMode) {
+    LaunchedEffect(latestMessage?.id, messages.size, isHistoryExpanded, streamingText, displayMode) {
         val totalItems = displayList.size + if (!streamingText.isNullOrEmpty()) 1 else 0
         if (displayMode == BubbleDisplayMode.PERSISTENT && totalItems > 0) {
             listState.animateScrollToItem(totalItems - 1)
         }
 
-        if (displayMode == BubbleDisplayMode.AUTO_FADE_OUT && (latestMessage != null || streamingText != null)) {
+        if (displayMode == BubbleDisplayMode.AUTO_FADE_OUT && (latestMessage != null || !streamingText.isNullOrEmpty())) {
             isAutoFadeVisible = true
             delay(5000L)
             isAutoFadeVisible = false
@@ -96,10 +96,11 @@ fun ChatOverlay(
                             modifier = Modifier
                                 .align(Alignment.End)
                                 .padding(bottom = 4.dp)
+                                .heightIn(min = 36.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xCC281C38))
                                 .clickable { isHistoryExpanded = !isHistoryExpanded }
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {

@@ -65,7 +65,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private val createdAtMillis = System.currentTimeMillis()
     private var interactionEpoch = 0L
+    private var voiceTurnEpoch = 0L
+    private var pendingWsTurnEpoch = 0L
     private var rawStreamingText = ""
+
+    private fun activePersonaId(): String =
+        _uiState.value.activeModel?.id ?: modelManager.activeModel.value.id
 
     init {
         restorePersistedSettings()
@@ -217,13 +222,21 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
 
         voiceRecorder.onSpeechDetected = {
+            voiceTurnEpoch++
+            rawStreamingText = ""
             if (_uiState.value.isSpeaking) {
                 audioPlayer.interrupt()
             }
             if (_uiState.value.isContinuousActive) {
                 wsClient.sendSpeechStart()
             }
-            _uiState.update { it.copy(isUserSpeaking = true) }
+            _uiState.update {
+                it.copy(
+                    isUserSpeaking = true,
+                    isLoading = false,
+                    streamingText = null
+                )
+            }
         }
 
         voiceRecorder.onSilenceCompleted = {
@@ -234,37 +247,48 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private fun setupWebSocket() {
         wsClient.onInterruptAck = {
+            rawStreamingText = ""
             audioPlayer.interrupt()
+            _uiState.update { it.copy(isLoading = false, streamingText = null) }
+        }
+        wsClient.onAsrEmpty = {
+            _uiState.update { it.copy(isLoading = false, isUserSpeaking = false) }
         }
         wsClient.onAsrResult = { userSpeechText ->
-            // 将真实识别到的指挥官语音转文字作为用户发言加入聊天流
-            val userMsg = ChatMessage(
-                sender = MessageSender.USER,
-                text = userSpeechText
-            )
-            _uiState.update { current ->
-                current.copy(
-                    messages = current.messages + userMsg,
-                    isLoading = true,
-                    streamingText = ""
+            if (_uiState.value.isContinuousActive && pendingWsTurnEpoch == voiceTurnEpoch) {
+                val userMsg = ChatMessage(
+                    sender = MessageSender.USER,
+                    text = userSpeechText
                 )
+                _uiState.update { current ->
+                    current.copy(
+                        messages = current.messages + userMsg,
+                        isLoading = true,
+                        streamingText = ""
+                    )
+                }
             }
         }
         wsClient.onThinkingStart = {
-            rawStreamingText = ""
-            _uiState.update { it.copy(isLoading = true, streamingText = "", errorMessage = null) }
+            if (_uiState.value.isContinuousActive && pendingWsTurnEpoch == voiceTurnEpoch) {
+                rawStreamingText = ""
+                _uiState.update { it.copy(isLoading = true, streamingText = "", errorMessage = null) }
+            }
         }
         wsClient.onStreamChunk = { chunk ->
-            rawStreamingText += chunk
-            val sanitized = PersonaTextSanitizer.stripControlTags(rawStreamingText)
-            _uiState.update { current ->
-                current.copy(streamingText = sanitized)
+            if (_uiState.value.isContinuousActive && pendingWsTurnEpoch == voiceTurnEpoch) {
+                rawStreamingText += chunk
+                val sanitized = PersonaTextSanitizer.stripControlTags(rawStreamingText)
+                _uiState.update { current ->
+                    current.copy(streamingText = sanitized)
+                }
             }
         }
         wsClient.onError = { err ->
             rawStreamingText = ""
             val wasContinuous = _uiState.value.isContinuousActive
             if (wasContinuous) {
+                voiceTurnEpoch++
                 voiceRecorder.stopListening()
             }
             _uiState.update { current ->
@@ -286,6 +310,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         wsClient.onDisconnected = { _ ->
             rawStreamingText = ""
             if (_uiState.value.isContinuousActive) {
+                voiceTurnEpoch++
                 voiceRecorder.stopListening()
                 _uiState.update { current ->
                     current.copy(
@@ -300,37 +325,42 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         wsClient.onResponseComplete = { respText, emotion, action, expr, audioBase64, affinity, mood ->
-            rawStreamingText = ""
-            val cleanText = PersonaTextSanitizer.stripControlTags(respText, stripTrailingPartial = false)
-            val actionStartNanos = System.nanoTime()
-            _uiState.update { current ->
-                val personaMsg = ChatMessage(
-                    sender = MessageSender.PERSONA,
-                    text = cleanText,
-                    emotion = emotion
-                )
-                val isShy = emotion == EmotionType.SHY || action == ActionType.BLUSH
-                current.copy(
-                    isLoading = false,
-                    streamingText = null,
-                    errorMessage = null,
-                    messages = current.messages + personaMsg,
-                    visualState = current.visualState.copy(
-                        emotion = emotion,
-                        action = action,
-                        actionStartedAtNanos = actionStartNanos,
-                        expression = expr,
-                        blushIntensity = if (isShy) 0.85f else 0f
-                    ),
-                    personaStatus = current.personaStatus?.copy(
-                        affinity = affinity,
-                        mood = mood
+            if (!_uiState.value.isContinuousActive || pendingWsTurnEpoch != voiceTurnEpoch) {
+                rawStreamingText = ""
+                _uiState.update { it.copy(isLoading = false, streamingText = null) }
+            } else {
+                rawStreamingText = ""
+                val cleanText = PersonaTextSanitizer.stripControlTags(respText, stripTrailingPartial = false)
+                val actionStartNanos = System.nanoTime()
+                _uiState.update { current ->
+                    val personaMsg = ChatMessage(
+                        sender = MessageSender.PERSONA,
+                        text = cleanText,
+                        emotion = emotion
                     )
-                )
+                    val isShy = emotion == EmotionType.SHY || action == ActionType.BLUSH
+                    current.copy(
+                        isLoading = false,
+                        streamingText = null,
+                        errorMessage = null,
+                        messages = current.messages + personaMsg,
+                        visualState = current.visualState.copy(
+                            emotion = emotion,
+                            action = action,
+                            actionStartedAtNanos = actionStartNanos,
+                            expression = expr,
+                            blushIntensity = if (isShy) 0.85f else 0f
+                        ),
+                        personaStatus = current.personaStatus?.copy(
+                            affinity = affinity,
+                            mood = mood
+                        )
+                    )
+                }
+                playPersonaVoice(audioBase64, cleanText, emotion)
+                scheduleActionReset(action, actionStartNanos)
+                addBondExp(3)
             }
-            playPersonaVoice(audioBase64, cleanText, emotion)
-            scheduleActionReset(action, actionStartNanos)
-            addBondExp(3)
         }
     }
 
@@ -535,7 +565,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 fallbackPartnerName = currentActive.name
             )
             result.onSuccess { status ->
-                val greeting = getCircadianGreeting(currentActive.name, currentActive.greetingText)
+                val greeting = getCircadianGreeting(currentActive.id, currentActive.name, currentActive.greetingText)
                 _uiState.update { state ->
                     val nextMessages = if (state.messages.isEmpty()) {
                         listOf(
@@ -556,20 +586,47 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun getCircadianGreeting(partnerName: String, baseGreeting: String): String {
+    private fun getCircadianGreeting(personaId: String, partnerName: String, baseGreeting: String): String {
         val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-        return when {
-            hour in 0..5 -> "这么晚还在现实世界忙碌呀？要注意休息哦，我就在书桌前静静陪伴着你呢。"
-            hour in 6..9 -> "早上好！新的一天充满元气，今天的阳光和空气感觉都很棒呢~"
-            hour in 11..13 -> "已经到午休时间啦，记得按时吃顿美味的午饭补充体力哦！"
-            hour in 17..19 -> "傍晚好呀，今天一整天辛苦了，和我聊聊今天遇到的趣事吧！"
-            hour in 22..23 -> "夜深了呢，准备好睡个香甜的好觉了吗？晚安哦~"
-            else -> baseGreeting
+        return when (personaId) {
+            "luna" -> when (hour) {
+                in 0..5 -> "哼，这个点还不睡？本魔女可不是因为担心你才亮着魔导灯陪你熬夜的哦。"
+                in 6..9 -> "早安，愚蠢又准时的使魔。今天也要乖乖在本魔女身边报到才行。"
+                in 11..13 -> "喂，都午休时间了还在发呆？赶紧去补充能量，别饿晕在本魔女桌上。"
+                in 17..19 -> "夕阳不错吧？今天的烦心事就统统交给本魔女替你清零好了。"
+                in 22..23 -> "夜深了哦，笨蛋使魔。勉强准你早点去休息，明天也要继续回应我。"
+                else -> baseGreeting
+            }
+            "airi" -> when (hour) {
+                in 0..5 -> "这么晚学长还在忙碌吗…累了的话一定要早点休息，艾莉会一直守着你的~"
+                in 6..9 -> "学长早上好呀！迎着晨光和你开启新的一天，觉得心里满满的都是干劲呢~"
+                in 11..13 -> "已经是中午啦，学长记得去吃一顿暖呼呼的午饭，好好犒劳一下自己哦！"
+                in 17..19 -> "学长今天辛苦了，傍晚的时候就稍微放慢节奏，跟我聊聊天吧~"
+                in 22..23 -> "夜深了呢，今天也辛苦学长啦，早点盖好被子做个甜美的梦吧~ 晚安。"
+                else -> baseGreeting
+            }
+            "cyber_k" -> when (hour) {
+                in 0..5 -> "深夜模式已激活，指挥官。人体生物钟提醒建议尽快进入休眠，本机继续待命护航。"
+                in 6..9 -> "早安，指挥官。全息环境校准与今日日常模块初始化完毕，祝您今日行动高效。"
+                in 11..13 -> "已进入正午能量补给窗口，建议指挥官暂时离线用膳，本机持续保持桌面警戒。"
+                in 17..19 -> "日暮低功耗巡航开启。指挥官，今日任务已近尾声，可开启放松对话。"
+                in 22..23 -> "夜间静音守护协议启动，请指挥官准备休息，明晨本机将第一时间唤醒。"
+                else -> baseGreeting
+            }
+            else -> when (hour) {
+                in 0..5 -> "这么晚还在现实世界忙碌呀？要注意休息哦，${partnerName}就在书桌前静静陪着你呢。"
+                in 6..9 -> "早上好！新的一天充满元气，今天的阳光和空气感觉都很棒呢~"
+                in 11..13 -> "已经到午休时间啦，记得按时吃顿美味的午饭补充体力哦！"
+                in 17..19 -> "傍晚好呀，今天一整天辛苦了，和我聊聊今天遇到的趣事吧！"
+                in 22..23 -> "夜深了呢，准备好睡个香甜的好觉了吗？晚安哦~"
+                else -> baseGreeting
+            }
         }
     }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        val personaId = activePersonaId()
 
         val userMessage = ChatMessage(
             sender = MessageSender.USER,
@@ -579,12 +636,13 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update {
             it.copy(
                 messages = it.messages + userMessage,
-                isLoading = true
+                isLoading = true,
+                errorMessage = null
             )
         }
 
         viewModelScope.launch {
-            val result = repository.sendChat(text)
+            val result = repository.sendChat(text, personaId = personaId)
             _uiState.update { it.copy(isLoading = false) }
 
             result.onSuccess { resp ->
@@ -629,6 +687,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
+            val personaId = activePersonaId()
             _uiState.update { it.copy(isLoading = true) }
             val displayPrompt = prompt.ifBlank { "✦ 视野交互：看看眼前 ✦" }
             val userMessage = ChatMessage(
@@ -639,22 +698,28 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(messages = it.messages + userMessage) }
 
             val base64 = withContext(Dispatchers.IO) {
-                val maxDim = maxOf(cameraBitmap.width, cameraBitmap.height)
-                val scale = if (maxDim > 720) 720f / maxDim else 1.0f
-                val targetW = (cameraBitmap.width * scale).toInt()
-                val targetH = (cameraBitmap.height * scale).toInt()
-                val scaled = if (scale < 1.0f) {
-                    Bitmap.createScaledBitmap(cameraBitmap, targetW, targetH, true)
-                } else {
-                    cameraBitmap
+                var scaled: Bitmap? = null
+                try {
+                    val maxDim = maxOf(cameraBitmap.width, cameraBitmap.height)
+                    val scale = if (maxDim > 720) 720f / maxDim else 1.0f
+                    val targetW = (cameraBitmap.width * scale).toInt().coerceAtLeast(1)
+                    val targetH = (cameraBitmap.height * scale).toInt().coerceAtLeast(1)
+                    val targetBmp = if (scale < 1.0f) {
+                        Bitmap.createScaledBitmap(cameraBitmap, targetW, targetH, true).also { scaled = it }
+                    } else {
+                        cameraBitmap
+                    }
+                    val stream = ByteArrayOutputStream()
+                    targetBmp.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                    val bytes = stream.toByteArray()
+                    Base64.encodeToString(bytes, Base64.NO_WRAP)
+                } finally {
+                    scaled?.takeIf { it !== cameraBitmap && !it.isRecycled }?.recycle()
+                    cameraBitmap.takeIf { !it.isRecycled }?.recycle()
                 }
-                val stream = ByteArrayOutputStream()
-                scaled.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-                val bytes = stream.toByteArray()
-                Base64.encodeToString(bytes, Base64.NO_WRAP)
             }
 
-            val result = repository.sendVisionInteract(base64, prompt, partnerName = partnerName)
+            val result = repository.sendVisionInteract(base64, prompt, partnerName = partnerName, personaId = personaId)
             result.onSuccess { resp ->
                 val personaMessage = ChatMessage(
                     sender = MessageSender.PERSONA,
@@ -791,7 +856,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
-            val result = repository.sendTouch(part)
+            val result = repository.sendTouch(part, personaId = activePersonaId())
             result.onSuccess { resp ->
                 val personaMessage = ChatMessage(
                     sender = MessageSender.PERSONA,
@@ -903,15 +968,28 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     fun switchPersonaModel(modelId: String) {
         if (modelManager.switchModel(modelId)) {
+            interactionEpoch++
+            voiceTurnEpoch++
+            rawStreamingText = ""
             val newModel = modelManager.activeModel.value
-            val greeting = getCircadianGreeting(newModel.name, newModel.greetingText)
+            val greeting = getCircadianGreeting(newModel.id, newModel.name, newModel.greetingText)
             audioPlayer.interrupt()
+            val wasContinuous = _uiState.value.isContinuousActive
             _uiState.update { current ->
                 current.copy(
                     activeModel = newModel,
+                    isLoading = false,
+                    streamingText = null,
                     visualState = current.visualState.copy(
                         name = newModel.name,
-                        model = newModel
+                        model = newModel,
+                        emotion = EmotionType.NEUTRAL,
+                        action = ActionType.IDLE,
+                        actionStartedAtNanos = 0L,
+                        expression = "SMILE",
+                        blushIntensity = 0f,
+                        touchReaction = null,
+                        touchReactionStartedAtNanos = 0L
                     ),
                     messages = listOf(
                         ChatMessage(
@@ -920,6 +998,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         )
                     )
                 )
+            }
+            if (wasContinuous) {
+                wsClient.disconnect()
+                wsClient.connect(_uiState.value.serverBaseUrl, personaId = modelId)
             }
             persistCurrentSettings()
             viewModelScope.launch {
@@ -965,46 +1047,42 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             }
             return
         }
-        _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive, errorMessage = null) }
+        voiceTurnEpoch++
+        rawStreamingText = ""
         if (nextActive) {
-            wsClient.connect(_uiState.value.serverBaseUrl)
+            _uiState.update {
+                it.copy(
+                    isContinuousActive = true,
+                    isRecording = true,
+                    errorMessage = null
+                )
+            }
+            wsClient.connect(_uiState.value.serverBaseUrl, personaId = activePersonaId())
             voiceRecorder.startListening(isContinuousMode = true)
         } else {
+            audioPlayer.interrupt()
             wsClient.disconnect()
             voiceRecorder.stopListening()
+            _uiState.update {
+                it.copy(
+                    isContinuousActive = false,
+                    isRecording = false,
+                    isUserSpeaking = false,
+                    isLoading = false,
+                    streamingText = null,
+                    micVolume = 0f
+                )
+            }
         }
     }
 
     private fun onContinuousSpeechFinished() {
         val wavBytes = voiceRecorder.getAndResetRecordedWav()
-        if (wavBytes != null && wavBytes.isNotEmpty()) {
+        if (!_uiState.value.isContinuousActive) return
+        if (wavBytes != null && wavBytes.size > 44 + 3200) {
             val audioBase64 = android.util.Base64.encodeToString(wavBytes, android.util.Base64.NO_WRAP)
-            if (_uiState.value.isContinuousActive) {
-                // 通过全双工低延迟 WebSocket 通道发送真实录音进行 ASR 识别
-                wsClient.sendAudioMessage(audioBase64, "wav")
-                return
-            } else {
-                viewModelScope.launch {
-                    val result = repository.transcribeAudio(wavBytes)
-                    val text = result.getOrNull() ?: "看到你站在我面前，感觉好生动呀！"
-                    sendMessage(text)
-                }
-                return
-            }
-        }
-
-        // 音频数据为空时的自然兜底短语
-        val naturalPrompts = listOf(
-            "看见你在这里陪着我，心情变得很放松呢。",
-            "现实世界今天感觉很有趣，能多跟我说说吗？",
-            "和你聊天总觉得时间过得好快呢。",
-            "你今天过得怎么样？"
-        )
-        val selectedPrompt = naturalPrompts.random()
-        if (_uiState.value.isContinuousActive) {
-            wsClient.sendTextMessage(selectedPrompt)
-        } else {
-            sendMessage(selectedPrompt)
+            pendingWsTurnEpoch = voiceTurnEpoch
+            wsClient.sendAudioMessage(audioBase64, "wav", personaId = activePersonaId())
         }
     }
 
@@ -1016,6 +1094,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             }
             return
         }
+        if (_uiState.value.isSpeaking) {
+            audioPlayer.interrupt()
+        }
         _uiState.update { it.copy(isRecording = true, errorMessage = null) }
         voiceRecorder.startListening(isContinuousMode = false)
     }
@@ -1025,26 +1106,58 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         if (!_uiState.value.isRecording) return
         voiceRecorder.stopListening()
         val wavBytes = voiceRecorder.getAndResetRecordedWav()
-        _uiState.update { it.copy(isRecording = false, micVolume = 0f, isLoading = true) }
+        // 至少约 300ms 有效录音（44B WAV 头 + 9600B 16kHz 16-bit PCM）
+        if (wavBytes == null || wavBytes.size <= 44 + 9600) {
+            _uiState.update {
+                it.copy(
+                    isRecording = false,
+                    micVolume = 0f,
+                    isLoading = false,
+                    errorMessage = "按住说话时间太短啦，请再多说一点哦~"
+                )
+            }
+            return
+        }
 
+        _uiState.update { it.copy(isRecording = false, micVolume = 0f, isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            if (wavBytes != null && wavBytes.isNotEmpty()) {
-                val result = repository.transcribeAudio(wavBytes)
-                val text = result.getOrNull() ?: "看到你站在我面前，感觉好生动呀！"
-                sendMessage(text)
-            } else {
-                sendMessage("看到你站在我面前，感觉好生动呀！")
+            val result = repository.transcribeAudio(wavBytes)
+            result.onSuccess { text ->
+                if (text.isBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = "未识别到清晰语音，请靠近麦克风重试"
+                        )
+                    }
+                } else {
+                    sendMessage(text)
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = "语音识别暂不可用：${err.message ?: "请检查网络或 ASR 配置"}"
+                    )
+                }
             }
         }
     }
 
     fun setVoiceMode(mode: VoiceMode) {
+        voiceTurnEpoch++
+        rawStreamingText = ""
+        audioPlayer.interrupt()
+        wsClient.disconnect()
         voiceRecorder.stopListening()
         _uiState.update {
             it.copy(
                 voiceMode = mode,
                 isContinuousActive = false,
                 isRecording = false,
+                isUserSpeaking = false,
+                isLoading = false,
+                streamingText = null,
                 micVolume = 0f
             )
         }
@@ -1126,7 +1239,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                         messages = state.messages + careMessage,
                         visualState = state.visualState.copy(
                             emotion = EmotionType.SHY,
-                            expression = "BLUSH"
+                            expression = "BLUSH_FACE"
                         )
                     )
                 }
@@ -1251,28 +1364,55 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 现实环境光照突变辅助提醒（主要光学更新已由 onOpticalProfileChanged 原子写入）
+     * 现实环境光照突变辅助钩子（真实光学与低光提醒已统一由 onOpticalProfileChanged 触发，避免重复消息）
      */
     fun onEnvironmentalLightChanged(luminance: Float, isLowLight: Boolean) {
-        val prevLowLight = universalTracker.spatialAnchor.value.isLowLight
-        val now = System.currentTimeMillis()
-        if (!prevLowLight && isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
-            lastLightNotifyTimestamp = now
-            val partnerName = _uiState.value.activeModel?.name ?: "星野"
-            val careMessage = ChatMessage(
-                sender = MessageSender.PERSONA,
-                text = "唔... 周围光线变暗了呢，在暗处看屏幕要当心眼睛哦，${partnerName}会一直陪着你的~",
-                emotion = EmotionType.SHY,
-                timestamp = now
+        // 仅保留接口兼容；低光状态统一由 onOpticalProfileChanged 原子注入并触发一次提醒
+    }
+
+    fun applySettings(
+        serverUrl: String,
+        llmProvider: String,
+        llmBaseUrl: String,
+        llmApiKey: String,
+        llmModel: String,
+        asrProvider: String,
+        asrBaseUrl: String,
+        asrApiKey: String,
+        asrModel: String,
+        asrLanguage: String = "zh"
+    ) {
+        val normalizedUrl = PersonaSettingsCodec.normalizeServerUrl(serverUrl)
+        val serverChanged = normalizedUrl != _uiState.value.serverBaseUrl
+        ApiClient.baseUrl = normalizedUrl
+        _uiState.update {
+            it.copy(
+                serverBaseUrl = normalizedUrl,
+                llmProvider = llmProvider,
+                llmBaseUrl = llmBaseUrl.trim(),
+                llmApiKey = llmApiKey,
+                llmModel = llmModel.trim(),
+                asrProvider = asrProvider,
+                asrBaseUrl = asrBaseUrl.trim(),
+                asrApiKey = asrApiKey,
+                asrModel = asrModel.trim(),
+                asrLanguage = asrLanguage
             )
-            _uiState.update { state ->
-                state.copy(
-                    messages = state.messages + careMessage,
-                    visualState = state.visualState.copy(
-                        emotion = EmotionType.SHY,
-                        expression = "SMILE"
-                    )
-                )
+        }
+        persistCurrentSettings()
+        if (serverChanged && _uiState.value.isContinuousActive) {
+            wsClient.disconnect()
+            wsClient.connect(normalizedUrl, personaId = activePersonaId())
+        }
+        viewModelScope.launch {
+            repository.updateLLMConfig(llmProvider, llmBaseUrl.trim(), llmApiKey, llmModel.trim())
+            repository.updateAsrConfig(asrProvider, asrBaseUrl.trim(), asrApiKey, asrModel.trim(), asrLanguage)
+            if (serverChanged) {
+                val active = modelManager.activeModel.value
+                repository.switchPersona(active.id)
+                repository.getStatus(personaId = active.id, fallbackPartnerName = active.name)
+                    .onSuccess { status -> _uiState.update { it.copy(personaStatus = status) } }
+                loadMemories()
             }
         }
     }

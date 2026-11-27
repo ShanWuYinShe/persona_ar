@@ -703,6 +703,7 @@ fun PersonaMainScreen(
                 currentAsrBaseUrl = uiState.asrBaseUrl,
                 currentAsrApiKey = uiState.asrApiKey,
                 currentAsrModel = uiState.asrModel,
+                currentAsrLanguage = uiState.asrLanguage,
                 onDismiss = { viewModel.setSettingsOpen(false) },
                 onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
                 onSelectBubbleMode = { mode -> viewModel.setBubbleDisplayMode(mode) },
@@ -715,6 +716,9 @@ fun PersonaMainScreen(
                 },
                 onUpdateAsrConfig = { provider, baseUrl, apiKey, model ->
                     viewModel.updateAsrConfig(provider, baseUrl, apiKey, model)
+                },
+                onApplySettings = { url, lp, lbu, lk, lm, ap, abu, ak, am, al ->
+                    viewModel.applySettings(url, lp, lbu, lk, lm, ap, abu, ak, am, al)
                 },
                 onPreviewAction = { action -> viewModel.previewAction(action) },
                 onStand = { viewModel.setSkeletonStance(SkeletonStance.STANDING) },

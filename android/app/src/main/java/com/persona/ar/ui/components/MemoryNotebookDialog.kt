@@ -3,9 +3,11 @@ package com.persona.ar.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -128,17 +130,22 @@ fun MemoryNotebookDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(Color(0xFFEFE6D8), CircleShape)
-                            .border(1.5.dp, borderColor, CircleShape)
+                        modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "关闭",
-                            tint = borderColor,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(Color(0xFFEFE6D8), CircleShape)
+                                .border(1.5.dp, borderColor, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "关闭",
+                                tint = borderColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
@@ -178,31 +185,37 @@ fun MemoryNotebookDialog(
                     )
                 }
 
-                // 分类筛选 Chip 栏
+                // 分类筛选 Chip 栏（可横向滚动防窄屏/大字号挤压溢出，保持 >=44dp 触控热区）
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     categories.forEach { (key, label) ->
                         val isSelected = selectedCategoryFilter == key
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .heightIn(min = 44.dp)
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(if (isSelected) brandPurple else Color(0xFFF3ECE0))
                                 .border(
                                     1.2.dp,
                                     if (isSelected) borderColor else Color.LightGray,
-                                    RoundedCornerShape(10.dp)
+                                    RoundedCornerShape(12.dp)
                                 )
                                 .clickable { selectedCategoryFilter = key }
-                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
-                                fontSize = 11.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else borderColor
+                                color = if (isSelected) Color.White else borderColor,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -232,12 +245,19 @@ fun MemoryNotebookDialog(
                                     fontWeight = FontWeight.Bold,
                                     color = borderColor
                                 )
-                                Text(
-                                    text = "取消",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray,
-                                    modifier = Modifier.clickable { isWritingNewMemory = false }
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .heightIn(min = 40.dp)
+                                        .clickable { isWritingNewMemory = false }
+                                        .padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "取消",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
                             }
 
                             OutlinedTextField(
@@ -322,7 +342,7 @@ fun MemoryNotebookDialog(
                         onClick = { isWritingNewMemory = true },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .heightIn(min = 44.dp)
                             .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(containerColor = Color(0xFFFFF0F5))
