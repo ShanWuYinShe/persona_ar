@@ -75,7 +75,7 @@ func handleChatInteract(c *gin.Context) {
 		userID = "user_default"
 	}
 
-	resp, err := persona.DefaultEngine.Chat(userID, req.Message)
+	resp, err := persona.DefaultEngine.ChatWithPersona(c.Request.Context(), userID, req.PersonaID, req.Message)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 		return
@@ -103,7 +103,7 @@ func handleVoiceInteract(c *gin.Context) {
 		msg = "（对讲机传来指挥官温和的呼吸与声音）"
 	}
 
-	resp, err := persona.DefaultEngine.Chat(userID, msg)
+	resp, err := persona.DefaultEngine.ChatWithPersona(c.Request.Context(), userID, req.PersonaID, msg)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 		return
@@ -124,7 +124,7 @@ func handlePersonaTouch(c *gin.Context) {
 		userID = "user_default"
 	}
 
-	resp, err := persona.DefaultEngine.Touch(userID, req.Part)
+	resp, err := persona.DefaultEngine.TouchWithPersona(userID, req.PersonaID, req.Part)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 		return
@@ -216,7 +216,7 @@ func handleVisionInteract(c *gin.Context) {
 		userID = "user_default"
 	}
 
-	resp, err := persona.DefaultEngine.VisionChat(userID, req.Message, req.ImageBase64)
+	resp, err := persona.DefaultEngine.VisionChatWithPersona(c.Request.Context(), userID, req.PersonaID, req.Message, req.ImageBase64)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"detail": err.Error()})
 		return

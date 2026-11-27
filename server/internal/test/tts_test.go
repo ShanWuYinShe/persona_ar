@@ -636,7 +636,9 @@ func TestEdgeTTSSmoke(t *testing.T) {
 		text    string
 	}{
 		{"zh-CN-XiaoyiNeural", model.EmotionJoy, "嘿嘿，指挥官终于来看我啦！今天也要开开心心哦。"},
-		{"zh-CN-XiaoxiaoNeural", model.EmotionShy, "学长这么夸我，艾莉心跳都要加速了呢……"},
+		{"zh-CN-XiaoxiaoNeural", model.EmotionShy, "哼，使魔快听好，本魔女今天只为你施展一次 R&B 魔法哦！"},
+		{"zh-TW-HsiaoYuNeural", model.EmotionJoy, "学长今天也辛苦啦，R&B & <轻音乐> 已经帮你准备好咯~"},
+		{"zh-TW-HsiaoChenNeural", model.EmotionNeutral, "全息同步完成，指挥官随时可以下达指令。"},
 		{"zh-CN-XiaoyiNeural", model.EmotionSleepy, "呼啊……好困哦，让我在你桌上眯一小会儿嘛。"},
 	}
 	for idx, tc := range cases {

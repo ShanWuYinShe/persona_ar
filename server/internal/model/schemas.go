@@ -41,12 +41,14 @@ const (
 )
 
 type ChatRequest struct {
-	Message string `json:"message" binding:"required"`
-	UserID  string `json:"user_id,omitempty"`
+	Message   string `json:"message" binding:"required"`
+	UserID    string `json:"user_id,omitempty"`
+	PersonaID string `json:"persona_id,omitempty"`
 }
 
 type VisionInteractRequest struct {
 	UserID      string `json:"user_id,omitempty"`
+	PersonaID   string `json:"persona_id,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ImageBase64 string `json:"image_base64" binding:"required"`
 }
@@ -65,14 +67,16 @@ type ChatResponse struct {
 
 type VoiceInteractRequest struct {
 	UserID      string  `json:"user_id,omitempty"`
+	PersonaID   string  `json:"persona_id,omitempty"`
 	AudioBase64 *string `json:"audio_base64,omitempty"`
 	AudioFormat string  `json:"audio_format,omitempty"`
 	TextPrompt  *string `json:"text_prompt,omitempty"`
 }
 
 type TouchRequest struct {
-	Part   TouchPart `json:"part" binding:"required"`
-	UserID string    `json:"user_id,omitempty"`
+	Part      TouchPart `json:"part" binding:"required"`
+	UserID    string    `json:"user_id,omitempty"`
+	PersonaID string    `json:"persona_id,omitempty"`
 }
 
 type TouchResponse struct {

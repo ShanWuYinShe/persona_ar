@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -19,14 +20,30 @@ type OpenAICompatibleClient struct {
 	httpClient *http.Client
 }
 
-func NewOpenAICompatibleClient(baseURL, apiKey, model string) *OpenAICompatibleClient {
-	cleanBaseURL := strings.TrimRight(baseURL, "/")
+// NormalizeOpenAIBaseURL 规范化 OpenAI 兼容 API 基地址：
+// 仅当地址未携带路径（如 https://api.deepseek.com 或 http://localhost:11434）时补齐 /v1；
+// 若已带明确版本/网关路径（如 /v1、/api/paas/v4、/api/v3、/v1beta/openai）则原样保留，避免拼接出无效的 /v4/v1。
+func NormalizeOpenAIBaseURL(baseURL string) string {
+	cleanBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if cleanBaseURL == "" {
+		return "https://api.openai.com/v1"
+	}
+	if parsed, err := url.Parse(cleanBaseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		trimmedPath := strings.TrimRight(parsed.Path, "/")
+		if trimmedPath == "" {
+			return cleanBaseURL + "/v1"
+		}
+		return cleanBaseURL
+	}
 	if !strings.HasSuffix(cleanBaseURL, "/v1") {
 		cleanBaseURL += "/v1"
 	}
+	return cleanBaseURL
+}
 
+func NewOpenAICompatibleClient(baseURL, apiKey, model string) *OpenAICompatibleClient {
 	return &OpenAICompatibleClient{
-		baseURL: cleanBaseURL,
+		baseURL: NormalizeOpenAIBaseURL(baseURL),
 		apiKey:  apiKey,
 		model:   model,
 		httpClient: &http.Client{
