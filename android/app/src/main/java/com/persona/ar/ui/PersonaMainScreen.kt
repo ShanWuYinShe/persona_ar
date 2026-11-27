@@ -16,9 +16,14 @@ import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.AirlineSeatReclineNormal
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -44,8 +49,10 @@ import com.persona.ar.ui.components.SettingsDialog
 import com.persona.ar.ui.components.StatusBadge
 import com.persona.ar.ui.components.VoiceInputBar
 import com.persona.ar.util.SnapshotHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Persona AR 核心主界面（深度融入用户日常使用场景）
@@ -59,6 +66,8 @@ import kotlinx.coroutines.launch
 fun PersonaMainScreen(
     viewModel: PersonaViewModel,
     hasCameraPermission: Boolean,
+    onRequestCameraPermission: () -> Unit = {},
+    onOpenAppSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -66,7 +75,14 @@ fun PersonaMainScreen(
     val coroutineScope = rememberCoroutineScope()
     var isUiVisible by remember { mutableStateOf(true) } // 沉浸陪伴模式开关
     var isShutterFlashing by remember { mutableStateOf(false) } // 快门白闪效果
-    var showSnapshotToast by remember { mutableStateOf(false) }
+    var snapshotToastText by remember { mutableStateOf<String?>(null) }
+    val shortPartnerName = remember(uiState.activeModel, uiState.personaStatus) {
+        (uiState.activeModel?.name ?: uiState.personaStatus?.name ?: "星野")
+            .substringBefore(" ")
+            .substringBefore("（")
+            .substringBefore("(")
+            .ifBlank { "星野" }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -114,25 +130,82 @@ fun PersonaMainScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF14121A))
-            )
+                    .background(Color(0xFF14121A)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 32.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xF5FFFDF9))
+                        .border(2.dp, Color(0xFF281C38), RoundedCornerShape(22.dp))
+                        .padding(22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CameraAlt,
+                        contentDescription = null,
+                        tint = Color(0xFFFF4E8E),
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = "需要相机权限以开启 AR 实景融合",
+                        color = Color(0xFF281C38),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "授予相机权限后，可将 ${shortPartnerName} 真实投射在桌面并与环境光影实时互动。",
+                        color = Color(0xFF6B587B),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenAppSettings,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 44.dp)
+                        ) {
+                            Text("系统设置", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF281C38))
+                        }
+                        Button(
+                            onClick = onRequestCameraPermission,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF4E8E)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 44.dp)
+                        ) {
+                            Text("授权相机", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        }
+                    }
+                }
+            }
         }
 
         // 2. 纯 3D 手办现实空间投射层 (Filament PBR + 全身体态骨骼 + 6DoF 360° 空间定位)
-        Character3DRenderer(
-            visualState = uiState.visualState,
-            trackingStatus = uiState.arTrackingStatus,
-            spatialAnchor = uiState.spatialAnchor,
-            partnerName = uiState.activeModel?.name ?: "星野",
-            onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
-            onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
-            onDragStart = { x, y -> viewModel.onDragStart(x, y) },
-            onDragTo = { x, y -> viewModel.onDragTo(x, y) },
-            onDragEnd = { viewModel.onDragEnd() },
-            onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
-            onFigureCaptureReady = { provider -> figureFrameProvider = provider },
-            modifier = Modifier.fillMaxSize()
-        )
+        if (hasCameraPermission) {
+            Character3DRenderer(
+                visualState = uiState.visualState,
+                trackingStatus = uiState.arTrackingStatus,
+                spatialAnchor = uiState.spatialAnchor,
+                partnerName = uiState.activeModel?.name ?: "星野",
+                onTapPlace = { x, y -> viewModel.onTapPlaceAnchor(x, y) },
+                onTransformGesture = { scale, yaw -> viewModel.onTransformAnchor(scale, yaw) },
+                onDragStart = { x, y -> viewModel.onDragStart(x, y) },
+                onDragTo = { x, y -> viewModel.onDragTo(x, y) },
+                onDragEnd = { viewModel.onDragEnd() },
+                onTouchPart = { part, x, y -> viewModel.onTouchPart(part, x, y) },
+                onFigureCaptureReady = { provider -> figureFrameProvider = provider },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         // 3. 拟人思考态反馈泡泡 (当后端 AI 推理延迟时展示，化解用户等待焦虑，带韵律思考光点)
         AnimatedVisibility(
@@ -190,7 +263,7 @@ fun PersonaMainScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "唔... 让星野想想看哦",
+                        text = "唔... 让${shortPartnerName}想想看哦",
                         color = Color(0xFF281C38),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -242,6 +315,7 @@ fun PersonaMainScreen(
                 bondExp = uiState.bondExp,
                 bondExpNext = uiState.bondExpNext,
                 bondTitle = uiState.bondLevelTitle,
+                isServerReachable = uiState.isServerReachable,
                 onResetAnchor = { viewModel.onResetAnchor() },
                 onOpenStore = { viewModel.setStoreOpen(true) },
                 onOpenMemoryNotebook = { viewModel.setMemoryNotebookOpen(true) },
@@ -251,7 +325,7 @@ fun PersonaMainScreen(
 
         // 5. 右侧悬浮功能组：3D姿态切换、实景视野感知 (Vision AI) 与纯净 AR 合影
         AnimatedVisibility(
-            visible = isUiVisible,
+            visible = isUiVisible && hasCameraPermission,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
@@ -271,7 +345,7 @@ fun PersonaMainScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(if (isSitting) Color(0xFFFF8F00) else Color(0xE6FFFDF9))
                                 .border(1.8.dp, if (isSitting) Color(0xFFFFB300) else Color(0xFF281C38), CircleShape)
@@ -282,7 +356,7 @@ fun PersonaMainScreen(
                                 imageVector = if (isSitting) Icons.Filled.AirlineSeatReclineNormal else Icons.Filled.AccessibilityNew,
                                 contentDescription = if (isSitting) "当前坐姿 (点击切换站姿)" else "当前站姿 (点击切换坐姿)",
                                 tint = if (isSitting) Color.White else Color(0xFF281C38),
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                         Text(
@@ -305,7 +379,7 @@ fun PersonaMainScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(Color(0xE6FFFDF9))
                             .border(1.8.dp, Color(0xFF00E5FF), CircleShape)
@@ -319,7 +393,7 @@ fun PersonaMainScreen(
                             imageVector = Icons.Filled.Visibility,
                             contentDescription = "实景视野感知",
                             tint = Color(0xFF0091EA),
-                            modifier = Modifier.size(21.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Text(
@@ -341,25 +415,31 @@ fun PersonaMainScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(Color(0xE6FFFDF9))
                             .border(1.8.dp, Color(0xFF281C38), CircleShape)
                             .clickable {
                                 isShutterFlashing = true
-                                showSnapshotToast = true
                                 coroutineScope.launch {
                                     val quote = uiState.messages.lastOrNull { it.sender != com.persona.ar.data.model.MessageSender.USER }?.text
                                         ?: "我就站在你的现实世界中哦~"
                                     val realCameraBitmap = cameraFrameProvider?.invoke()
                                     val real3DFigureBitmap = figureFrameProvider?.invoke()
-                                    SnapshotHelper.captureAndSavePolaroid(
-                                        context = context,
-                                        visualState = uiState.visualState,
-                                        quote = quote.take(30),
-                                        cameraFrameBitmap = realCameraBitmap,
-                                        figure3DBitmap = real3DFigureBitmap
-                                    )
+                                    val savedUri = withContext(Dispatchers.IO) {
+                                        SnapshotHelper.captureAndSavePolaroid(
+                                            context = context,
+                                            visualState = uiState.visualState,
+                                            quote = quote.take(30),
+                                            cameraFrameBitmap = realCameraBitmap,
+                                            figure3DBitmap = real3DFigureBitmap
+                                        )
+                                    }
+                                    snapshotToastText = if (savedUri != null) {
+                                        "拍立得合影已保存至系统相册 (Pictures/PersonaAR)"
+                                    } else {
+                                        "合影保存失败，请检查相册存储权限"
+                                    }
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -368,7 +448,7 @@ fun PersonaMainScreen(
                             imageVector = Icons.Filled.CameraAlt,
                             contentDescription = "纯净 AR 合影拍摄",
                             tint = Color(0xFF281C38),
-                            modifier = Modifier.size(21.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Text(
@@ -437,24 +517,65 @@ fun PersonaMainScreen(
             }
         }
 
-        if (showSnapshotToast) {
-            Box(
+        snapshotToastText?.let { toastMsg ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier
                     .align(Alignment.Center)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xE6281C38))
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             ) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoCamera,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
                 Text(
-                    text = "📸 拍立得合影已保存至系统相册 (Pictures/PersonaAR)",
+                    text = toastMsg,
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
-            LaunchedEffect(Unit) {
-                delay(2000)
-                showSnapshotToast = false
+            LaunchedEffect(toastMsg) {
+                delay(2200)
+                snapshotToastText = null
+            }
+        }
+
+        // 错误或权限提示条
+        uiState.errorMessage?.let { errMsg ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 74.dp, start = 16.dp, end = 16.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xF2FFF3E0))
+                    .border(1.5.dp, Color(0xFFFF6D00), RoundedCornerShape(14.dp))
+                    .clickable { viewModel.dismissError() }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFE65100),
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = errMsg,
+                    color = Color(0xFF4E2600),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            LaunchedEffect(errMsg) {
+                delay(4000)
+                viewModel.dismissError()
             }
         }
 
@@ -565,9 +686,15 @@ fun PersonaMainScreen(
 
         if (uiState.isSettingsOpen) {
             SettingsDialog(
+                partnerName = shortPartnerName,
+                currentStance = uiState.spatialAnchor.skeletonStance,
                 currentVoiceMode = uiState.voiceMode,
                 currentBubbleMode = uiState.bubbleDisplayMode,
                 currentServerUrl = uiState.serverBaseUrl,
+                isServerReachable = uiState.isServerReachable,
+                isServerProbing = uiState.isServerProbing,
+                serverProbeOk = uiState.serverProbeOk,
+                serverProbeStatus = uiState.serverProbeStatus,
                 currentLlmProvider = uiState.llmProvider,
                 currentLlmBaseUrl = uiState.llmBaseUrl,
                 currentLlmApiKey = uiState.llmApiKey,
@@ -580,6 +707,9 @@ fun PersonaMainScreen(
                 onSelectVoiceMode = { mode -> viewModel.setVoiceMode(mode) },
                 onSelectBubbleMode = { mode -> viewModel.setBubbleDisplayMode(mode) },
                 onUpdateServerUrl = { url -> viewModel.updateServerUrl(url) },
+                onTestServerConnection = { url, lp, lbu, lk, lm ->
+                    viewModel.testServerConnection(url, lp, lbu, lk, lm)
+                },
                 onUpdateLlmConfig = { provider, baseUrl, apiKey, model ->
                     viewModel.updateLlmConfig(provider, baseUrl, apiKey, model)
                 },

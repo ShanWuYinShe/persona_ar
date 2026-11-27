@@ -154,6 +154,24 @@ class PersonaModelManager(private val context: Context? = null) {
     }
 
     /**
+     * 从本地持久化快照恢复已解锁角色列表与当前激活伙伴
+     */
+    fun restorePersistedState(activeModelId: String, installedModelIds: Collection<String>) {
+        val installedSet = (installedModelIds + listOf("hoshino", "luna")).toSet()
+        val updatedStore = allModels.map { manifest ->
+            if (manifest.id in installedSet) manifest.copy(isInstalled = true) else manifest
+        }
+        _storeModels.value = updatedStore
+        _installedModels.value = updatedStore.filter { it.isInstalled }
+        val target = _installedModels.value.find { it.id == activeModelId }
+            ?: _installedModels.value.find { it.id == "hoshino" }
+            ?: _installedModels.value.firstOrNull()
+        if (target != null) {
+            _activeModel.value = target
+        }
+    }
+
+    /**
      * 切换当前激活的纸片人模型
      */
     fun switchModel(modelId: String): Boolean {

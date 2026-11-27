@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.persona.ar.data.model.MemoryItem
+import com.persona.ar.util.MemoryCategoryMapper
 
 /**
  * 纸片人专属情感手账本组件 (MemoryNotebookDialog)
@@ -68,11 +69,7 @@ fun MemoryNotebookDialog(
     )
 
     val filteredMemories = remember(memories, selectedCategoryFilter) {
-        if (selectedCategoryFilter == "all") {
-            memories
-        } else {
-            memories.filter { it.category.equals(selectedCategoryFilter, ignoreCase = true) }
-        }
+        memories.filter { MemoryCategoryMapper.matchesFilter(it.category, selectedCategoryFilter) }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -249,7 +246,7 @@ fun MemoryNotebookDialog(
                                 placeholder = { Text("记下和 ${partnerName} 难忘的瞬间...", fontSize = 12.sp) },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(72.dp),
+                                    .heightIn(min = 72.dp),
                                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
                             )
 
@@ -426,15 +423,16 @@ private fun MemoryCardItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // 分类标签
-                    val (catColor, catName) = when (memory.category.lowercase()) {
-                        "pledge" -> brandPink to "誓约"
-                        "emotion" -> Color(0xFFAB47BC) to "情感"
-                        "event" -> Color(0xFF26A69A) to "约定"
-                        else -> Color(0xFF5C6BC0) to "日常"
+                    // 分类标签（兼容后端 USER_FACT / SHARED_MOMENT / EMOTIONAL_PROMISE）
+                    val badgeStyle = MemoryCategoryMapper.resolveBadgeStyle(memory.category)
+                    val catColor = when (badgeStyle) {
+                        MemoryCategoryMapper.BadgeStyle.PLEDGE -> brandPink
+                        MemoryCategoryMapper.BadgeStyle.EMOTION -> Color(0xFFAB47BC)
+                        MemoryCategoryMapper.BadgeStyle.EVENT -> Color(0xFF26A69A)
+                        MemoryCategoryMapper.BadgeStyle.DAILY -> Color(0xFF5C6BC0)
                     }
                     Text(
-                        text = catName,
+                        text = badgeStyle.label,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -457,16 +455,16 @@ private fun MemoryCardItem(
                     }
                 }
 
-                // 删除按钮
+                // 删除按钮（保持 ≥44dp 触控热区）
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.DeleteOutline,
                         contentDescription = "删除记忆",
-                        tint = Color.LightGray,
-                        modifier = Modifier.size(16.dp)
+                        tint = Color(0xFF9E8EA8),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

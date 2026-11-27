@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.filament.android.UiHelper
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.TouchPart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,6 +25,7 @@ private const val TAG = "FilamentFigureView"
 fun FilamentFigureView(
     frameState: FigureFrameState,
     modelAssetPath: String?,
+    activeModel: PersonaModelManifest? = null,
     modifier: Modifier = Modifier,
     onHeadScreenPosition: ((Float, Float) -> Unit)? = null,
     onPickPartRequestReady: (((Int, Int, (TouchPart?) -> Unit) -> Unit) -> Unit)? = null,
@@ -74,11 +76,21 @@ fun FilamentFigureView(
         }
     }
 
-    LaunchedEffect(scene, modelAssetPath) {
+    LaunchedEffect(
+        scene,
+        modelAssetPath,
+        activeModel?.id,
+        activeModel?.version,
+        activeModel?.hairColorHex,
+        activeModel?.eyeColorHex,
+        activeModel?.skirtColorHex,
+        activeModel?.previewColorHex
+    ) {
         val path = modelAssetPath ?: return@LaunchedEffect
+        val targetModel = activeModel
         val model = withContext(Dispatchers.IO) {
-            runCatching { scene.loadModelAsset(path) }
-                .onFailure { Log.e(TAG, "读取/解析模型失败: $path", it) }
+            runCatching { scene.loadModelAsset(path, targetModel) }
+                .onFailure { Log.e(TAG, "读取/解析模型失败: $path (${targetModel?.id})", it) }
                 .getOrNull()
         }
         model?.let { scene.installAsset(it) }

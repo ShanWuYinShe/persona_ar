@@ -10,6 +10,8 @@ import com.persona.ar.data.model.LLMConfigRequest
 import com.persona.ar.data.model.MemoryItem
 import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.PersonaStatus
+import com.persona.ar.data.model.ServerHealthResponse
+import com.persona.ar.data.model.ServiceTestResponse
 import com.persona.ar.data.model.TouchRequest
 import com.persona.ar.data.model.TouchResponse
 import com.persona.ar.data.model.VisionInteractRequest
@@ -47,9 +49,13 @@ interface PersonaApiService {
         @Body request: TouchRequest
     ): Response<TouchResponse>
 
+    @GET("healthz")
+    suspend fun healthCheck(): Response<ServerHealthResponse>
+
     @GET("api/v1/persona/status")
     suspend fun getPersonaStatus(
-        @Query("user_id") userId: String = "user_default"
+        @Query("user_id") userId: String = "user_default",
+        @Query("persona_id") personaId: String? = null
     ): Response<PersonaStatus>
 
     @GET("api/v1/store/models")
@@ -87,6 +93,11 @@ interface PersonaApiService {
         @Body request: LLMConfigRequest
     ): Response<Map<String, Any>>
 
+    @POST("api/v1/llm/test")
+    suspend fun testLLMConnection(
+        @Body request: LLMConfigRequest
+    ): Response<ServiceTestResponse>
+
     @Multipart
     @POST("api/v1/asr/transcribe")
     suspend fun transcribeAudio(
@@ -97,4 +108,7 @@ interface PersonaApiService {
     suspend fun updateAsrConfig(
         @Body request: AsrConfigRequest
     ): Response<Map<String, Any>>
+
+    @POST("api/v1/asr/test")
+    suspend fun testASRConnection(): Response<ServiceTestResponse>
 }

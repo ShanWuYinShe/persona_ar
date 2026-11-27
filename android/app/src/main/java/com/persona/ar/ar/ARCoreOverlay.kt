@@ -343,6 +343,7 @@ fun ARCoreOverlay(
                     azimuthDeltaDegrees = spatialAnchor.azimuthDeltaDegrees
                 ),
                 modelAssetPath = modelAssetPath,
+                activeModel = activeModel,
                 onHeadScreenPosition = { hx, hy ->
                     headNormX = hx
                     headNormY = hy

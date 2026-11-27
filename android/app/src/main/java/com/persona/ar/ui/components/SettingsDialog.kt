@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,9 +26,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.persona.ar.character.skeleton.SkeletonStance
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.BubbleDisplayMode
 import com.persona.ar.data.model.VoiceMode
@@ -37,9 +42,15 @@ import com.persona.ar.data.model.VoiceMode
  */
 @Composable
 fun SettingsDialog(
+    partnerName: String = "星野",
+    currentStance: SkeletonStance = SkeletonStance.STANDING,
     currentVoiceMode: VoiceMode,
     currentBubbleMode: BubbleDisplayMode,
     currentServerUrl: String,
+    isServerReachable: Boolean = false,
+    isServerProbing: Boolean = false,
+    serverProbeOk: Boolean? = null,
+    serverProbeStatus: String? = null,
     currentLlmProvider: String = "mock",
     currentLlmBaseUrl: String = "https://api.deepseek.com",
     currentLlmApiKey: String = "",
@@ -52,6 +63,7 @@ fun SettingsDialog(
     onSelectVoiceMode: (VoiceMode) -> Unit,
     onSelectBubbleMode: (BubbleDisplayMode) -> Unit,
     onUpdateServerUrl: (String) -> Unit,
+    onTestServerConnection: (serverUrl: String, llmProvider: String, llmBaseUrl: String, llmApiKey: String, llmModel: String) -> Unit = { _, _, _, _, _ -> },
     onUpdateLlmConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
     onUpdateAsrConfig: (provider: String, baseUrl: String, apiKey: String, model: String) -> Unit = { _, _, _, _ -> },
     /** 点击后立即触发 3D 手办动作照出（无需等待对话） */
@@ -62,16 +74,19 @@ fun SettingsDialog(
     onSit: () -> Unit = {}
 ) {
     var serverInput by remember { mutableStateOf(currentServerUrl) }
+    var selectedStance by remember(currentStance) { mutableStateOf(currentStance) }
     var selectedVoiceMode by remember { mutableStateOf(currentVoiceMode) }
     var selectedBubbleMode by remember { mutableStateOf(currentBubbleMode) }
     var llmProvider by remember { mutableStateOf(currentLlmProvider) }
     var llmBaseUrl by remember { mutableStateOf(currentLlmBaseUrl) }
     var llmApiKey by remember { mutableStateOf(currentLlmApiKey) }
     var llmModel by remember { mutableStateOf(currentLlmModel) }
+    var showLlmApiKey by remember { mutableStateOf(false) }
     var asrProvider by remember { mutableStateOf(currentAsrProvider) }
     var asrBaseUrl by remember { mutableStateOf(currentAsrBaseUrl) }
     var asrApiKey by remember { mutableStateOf(currentAsrApiKey) }
     var asrModel by remember { mutableStateOf(currentAsrModel) }
+    var showAsrApiKey by remember { mutableStateOf(false) }
 
     val borderColor = Color(0xFF281C38)
     val surfaceCream = Color(0xFFFFFDF9)
@@ -169,7 +184,7 @@ fun SettingsDialog(
                     }
                     Text(
                         text = if (selectedVoiceMode == VoiceMode.CONTINUOUS_NATURAL)
-                            "• 连麦模式: 开启监听后，星野说话期间你随时开口即可瞬间掐断播音，静音自动断句发送"
+                            "• 连麦模式: 开启监听后，${partnerName}说话期间你随时开口即可瞬间掐断播音，静音自动断句发送"
                         else
                             "• 对讲模式: 按住底部的麦克风按钮蓄力说话，松开后即刻发送",
                         color = Color(0xFF6B587B),
@@ -215,7 +230,7 @@ fun SettingsDialog(
                         text = when (selectedBubbleMode) {
                             BubbleDisplayMode.PERSISTENT -> "• 常驻模式: 完整保留对白记录，方便回滚查阅"
                             BubbleDisplayMode.AUTO_FADE_OUT -> "• 5秒淡出: 播放结束5秒后自动隐去，视野干净不挡风景"
-                            BubbleDisplayMode.HIDDEN -> "• 纯净模式: 零文字遮挡，完全凭借星野的神态动作与萌音交流"
+                            BubbleDisplayMode.HIDDEN -> "• 纯净模式: 零文字遮挡，完全凭借${partnerName}的神态动作与萌音交流"
                         },
                         color = Color(0xFF6B587B),
                         fontSize = 10.sp,
@@ -247,7 +262,8 @@ fun SettingsDialog(
                             title = "收起观赏",
                             isSelected = false,
                             activeColor = Color(0xFFFF4E8E),
-                            onClick = onDismiss
+                            onClick = onDismiss,
+                            horizontalPadding = 10.dp
                         )
                     }
                     val actionRows = listOf(
@@ -292,29 +308,71 @@ fun SettingsDialog(
                         GameOptionChip(
                             title = "站立姿态",
                             subtitle = "站直在桌面",
-                            isSelected = false,
+                            isSelected = selectedStance == SkeletonStance.STANDING,
                             activeColor = Color(0xFF00B0FF),
-                            onClick = { onStand() },
+                            onClick = {
+                                selectedStance = SkeletonStance.STANDING
+                                onStand()
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         GameOptionChip(
                             title = "桌沿垂腿坐",
                             subtitle = "坐在桌面边缘",
-                            isSelected = false,
+                            isSelected = selectedStance == SkeletonStance.SITTING,
                             activeColor = Color(0xFFE65100),
-                            onClick = { onSit() },
+                            onClick = {
+                                selectedStance = SkeletonStance.SITTING
+                                onSit()
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
-                // 4. 后端 API 地址
+                // 4. 后端 API 地址与连通性测试
                 SectionContainer(
                     icon = Icons.Filled.Dns,
                     title = "情感中枢服务器地址",
                     sectionBg = sectionBg,
                     borderColor = borderColor
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            val effectiveOnline = serverProbeOk ?: isServerReachable
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (effectiveOnline) Color(0xFF00C853) else Color(0xFF9E8EA8))
+                            )
+                            Text(
+                                text = if (effectiveOnline) "服务在线" else "离线 / 端侧陪伴模式",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (effectiveOnline) Color(0xFF2E7D32) else Color(0xFF7A6888)
+                            )
+                        }
+                        GameMiniChip(
+                            title = if (isServerProbing) "探测中..." else "测试连接",
+                            isSelected = false,
+                            activeColor = Color(0xFF00B0FF),
+                            onClick = {
+                                if (!isServerProbing) {
+                                    onTestServerConnection(serverInput, llmProvider, llmBaseUrl, llmApiKey, llmModel)
+                                }
+                            },
+                            horizontalPadding = 10.dp
+                        )
+                    }
+
                     OutlinedTextField(
                         value = serverInput,
                         onValueChange = { serverInput = it },
@@ -323,6 +381,7 @@ fun SettingsDialog(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         ),
+                        singleLine = true,
                         placeholder = { Text("例如 http://192.168.1.5:8000/", fontSize = 11.sp, color = Color(0xFF9E8EA8)) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = Color.White,
@@ -333,6 +392,20 @@ fun SettingsDialog(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    serverProbeStatus?.let { probeMsg ->
+                        Text(
+                            text = probeMsg,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 14.sp,
+                            color = when (serverProbeOk) {
+                                true -> Color(0xFF2E7D32)
+                                false -> Color(0xFFC62828)
+                                null -> Color(0xFF6B587B)
+                            }
+                        )
+                    }
                 }
 
                 // 5. 大语言模型对话引擎配置 (LLM API)
@@ -349,16 +422,16 @@ fun SettingsDialog(
                         lineHeight = 14.sp
                     )
 
-                    // 厂商预置选择
+                    // 厂商预置选择（先判定是否 mock，避免残余 URL 导致双选中）
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf("DeepSeek", "OpenAI", "Ollama", "系统内置").forEach { pName ->
                             val isSel = when (pName) {
-                                "DeepSeek" -> llmBaseUrl.contains("deepseek")
-                                "OpenAI" -> llmBaseUrl.contains("openai")
-                                "Ollama" -> llmBaseUrl.contains("11434")
+                                "DeepSeek" -> llmProvider != "mock" && llmBaseUrl.contains("deepseek", ignoreCase = true)
+                                "OpenAI" -> llmProvider != "mock" && llmBaseUrl.contains("openai", ignoreCase = true)
+                                "Ollama" -> llmProvider == "ollama" || (llmProvider != "mock" && llmBaseUrl.contains("11434"))
                                 else -> llmProvider == "mock"
                             }
                             GameMiniChip(
@@ -395,11 +468,22 @@ fun SettingsDialog(
                     }
 
                     if (llmProvider != "mock") {
-                        // API 密钥输入
+                        // API 密钥输入（默认掩码遮罩 + 显隐切换）
                         OutlinedTextField(
                             value = llmApiKey,
                             onValueChange = { llmApiKey = it },
                             label = { Text("API Key 密钥", fontSize = 10.sp) },
+                            singleLine = true,
+                            visualTransformation = if (showLlmApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showLlmApiKey = !showLlmApiKey }) {
+                                    Icon(
+                                        imageVector = if (showLlmApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (showLlmApiKey) "隐藏密钥" else "显示密钥",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = Color.White,
@@ -510,6 +594,17 @@ fun SettingsDialog(
                             value = asrApiKey,
                             onValueChange = { asrApiKey = it },
                             label = { Text("ASR API Key", fontSize = 10.sp) },
+                            singleLine = true,
+                            visualTransformation = if (showAsrApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showAsrApiKey = !showAsrApiKey }) {
+                                    Icon(
+                                        imageVector = if (showAsrApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (showAsrApiKey) "隐藏密钥" else "显示密钥",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
                             textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = Color.White,
@@ -623,6 +718,7 @@ private fun GameOptionChip(
     val borderColor = Color(0xFF281C38)
     Box(
         modifier = modifier
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (isSelected) activeColor else Color.White)
             .border(
@@ -657,11 +753,13 @@ private fun GameMiniChip(
     isSelected: Boolean,
     activeColor: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    horizontalPadding: androidx.compose.ui.unit.Dp = 2.dp
 ) {
     val borderColor = Color(0xFF281C38)
     Box(
         modifier = modifier
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (isSelected) activeColor else Color.White)
             .border(
@@ -670,12 +768,12 @@ private fun GameMiniChip(
                 shape = RoundedCornerShape(10.dp)
             )
             .clickable { onClick() }
-            .padding(vertical = 8.dp),
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = title,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Bold,
             color = if (isSelected) Color.White else Color(0xFF483A5A),
             maxLines = 1
