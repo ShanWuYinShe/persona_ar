@@ -165,3 +165,20 @@ data class AsrConfigRequest(
     val model: String = "whisper-1",
     val language: String = "zh"
 )
+
+data class ServerHealthResponse(
+    val status: String = "",
+    val service: String = "",
+    val version: String = "",
+    @SerializedName("llm_mode") val llmMode: String = "heuristic",
+    @SerializedName("tts_provider") val ttsProvider: String = "edge",
+    @SerializedName("asr_provider") val asrProvider: String = "mock"
+)
+
+data class ServiceTestResponse(
+    val status: String = "",
+    val mode: String? = null,
+    val message: String? = null,
+    val error: String? = null,
+    @SerializedName("latency_ms") val latencyMs: Long = 0L
+)

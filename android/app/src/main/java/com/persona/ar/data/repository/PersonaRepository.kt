@@ -16,22 +16,83 @@ import com.persona.ar.data.model.TouchResponse
 import com.persona.ar.data.model.VisionInteractRequest
 import com.persona.ar.data.model.VoiceInteractRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
+data class ServerProbeReport(
+    val isOnline: Boolean,
+    val summary: String,
+    val llmMode: String? = null,
+    val ttsProvider: String? = null
+)
+
 class PersonaRepository {
+
+    private val _isServerReachable = MutableStateFlow(false)
+    val isServerReachable: StateFlow<Boolean> = _isServerReachable.asStateFlow()
+
+    suspend fun probeServerAndEngines(
+        targetUrl: String,
+        llmConfig: LLMConfigRequest? = null
+    ): ServerProbeReport = withContext(Dispatchers.IO) {
+        try {
+            val service = ApiClient.createTransientService(targetUrl)
+            val healthResp = service.healthCheck()
+            if (!healthResp.isSuccessful || healthResp.body() == null) {
+                return@withContext ServerProbeReport(
+                    isOnline = false,
+                    summary = "服务端响应异常 (HTTP ${healthResp.code()})"
+                )
+            }
+            val health = healthResp.body()!!
+            var llmPart = "LLM: ${health.llmMode}"
+            var llmOk = true
+            if (llmConfig != null) {
+                val llmResp = runCatching { service.testLLMConnection(llmConfig) }.getOrNull()
+                if (llmResp != null && llmResp.isSuccessful && llmResp.body() != null) {
+                    val body = llmResp.body()!!
+                    llmPart = "LLM(${body.mode ?: health.llmMode}): 就绪 (${body.latencyMs}ms)"
+                } else {
+                    llmOk = false
+                    llmPart = "LLM 连接异常 (HTTP ${llmResp?.code() ?: 0})"
+                }
+            }
+            val asrPart = runCatching {
+                val asrResp = service.testASRConnection()
+                if (asrResp.isSuccessful) "ASR: ${health.asrProvider}✓" else "ASR: ${health.asrProvider}!"
+            }.getOrDefault("ASR: ${health.asrProvider}")
+
+            ServerProbeReport(
+                isOnline = llmOk,
+                summary = "已连通 v${health.version.ifBlank { "2.x" }} · $llmPart · TTS: ${health.ttsProvider} · $asrPart",
+                llmMode = health.llmMode,
+                ttsProvider = health.ttsProvider
+            )
+        } catch (e: Exception) {
+            ServerProbeReport(
+                isOnline = false,
+                summary = "无法连接服务器: ${e.message ?: "请检查地址与网络"}"
+            )
+        }
+    }
 
     suspend fun getStoreModels(): Result<List<PersonaModelManifest>> = withContext(Dispatchers.IO) {
         try {
             val response = ApiClient.service.getStoreModels()
             if (response.isSuccessful && response.body() != null) {
+                _isServerReachable.value = true
                 Result.success(response.body()!!)
             } else {
+                _isServerReachable.value = false
                 Result.success(emptyList())
             }
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(emptyList())
         }
     }
@@ -40,11 +101,14 @@ class PersonaRepository {
         try {
             val response = ApiClient.service.getMemories(userId, personaId)
             if (response.isSuccessful && response.body() != null) {
+                _isServerReachable.value = true
                 Result.success(response.body()!!)
             } else {
+                _isServerReachable.value = false
                 Result.success(emptyList())
             }
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(emptyList())
         }
     }
@@ -68,8 +132,10 @@ class PersonaRepository {
             )
             val body = response.body()
             if (response.isSuccessful && body != null) {
+                _isServerReachable.value = true
                 Result.success(body)
             } else {
+                _isServerReachable.value = false
                 Result.success(
                     MemoryItem(
                         id = "mem_local_${System.currentTimeMillis()}",
@@ -83,6 +149,7 @@ class PersonaRepository {
                 )
             }
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(
                 MemoryItem(
                     id = "mem_local_${System.currentTimeMillis()}",
@@ -100,8 +167,10 @@ class PersonaRepository {
     suspend fun deleteMemory(memoryId: String, userId: String = "user_default"): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val response = ApiClient.service.deleteMemory(memoryId, userId)
+            _isServerReachable.value = response.isSuccessful
             Result.success(response.isSuccessful)
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(false)
         }
     }
@@ -109,8 +178,10 @@ class PersonaRepository {
     suspend fun switchPersona(personaId: String, userId: String = "user_default"): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val response = ApiClient.service.switchPersona(mapOf("user_id" to userId, "persona_id" to personaId))
+            _isServerReachable.value = response.isSuccessful
             Result.success(response.isSuccessful)
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(false)
         }
     }
@@ -120,12 +191,15 @@ class PersonaRepository {
             try {
                 val response = ApiClient.service.chatInteract(ChatRequest(message = message, userId = userId))
                 if (response.isSuccessful && response.body() != null) {
+                    _isServerReachable.value = true
                     Result.success(response.body()!!)
                 } else {
+                    _isServerReachable.value = false
                     // 网络请求未成功时，触发端侧拟人兜底，避免用户交互中断
                     Result.success(createFallbackChat(message))
                 }
             } catch (e: Exception) {
+                _isServerReachable.value = false
                 Result.success(createFallbackChat(message))
             }
         }
@@ -146,11 +220,14 @@ class PersonaRepository {
                 )
             )
             if (response.isSuccessful && response.body() != null) {
+                _isServerReachable.value = true
                 Result.success(response.body()!!)
             } else {
+                _isServerReachable.value = false
                 Result.success(createFallbackChat(textPrompt ?: "（对讲语音交流）"))
             }
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(createFallbackChat(textPrompt ?: "（对讲语音交流）"))
         }
     }
@@ -158,7 +235,8 @@ class PersonaRepository {
     suspend fun sendVisionInteract(
         imageBase64: String,
         prompt: String = "",
-        userId: String = "user_default"
+        userId: String = "user_default",
+        partnerName: String = "星野"
     ): Result<ChatResponse> = withContext(Dispatchers.IO) {
         try {
             val response = ApiClient.service.visionInteract(
@@ -169,12 +247,15 @@ class PersonaRepository {
                 )
             )
             if (response.isSuccessful && response.body() != null) {
+                _isServerReachable.value = true
                 Result.success(response.body()!!)
             } else {
-                Result.success(createFallbackChat(prompt.ifBlank { "哇！星野已经透过现实镜头看到你分享的景物啦~ ✨" }))
+                _isServerReachable.value = false
+                Result.success(createFallbackChat(prompt.ifBlank { "哇！${partnerName}已经透过现实镜头看到你分享的景物啦~" }))
             }
         } catch (e: Exception) {
-            Result.success(createFallbackChat(prompt.ifBlank { "哇！星野已经透过现实镜头看到你分享的景物啦~ ✨" }))
+            _isServerReachable.value = false
+            Result.success(createFallbackChat(prompt.ifBlank { "哇！${partnerName}已经透过现实镜头看到你分享的景物啦~" }))
         }
     }
 
@@ -183,26 +264,36 @@ class PersonaRepository {
             try {
                 val response = ApiClient.service.personaTouch(TouchRequest(part = part, userId = userId))
                 if (response.isSuccessful && response.body() != null) {
+                    _isServerReachable.value = true
                     Result.success(response.body()!!)
                 } else {
+                    _isServerReachable.value = false
                     Result.success(createFallbackTouch(part))
                 }
             } catch (e: Exception) {
+                _isServerReachable.value = false
                 Result.success(createFallbackTouch(part))
             }
         }
 
-    suspend fun getStatus(userId: String = "user_default"): Result<PersonaStatus> =
+    suspend fun getStatus(
+        userId: String = "user_default",
+        personaId: String? = null,
+        fallbackPartnerName: String = "星野 (Hoshino)"
+    ): Result<PersonaStatus> =
         withContext(Dispatchers.IO) {
             try {
-                val response = ApiClient.service.getPersonaStatus(userId)
+                val response = ApiClient.service.getPersonaStatus(userId, personaId)
                 if (response.isSuccessful && response.body() != null) {
+                    _isServerReachable.value = true
                     Result.success(response.body()!!)
                 } else {
-                    Result.success(createFallbackStatus())
+                    _isServerReachable.value = false
+                    Result.success(createFallbackStatus(fallbackPartnerName))
                 }
             } catch (e: Exception) {
-                Result.success(createFallbackStatus())
+                _isServerReachable.value = false
+                Result.success(createFallbackStatus(fallbackPartnerName))
             }
         }
 
@@ -285,8 +376,10 @@ class PersonaRepository {
                     model = model
                 )
             )
+            _isServerReachable.value = response.isSuccessful
             Result.success(response.isSuccessful)
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(false)
         }
     }
@@ -301,11 +394,14 @@ class PersonaRepository {
             val part = MultipartBody.Part.createFormData("file", filename, reqBody)
             val response = ApiClient.service.transcribeAudio(part)
             if (response.isSuccessful && response.body() != null) {
+                _isServerReachable.value = true
                 Result.success(response.body()!!.text)
             } else {
+                _isServerReachable.value = false
                 Result.success("看到你站在我面前，感觉好生动呀！")
             }
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success("看到你站在我面前，感觉好生动呀！")
         }
     }
@@ -327,16 +423,18 @@ class PersonaRepository {
                     language = language
                 )
             )
+            _isServerReachable.value = response.isSuccessful
             Result.success(response.isSuccessful)
         } catch (e: Exception) {
+            _isServerReachable.value = false
             Result.success(false)
         }
     }
 
-    private fun createFallbackStatus(): PersonaStatus {
+    private fun createFallbackStatus(partnerName: String = "星野 (Hoshino)"): PersonaStatus {
         return PersonaStatus(
-            name = "星野 (Hoshino)",
-            roleDesc = "投射在现实中的二次元傲娇元气少女",
+            name = partnerName,
+            roleDesc = "端侧陪伴模式 · 可在设置中连接情感大脑服务",
             affinity = 20,
             affinityLevel = "初识 (Curious)",
             mood = "好奇而轻快",

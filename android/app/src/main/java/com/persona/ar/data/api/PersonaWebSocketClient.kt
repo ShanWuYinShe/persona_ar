@@ -3,8 +3,11 @@ package com.persona.ar.data.api
 import android.util.Log
 import com.persona.ar.data.model.ActionType
 import com.persona.ar.data.model.EmotionType
+import com.persona.ar.data.preferences.PersonaSettingsCodec
+import com.persona.ar.util.PersonaTextSanitizer
 import okhttp3.*
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
@@ -15,12 +18,15 @@ class PersonaWebSocketClient {
 
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
+    @Volatile
     private var isConnected = false
+    @Volatile
+    private var isConnecting = false
 
     var onReady: ((String) -> Unit)? = null
     var onInterruptAck: (() -> Unit)? = null
@@ -29,20 +35,25 @@ class PersonaWebSocketClient {
     var onStreamChunk: ((String) -> Unit)? = null
     var onResponseComplete: ((text: String, emotion: EmotionType, action: ActionType, expr: String, audioBase64: String?, affinity: Int, mood: String) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onDisconnected: ((String) -> Unit)? = null
 
-    fun connect(baseUrl: String = ApiClient.baseUrl) {
-        if (isConnected) return
-        val wsUrl = baseUrl.replace("http://", "ws://").replace("https://", "wss://")
-            .removeSuffix("/") + "/api/v1/ws/continuous"
+    fun connect(baseUrl: String = ApiClient.baseUrl, userId: String = "user_default") {
+        if (isConnected || isConnecting) return
+        val normalized = PersonaSettingsCodec.normalizeServerUrl(baseUrl)
+        val encodedUser = runCatching { URLEncoder.encode(userId, "UTF-8") }.getOrDefault(userId)
+        val wsUrl = normalized.replace("http://", "ws://").replace("https://", "wss://")
+            .removeSuffix("/") + "/api/v1/ws/continuous?user_id=$encodedUser"
 
+        isConnecting = true
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                isConnecting = false
                 isConnected = true
                 Log.d("PersonaWS", "WebSocket connected: $wsUrl")
             }
 
-            override fun onMessage(ws: WebSocket, text: String) {
+            override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val obj = JSONObject(text)
                     when (obj.optString("type")) {
@@ -67,8 +78,12 @@ class PersonaWebSocketClient {
                                 onStreamChunk?.invoke(delta)
                             }
                         }
+                        "error" -> {
+                            val errMsg = obj.optString("error").ifBlank { obj.optString("message", "连麦服务异常") }
+                            onError?.invoke(errMsg)
+                        }
                         "response_complete" -> {
-                            val respText = obj.optString("text")
+                            val respText = PersonaTextSanitizer.stripControlTags(obj.optString("text"), stripTrailingPartial = false)
                             val emotionStr = obj.optString("emotion", "NEUTRAL")
                             val actionStr = obj.optString("action", "IDLE")
                             val expr = obj.optString("expression", "SMILE")
@@ -87,15 +102,24 @@ class PersonaWebSocketClient {
                 }
             }
 
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                isConnecting = false
                 isConnected = false
+                if (this@PersonaWebSocketClient.webSocket === webSocket) {
+                    this@PersonaWebSocketClient.webSocket = null
+                }
                 Log.w("PersonaWS", "WebSocket failure: ${t.message}")
                 onError?.invoke(t.message ?: "Network error")
             }
 
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                isConnecting = false
                 isConnected = false
+                if (this@PersonaWebSocketClient.webSocket === webSocket) {
+                    this@PersonaWebSocketClient.webSocket = null
+                }
                 Log.d("PersonaWS", "WebSocket closed: $reason")
+                onDisconnected?.invoke(reason.ifBlank { "连接已断开 ($code)" })
             }
         })
     }

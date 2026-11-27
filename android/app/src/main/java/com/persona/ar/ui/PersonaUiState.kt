@@ -46,6 +46,10 @@ data class PersonaUiState(
     val isLoading: Boolean = false,
     val isSettingsOpen: Boolean = false,
     val serverBaseUrl: String = "http://10.0.2.2:8000/",
+    val isServerReachable: Boolean = false,
+    val isServerProbing: Boolean = false,
+    val serverProbeOk: Boolean? = null,
+    val serverProbeStatus: String? = null,
     // 大语言模型接入配置 (OpenAI / DeepSeek / 本地 Ollama)
     val llmProvider: String = "mock",
     val llmBaseUrl: String = "https://api.deepseek.com",

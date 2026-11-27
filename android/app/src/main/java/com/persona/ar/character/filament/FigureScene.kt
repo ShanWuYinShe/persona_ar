@@ -40,6 +40,8 @@ import com.persona.ar.character.animation.GltfRig
 import com.persona.ar.character.animation.GltfRigParser
 import com.persona.ar.character.animation.HumanoidBone
 import com.persona.ar.character.animation.PoseSolver
+import com.persona.ar.character.loader.PersonaGlbStyler
+import com.persona.ar.data.model.PersonaModelManifest
 import com.persona.ar.data.model.TouchPart
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -323,8 +325,8 @@ class FigureScene(
         return buffer
     }
 
-    fun loadModelAsset(assetPath: String): ModelAsset {
-        val bytes = context.assets.open(assetPath).use { it.readBytes() }
+    fun loadModelAsset(assetPath: String, manifest: PersonaModelManifest? = null): ModelAsset {
+        val bytes = PersonaGlbStyler.loadStyledGlbBytes(context, assetPath, manifest)
         val parsedRig = GltfRigParser.parse(bytes)
         val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
         buffer.put(bytes).flip()

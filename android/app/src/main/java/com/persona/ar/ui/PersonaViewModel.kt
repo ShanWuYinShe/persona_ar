@@ -1,8 +1,11 @@
 package com.persona.ar.ui
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.util.Base64
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.persona.ar.ar.ARTrackingStatus
@@ -22,9 +25,15 @@ import com.persona.ar.data.model.ChatMessage
 import com.persona.ar.data.model.EmotionType
 import com.persona.ar.data.model.MessageSender
 import com.persona.ar.data.model.PersonaModelManifest
+import com.persona.ar.data.model.LLMConfigRequest
 import com.persona.ar.data.model.TouchPart
 import com.persona.ar.data.model.VoiceMode
+import com.persona.ar.data.preferences.PersonaPreferences
+import com.persona.ar.data.preferences.PersonaSettingsCodec
+import com.persona.ar.data.preferences.PersonaSettingsSnapshot
 import com.persona.ar.data.repository.PersonaRepository
+import com.persona.ar.util.MemoryCategoryMapper
+import com.persona.ar.util.PersonaTextSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +51,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     private val voiceRecorder = VoiceRecorder()
     private val universalTracker = UniversalSensorSurfaceTracker(application)
     private val modelManager = PersonaModelManager(application)
+    private val preferences = PersonaPreferences(application)
     private val wsClient = PersonaWebSocketClient()
     private val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
         application.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
@@ -55,15 +65,85 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private val createdAtMillis = System.currentTimeMillis()
     private var interactionEpoch = 0L
+    private var rawStreamingText = ""
 
     init {
+        restorePersistedSettings()
         setupAudioPlayer()
         setupVoiceRecorder()
         setupWebSocket()
         setupSensors()
         setupModelManager()
+        observeServerReachability()
         loadInitialStatus()
         loadMemories()
+    }
+
+    private fun restorePersistedSettings() {
+        val snapshot = preferences.load()
+        ApiClient.baseUrl = snapshot.serverBaseUrl
+        modelManager.restorePersistedState(snapshot.activeModelId, snapshot.installedModelIds)
+        val restoredActive = modelManager.activeModel.value
+        _uiState.update {
+            it.copy(
+                serverBaseUrl = snapshot.serverBaseUrl,
+                llmProvider = snapshot.llmProvider,
+                llmBaseUrl = snapshot.llmBaseUrl,
+                llmApiKey = snapshot.llmApiKey,
+                llmModel = snapshot.llmModel,
+                asrProvider = snapshot.asrProvider,
+                asrBaseUrl = snapshot.asrBaseUrl,
+                asrApiKey = snapshot.asrApiKey,
+                asrModel = snapshot.asrModel,
+                asrLanguage = snapshot.asrLanguage,
+                voiceMode = snapshot.resolvedVoiceMode(),
+                bubbleDisplayMode = snapshot.resolvedBubbleDisplayMode(),
+                activeModel = restoredActive,
+                installedModels = modelManager.installedModels.value,
+                storeModels = modelManager.storeModels.value,
+                visualState = it.visualState.copy(
+                    name = restoredActive.name,
+                    model = restoredActive
+                ),
+                bondLevel = snapshot.bondLevel,
+                bondExp = snapshot.bondExp,
+                bondExpNext = snapshot.bondExpNext,
+                bondLevelTitle = getBondTitleForLevel(snapshot.bondLevel)
+            )
+        }
+    }
+
+    private fun persistCurrentSettings() {
+        val state = _uiState.value
+        preferences.save(
+            PersonaSettingsSnapshot(
+                serverBaseUrl = state.serverBaseUrl,
+                llmProvider = state.llmProvider,
+                llmBaseUrl = state.llmBaseUrl,
+                llmApiKey = state.llmApiKey,
+                llmModel = state.llmModel,
+                asrProvider = state.asrProvider,
+                asrBaseUrl = state.asrBaseUrl,
+                asrApiKey = state.asrApiKey,
+                asrModel = state.asrModel,
+                asrLanguage = state.asrLanguage,
+                voiceMode = state.voiceMode.name,
+                bubbleDisplayMode = state.bubbleDisplayMode.name,
+                activeModelId = state.activeModel?.id ?: modelManager.activeModel.value.id,
+                installedModelIds = modelManager.installedModels.value.map { it.id },
+                bondLevel = state.bondLevel,
+                bondExp = state.bondExp,
+                bondExpNext = state.bondExpNext
+            )
+        )
+    }
+
+    private fun observeServerReachability() {
+        viewModelScope.launch {
+            repository.isServerReachable.collect { reachable ->
+                _uiState.update { it.copy(isServerReachable = reachable) }
+            }
+        }
     }
 
     private fun setupModelManager() {
@@ -171,25 +251,69 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         wsClient.onThinkingStart = {
-            _uiState.update { it.copy(isLoading = true, streamingText = "") }
+            rawStreamingText = ""
+            _uiState.update { it.copy(isLoading = true, streamingText = "", errorMessage = null) }
         }
         wsClient.onStreamChunk = { chunk ->
+            rawStreamingText += chunk
+            val sanitized = PersonaTextSanitizer.stripControlTags(rawStreamingText)
             _uiState.update { current ->
-                current.copy(streamingText = (current.streamingText ?: "") + chunk)
+                current.copy(streamingText = sanitized)
+            }
+        }
+        wsClient.onError = { err ->
+            rawStreamingText = ""
+            val wasContinuous = _uiState.value.isContinuousActive
+            if (wasContinuous) {
+                voiceRecorder.stopListening()
+            }
+            _uiState.update { current ->
+                current.copy(
+                    isLoading = false,
+                    streamingText = null,
+                    isUserSpeaking = false,
+                    isContinuousActive = false,
+                    isRecording = false,
+                    micVolume = 0f,
+                    errorMessage = if (wasContinuous || current.isLoading) {
+                        "连麦通道已中断：$err"
+                    } else {
+                        current.errorMessage
+                    }
+                )
+            }
+        }
+        wsClient.onDisconnected = { _ ->
+            rawStreamingText = ""
+            if (_uiState.value.isContinuousActive) {
+                voiceRecorder.stopListening()
+                _uiState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        streamingText = null,
+                        isUserSpeaking = false,
+                        isContinuousActive = false,
+                        isRecording = false,
+                        micVolume = 0f
+                    )
+                }
             }
         }
         wsClient.onResponseComplete = { respText, emotion, action, expr, audioBase64, affinity, mood ->
+            rawStreamingText = ""
+            val cleanText = PersonaTextSanitizer.stripControlTags(respText, stripTrailingPartial = false)
             val actionStartNanos = System.nanoTime()
             _uiState.update { current ->
                 val personaMsg = ChatMessage(
                     sender = MessageSender.PERSONA,
-                    text = respText,
+                    text = cleanText,
                     emotion = emotion
                 )
                 val isShy = emotion == EmotionType.SHY || action == ActionType.BLUSH
                 current.copy(
                     isLoading = false,
                     streamingText = null,
+                    errorMessage = null,
                     messages = current.messages + personaMsg,
                     visualState = current.visualState.copy(
                         emotion = emotion,
@@ -204,7 +328,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
-            playPersonaVoice(audioBase64, respText, emotion)
+            playPersonaVoice(audioBase64, cleanText, emotion)
             scheduleActionReset(action, actionStartNanos)
             addBondExp(3)
         }
@@ -385,19 +509,47 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadInitialStatus() {
         viewModelScope.launch {
-            val result = repository.getStatus()
+            val currentActive = modelManager.activeModel.value
+            // 确保服务端切换至本地持久化的当前伙伴
+            repository.switchPersona(currentActive.id)
+            val currentState = _uiState.value
+            if (currentState.llmProvider != "mock") {
+                repository.updateLLMConfig(
+                    currentState.llmProvider,
+                    currentState.llmBaseUrl,
+                    currentState.llmApiKey,
+                    currentState.llmModel
+                )
+            }
+            if (currentState.asrProvider != "mock") {
+                repository.updateAsrConfig(
+                    currentState.asrProvider,
+                    currentState.asrBaseUrl,
+                    currentState.asrApiKey,
+                    currentState.asrModel,
+                    currentState.asrLanguage
+                )
+            }
+            val result = repository.getStatus(
+                personaId = currentActive.id,
+                fallbackPartnerName = currentActive.name
+            )
             result.onSuccess { status ->
-                val currentActive = modelManager.activeModel.value
                 val greeting = getCircadianGreeting(currentActive.name, currentActive.greetingText)
-                _uiState.update {
-                    it.copy(
-                        personaStatus = status,
-                        messages = listOf(
+                _uiState.update { state ->
+                    val nextMessages = if (state.messages.isEmpty()) {
+                        listOf(
                             ChatMessage(
                                 sender = MessageSender.PERSONA,
                                 text = greeting
                             )
                         )
+                    } else {
+                        state.messages
+                    }
+                    state.copy(
+                        personaStatus = status,
+                        messages = nextMessages
                     )
                 }
             }
@@ -470,8 +622,9 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
      * 将物理摄像头采集的当前画面帧传输至视觉大脑，让二次元伴侣看懂指挥官面前的现实世界并给出治愈反馈。
      */
     fun onVisionInteract(cameraBitmap: Bitmap?, prompt: String = "") {
+        val partnerName = _uiState.value.activeModel?.name ?: "星野"
         if (cameraBitmap == null || cameraBitmap.isRecycled) {
-            sendMessage(prompt.ifBlank { "星野，看看我们眼前的现实世界~" })
+            sendMessage(prompt.ifBlank { "${partnerName}，看看我们眼前的现实世界~" })
             return
         }
 
@@ -501,7 +654,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 Base64.encodeToString(bytes, Base64.NO_WRAP)
             }
 
-            val result = repository.sendVisionInteract(base64, prompt)
+            val result = repository.sendVisionInteract(base64, prompt, partnerName = partnerName)
             result.onSuccess { resp ->
                 val personaMessage = ChatMessage(
                     sender = MessageSender.PERSONA,
@@ -768,14 +921,21 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
             }
+            persistCurrentSettings()
             viewModelScope.launch {
                 repository.switchPersona(modelId)
+                repository.getStatus(personaId = modelId, fallbackPartnerName = newModel.name)
+                    .onSuccess { status ->
+                        _uiState.update { it.copy(personaStatus = status) }
+                    }
+                loadMemories()
             }
         }
     }
 
     fun installModelFromStore(modelId: String) {
         if (modelManager.installModelFromStore(modelId)) {
+            persistCurrentSettings()
             switchPersonaModel(modelId)
         }
     }
@@ -790,9 +950,22 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     // --- 对讲模式控制 ---
 
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            getApplication(),
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun toggleContinuousListening() {
         val nextActive = !_uiState.value.isContinuousActive
-        _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive) }
+        if (nextActive && !hasRecordAudioPermission()) {
+            _uiState.update {
+                it.copy(errorMessage = "需要麦克风权限才能开启全双工连麦，请授权后重试")
+            }
+            return
+        }
+        _uiState.update { it.copy(isContinuousActive = nextActive, isRecording = nextActive, errorMessage = null) }
         if (nextActive) {
             wsClient.connect(_uiState.value.serverBaseUrl)
             voiceRecorder.startListening(isContinuousMode = true)
@@ -837,12 +1010,19 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
 
     fun startHoldRecording() {
         if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
-        _uiState.update { it.copy(isRecording = true) }
+        if (!hasRecordAudioPermission()) {
+            _uiState.update {
+                it.copy(errorMessage = "需要麦克风权限才能按住对讲，请授权后重试")
+            }
+            return
+        }
+        _uiState.update { it.copy(isRecording = true, errorMessage = null) }
         voiceRecorder.startListening(isContinuousMode = false)
     }
 
     fun stopHoldRecording() {
         if (_uiState.value.voiceMode != VoiceMode.HOLD_TO_TALK) return
+        if (!_uiState.value.isRecording) return
         voiceRecorder.stopListening()
         val wavBytes = voiceRecorder.getAndResetRecordedWav()
         _uiState.update { it.copy(isRecording = false, micVolume = 0f, isLoading = true) }
@@ -868,10 +1048,12 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 micVolume = 0f
             )
         }
+        persistCurrentSettings()
     }
 
     fun setBubbleDisplayMode(mode: BubbleDisplayMode) {
         _uiState.update { it.copy(bubbleDisplayMode = mode) }
+        persistCurrentSettings()
     }
 
     private var lastMacroProximityNotifyTimestamp = 0L
@@ -1049,9 +1231,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val now = System.currentTimeMillis()
         if (!prevLowLight && profile.isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
+            val partnerName = _uiState.value.activeModel?.name ?: "星野"
             val careMessage = ChatMessage(
                 sender = MessageSender.PERSONA,
-                text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
+                text = "唔... 周围光线变暗了呢，在暗处看屏幕要当心眼睛哦，${partnerName}会一直陪着你的~",
                 emotion = EmotionType.SHY,
                 timestamp = now
             )
@@ -1075,9 +1258,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         val now = System.currentTimeMillis()
         if (!prevLowLight && isLowLight && now - createdAtMillis > 5_000L && now - lastLightNotifyTimestamp > 30_000L) {
             lastLightNotifyTimestamp = now
+            val partnerName = _uiState.value.activeModel?.name ?: "星野"
             val careMessage = ChatMessage(
                 sender = MessageSender.PERSONA,
-                text = "唔... 周围光线变暗了呢，指挥官在暗处看屏幕要当心眼睛哦，星野会一直陪着你的~ ✨",
+                text = "唔... 周围光线变暗了呢，在暗处看屏幕要当心眼睛哦，${partnerName}会一直陪着你的~",
                 emotion = EmotionType.SHY,
                 timestamp = now
             )
@@ -1094,12 +1278,67 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setSettingsOpen(isOpen: Boolean) {
-        _uiState.update { it.copy(isSettingsOpen = isOpen) }
+        _uiState.update {
+            it.copy(
+                isSettingsOpen = isOpen,
+                serverProbeStatus = if (!isOpen) null else it.serverProbeStatus
+            )
+        }
+    }
+
+    fun dismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     fun updateServerUrl(newUrl: String) {
-        ApiClient.baseUrl = newUrl
-        _uiState.update { it.copy(serverBaseUrl = newUrl) }
+        val normalized = PersonaSettingsCodec.normalizeServerUrl(newUrl)
+        val changed = normalized != _uiState.value.serverBaseUrl
+        ApiClient.baseUrl = normalized
+        _uiState.update { it.copy(serverBaseUrl = normalized) }
+        persistCurrentSettings()
+        if (changed) {
+            if (_uiState.value.isContinuousActive) {
+                wsClient.disconnect()
+                wsClient.connect(normalized)
+            }
+            loadInitialStatus()
+            loadMemories()
+        }
+    }
+
+    fun testServerConnection(
+        candidateUrl: String,
+        llmProvider: String,
+        llmBaseUrl: String,
+        llmApiKey: String,
+        llmModel: String
+    ) {
+        val normalized = PersonaSettingsCodec.normalizeServerUrl(candidateUrl)
+        _uiState.update {
+            it.copy(
+                isServerProbing = true,
+                serverProbeOk = null,
+                serverProbeStatus = "正在探测 $normalized ..."
+            )
+        }
+        viewModelScope.launch {
+            val report = repository.probeServerAndEngines(
+                targetUrl = normalized,
+                llmConfig = LLMConfigRequest(
+                    provider = llmProvider,
+                    baseUrl = llmBaseUrl,
+                    apiKey = llmApiKey,
+                    model = llmModel
+                )
+            )
+            _uiState.update {
+                it.copy(
+                    isServerProbing = false,
+                    serverProbeOk = report.isOnline,
+                    serverProbeStatus = report.summary
+                )
+            }
+        }
     }
 
     fun updateLlmConfig(provider: String, baseUrl: String, apiKey: String, model: String) {
@@ -1111,6 +1350,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 llmModel = model
             )
         }
+        persistCurrentSettings()
         viewModelScope.launch {
             repository.updateLLMConfig(provider, baseUrl, apiKey, model)
         }
@@ -1126,6 +1366,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 asrLanguage = language
             )
         }
+        persistCurrentSettings()
         viewModelScope.launch {
             repository.updateAsrConfig(provider, baseUrl, apiKey, model, language)
         }
@@ -1141,9 +1382,10 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun loadMemories() {
+        val activePersonaId = modelManager.activeModel.value.id
         viewModelScope.launch {
             _uiState.update { it.copy(isMemoryLoading = true) }
-            val result = repository.getMemories()
+            val result = repository.getMemories(personaId = activePersonaId)
             result.onSuccess { memoryList ->
                 _uiState.update { it.copy(memories = memoryList, isMemoryLoading = false) }
             }.onFailure {
@@ -1152,10 +1394,17 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun createMemory(content: String, category: String = "general", importance: Int = 3) {
+    fun createMemory(content: String, category: String = "daily", importance: Int = 3) {
         if (content.isBlank()) return
+        val activePersonaId = modelManager.activeModel.value.id
+        val backendCategory = MemoryCategoryMapper.toBackendCategory(category)
         viewModelScope.launch {
-            val result = repository.createMemory(content, category, importance)
+            val result = repository.createMemory(
+                content = content,
+                category = backendCategory,
+                importance = importance,
+                personaId = activePersonaId
+            )
             result.onSuccess { newMemory ->
                 _uiState.update { it.copy(memories = listOf(newMemory) + it.memories) }
                 addBondExp(15) // 手动书写回忆大幅提升羁绊经验
@@ -1199,6 +1448,7 @@ class PersonaViewModel(application: Application) : AndroidViewModel(application)
                 bondLevelUpNotice = levelUpNotice ?: current.bondLevelUpNotice
             )
         }
+        persistCurrentSettings()
     }
 
     fun dismissBondNotice() {

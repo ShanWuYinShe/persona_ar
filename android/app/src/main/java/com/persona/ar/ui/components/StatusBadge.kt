@@ -9,13 +9,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.HistoryEdu
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SentimentVerySatisfied
+import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,7 +32,11 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.persona.ar.data.model.EmotionType
@@ -48,6 +57,7 @@ fun StatusBadge(
     bondExp: Int = 45,
     bondExpNext: Int = 100,
     bondTitle: String = "初遇契约",
+    isServerReachable: Boolean = false,
     onResetAnchor: () -> Unit,
     onOpenStore: () -> Unit,
     onOpenMemoryNotebook: () -> Unit,
@@ -132,7 +142,9 @@ fun StatusBadge(
                         text = "$displayName · Lv.$bondLevel",
                         color = borderColor,
                         fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Black
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
 
                     Spacer(modifier = Modifier.width(4.dp))
@@ -147,44 +159,53 @@ fun StatusBadge(
                             .scale(heartScale)
                     )
 
-                    // 萌系二次元动态情绪反馈胶囊
-                    val (emotionText, emotionColor, emotionBg) = when (currentEmotion) {
-                        EmotionType.JOY -> Triple("🌸 欢快", Color(0xFFFF2A6D), Color(0xFFFFEBF2))
-                        EmotionType.SHY -> Triple("💕 害羞", Color(0xFFE91E63), Color(0xFFFCE4EC))
-                        EmotionType.ANGRY -> Triple("😤 傲娇", Color(0xFFFF5722), Color(0xFFFBE9E7))
-                        EmotionType.CONFIDENT -> Triple("✨ 得意", Color(0xFFFFA000), Color(0xFFFFF8E1))
-                        EmotionType.SLEEPY -> Triple("💤 困倦", Color(0xFF7E57C2), Color(0xFFEDE7F6))
-                        EmotionType.THINKING -> Triple("💭 思考", Color(0xFF0288D1), Color(0xFFE1F5FE))
-                        EmotionType.SAD -> Triple("💧 委屈", Color(0xFF1976D2), Color(0xFFE3F2FD))
-                        EmotionType.SURPRISED -> Triple("⚡ 惊讶", Color(0xFFFFB300), Color(0xFFFFFDE7))
-                        EmotionType.NEUTRAL -> Triple("🍵 平静", Color(0xFF5A4470), Color(0xFFF3E5F5))
-                    }
+                    // 纯矢量图标 + 文字动态情绪胶囊（不使用 Emoji 字符）
+                    val (emotionIcon, emotionText, emotionColor, emotionBg) = emotionChipVisuals(currentEmotion)
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    Box(
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(emotionBg)
                             .border(0.8.dp, emotionColor.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 4.5.dp, vertical = 1.dp)
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
                     ) {
+                        Icon(
+                            imageVector = emotionIcon,
+                            contentDescription = null,
+                            tint = emotionColor,
+                            modifier = Modifier.size(10.dp)
+                        )
                         Text(
                             text = emotionText,
                             color = emotionColor,
                             fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(3.dp))
 
-                // 萌系羁绊经验条（宽度收敛为 92dp 留足右侧四按钮微标签空间）
+                // 萌系羁绊经验条 + 在线状态指示点
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.width(92.dp)
+                    modifier = Modifier.widthIn(min = 104.dp, max = 128.dp)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(if (isServerReachable) Color(0xFF00C853) else Color(0xFF9E8EA8))
+                            .semantics {
+                                contentDescription = if (isServerReachable) "已连接情感大脑服务" else "端侧离线陪伴"
+                            }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -275,7 +296,7 @@ fun StatusBadge(
 @Composable
 private fun HudActionButton(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     contentDescription: String,
     tint: Color,
     borderColor: Color,
@@ -287,33 +308,63 @@ private fun HudActionButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        IconButton(
-            onClick = onClick,
+        Box(
             modifier = Modifier
-                .scale(scale)
-                .shadow(elevation = 3.dp, shape = CircleShape)
-                .size(34.dp)
+                .size(40.dp)
                 .clip(CircleShape)
-                .background(bgBrush)
-                .border(1.5.dp, borderColor, CircleShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = tint,
-                modifier = Modifier.size(17.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .scale(scale)
+                    .shadow(elevation = 3.dp, shape = CircleShape)
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(bgBrush)
+                    .border(1.5.dp, borderColor, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = tint,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
         }
         Text(
             text = label,
             color = Color.White,
             fontSize = 8.5.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
             modifier = Modifier
                 .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xAA281C38))
                 .padding(horizontal = 4.dp, vertical = 0.5.dp)
         )
+    }
+}
+
+private data class EmotionChipVisuals(
+    val icon: ImageVector,
+    val label: String,
+    val color: Color,
+    val bg: Color
+)
+
+private fun emotionChipVisuals(emotion: EmotionType): EmotionChipVisuals {
+    return when (emotion) {
+        EmotionType.JOY -> EmotionChipVisuals(Icons.Filled.AutoAwesome, "欢快", Color(0xFFFF2A6D), Color(0xFFFFEBF2))
+        EmotionType.SHY -> EmotionChipVisuals(Icons.Filled.Favorite, "害羞", Color(0xFFE91E63), Color(0xFFFCE4EC))
+        EmotionType.ANGRY -> EmotionChipVisuals(Icons.Filled.Whatshot, "傲娇", Color(0xFFFF5722), Color(0xFFFBE9E7))
+        EmotionType.CONFIDENT -> EmotionChipVisuals(Icons.Filled.AutoAwesome, "得意", Color(0xFFFFA000), Color(0xFFFFF8E1))
+        EmotionType.SLEEPY -> EmotionChipVisuals(Icons.Filled.Bedtime, "困倦", Color(0xFF7E57C2), Color(0xFFEDE7F6))
+        EmotionType.THINKING -> EmotionChipVisuals(Icons.Filled.Psychology, "思考", Color(0xFF0288D1), Color(0xFFE1F5FE))
+        EmotionType.SAD -> EmotionChipVisuals(Icons.Filled.WaterDrop, "委屈", Color(0xFF1976D2), Color(0xFFE3F2FD))
+        EmotionType.SURPRISED -> EmotionChipVisuals(Icons.Filled.Bolt, "惊讶", Color(0xFFFFB300), Color(0xFFFFFDE7))
+        EmotionType.NEUTRAL -> EmotionChipVisuals(Icons.Filled.LocalCafe, "平静", Color(0xFF5A4470), Color(0xFFF3E5F5))
     }
 }
 

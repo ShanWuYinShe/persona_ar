@@ -34,6 +34,9 @@ class AudioPlayer(private val context: Context) {
     private var tts: TextToSpeech? = null
     private var isTtsInitialized = false
     private var amplitudeJob: Job? = null
+    private var prepareJob: Job? = null
+    @Volatile
+    private var playbackGeneration = 0L
     private var visualizer: Visualizer? = null
     private var smoothedAmplitude = 0f
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -94,48 +97,73 @@ class AudioPlayer(private val context: Context) {
      */
     fun playAudioBase64(base64Data: String, emotion: String = "NEUTRAL", fallbackText: String? = null) {
         stop()
-        val audioBytes = try {
-            Base64.decode(base64Data, Base64.DEFAULT)
-        } catch (e: Exception) {
-            Log.e(TAG, "base64 音频解码失败", e)
-            handlePlaybackFailure("base64_decode_failed: " + e.message, emotion, fallbackText)
-            return
-        }
-
-        // 服务端历史版本曾返回 5 字节假 MP3 帧：提前拦截，避免依赖各机型 MediaPlayer 的差异化报错
-        if (!looksLikePlayableAudio(audioBytes)) {
-            Log.w(TAG, "音频数据无效（" + audioBytes.size + " 字节），触发端侧回退")
-            handlePlaybackFailure("invalid_audio_bytes: " + audioBytes.size, emotion, fallbackText)
-            return
-        }
-
-        try {
-            val tempFile = File(context.cacheDir, "temp_persona_voice.mp3")
-            FileOutputStream(tempFile).use { it.write(audioBytes) }
-
-            val player = MediaPlayer()
-            // 先挂到字段上：applySpatialVolume() 与异步错误回调都从 mediaPlayer 读取当前实例。
-            // 若等 start 之后才赋值，空间声像设置会作用在 null/旧实例上（立体声 pan 永远不生效），
-            // prepare/start 抛异常时局部 player 也会泄漏。
-            mediaPlayer = player
-            player.setDataSource(tempFile.absolutePath)
-            player.setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaPlayer 异步播放错误 what=" + what + " extra=" + extra)
-                handlePlaybackFailure("media_player_error: what=" + what + " extra=" + extra, emotion, fallbackText)
-                true
+        val generation = playbackGeneration
+        prepareJob = scope.launch {
+            val audioBytes = withContext(Dispatchers.IO) {
+                try {
+                    Base64.decode(base64Data, Base64.DEFAULT)
+                } catch (e: Exception) {
+                    Log.e(TAG, "base64 音频解码失败", e)
+                    null
+                }
             }
-            player.setOnCompletionListener {
-                stopAmplitudeTracking()
-                onPlaybackFinished?.invoke()
+            if (generation != playbackGeneration || !isActive) return@launch
+            if (audioBytes == null) {
+                handlePlaybackFailure("base64_decode_failed", emotion, fallbackText)
+                return@launch
             }
-            player.prepare()
-            applySpatialVolume()
-            player.start()
-            // 音频会话 ID 在 prepare 后才有效，此时再绑定 Visualizer 读取真实波形
-            startAmplitudeTracking()
-        } catch (e: Exception) {
-            Log.e(TAG, "MediaPlayer 播放失败", e)
-            handlePlaybackFailure("media_player_exception: " + e.message, emotion, fallbackText)
+
+            // 服务端历史版本曾返回 5 字节假 MP3 帧：提前拦截，避免依赖各机型 MediaPlayer 的差异化报错
+            if (!looksLikePlayableAudio(audioBytes)) {
+                Log.w(TAG, "音频数据无效（" + audioBytes.size + " 字节），触发端侧回退")
+                handlePlaybackFailure("invalid_audio_bytes: " + audioBytes.size, emotion, fallbackText)
+                return@launch
+            }
+
+            val tempFile = withContext(Dispatchers.IO) {
+                runCatching {
+                    File(context.cacheDir, "temp_persona_voice.mp3").also { file ->
+                        FileOutputStream(file).use { it.write(audioBytes) }
+                    }
+                }.onFailure { Log.e(TAG, "音频缓存写入失败", it) }.getOrNull()
+            }
+            if (generation != playbackGeneration || !isActive) return@launch
+            if (tempFile == null) {
+                handlePlaybackFailure("audio_temp_write_failed", emotion, fallbackText)
+                return@launch
+            }
+
+            try {
+                val player = MediaPlayer()
+                mediaPlayer = player
+                player.setDataSource(tempFile.absolutePath)
+                player.setOnPreparedListener { mp ->
+                    if (generation != playbackGeneration) {
+                        runCatching { mp.release() }
+                        return@setOnPreparedListener
+                    }
+                    applySpatialVolume()
+                    mp.start()
+                    // 音频会话 ID 在 prepare 完成后才有效，此时再绑定 Visualizer 读取真实波形
+                    startAmplitudeTracking()
+                }
+                player.setOnErrorListener { _, what, extra ->
+                    if (generation != playbackGeneration) return@setOnErrorListener true
+                    Log.e(TAG, "MediaPlayer 异步播放错误 what=" + what + " extra=" + extra)
+                    handlePlaybackFailure("media_player_error: what=" + what + " extra=" + extra, emotion, fallbackText)
+                    true
+                }
+                player.setOnCompletionListener {
+                    if (generation != playbackGeneration) return@setOnCompletionListener
+                    stopAmplitudeTracking()
+                    onPlaybackFinished?.invoke()
+                }
+                player.prepareAsync()
+            } catch (e: Exception) {
+                if (generation != playbackGeneration) return@launch
+                Log.e(TAG, "MediaPlayer 播放失败", e)
+                handlePlaybackFailure("media_player_exception: " + e.message, emotion, fallbackText)
+            }
         }
     }
 
@@ -393,6 +421,9 @@ class AudioPlayer(private val context: Context) {
     }
 
     fun stop() {
+        playbackGeneration += 1L
+        prepareJob?.cancel()
+        prepareJob = null
         stopAmplitudeTracking()
         mediaPlayer?.let {
             try {

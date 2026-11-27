@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -51,7 +54,12 @@ fun ChatOverlay(
 
     val listState = rememberLazyListState()
     var isAutoFadeVisible by remember { mutableStateOf(false) }
+    var isHistoryExpanded by remember { mutableStateOf(false) }
     val latestMessage = messages.lastOrNull()
+    val persistentList = remember(messages) { messages.takeLast(20) }
+    val displayList = remember(persistentList, isHistoryExpanded) {
+        if (isHistoryExpanded) persistentList else persistentList.takeLast(1)
+    }
 
     val partnerColor = remember(partnerColorHex) {
         try {
@@ -61,9 +69,10 @@ fun ChatOverlay(
         }
     }
 
-    LaunchedEffect(messages.size, streamingText) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    LaunchedEffect(displayList.size, isHistoryExpanded, streamingText, displayMode) {
+        val totalItems = displayList.size + if (!streamingText.isNullOrEmpty()) 1 else 0
+        if (displayMode == BubbleDisplayMode.PERSISTENT && totalItems > 0) {
+            listState.animateScrollToItem(totalItems - 1)
         }
 
         if (displayMode == BubbleDisplayMode.AUTO_FADE_OUT && (latestMessage != null || streamingText != null)) {
@@ -76,35 +85,63 @@ fun ChatOverlay(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(max = 150.dp)
+            .heightIn(max = if (isHistoryExpanded) 205.dp else 160.dp)
             .padding(horizontal = 14.dp, vertical = 4.dp)
     ) {
         when (displayMode) {
             BubbleDisplayMode.PERSISTENT -> {
-                val displayList = messages.takeLast(1)
-                LazyColumn(
-                    state = listState,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(displayList, key = { it.id }) { msg ->
-                        AnimeGameDialogueItem(
-                            msg = msg,
-                            partnerName = partnerName,
-                            partnerColor = partnerColor,
-                            currentEmotion = currentEmotion
-                        )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (persistentList.size > 1) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(bottom = 4.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xCC281C38))
+                                .clickable { isHistoryExpanded = !isHistoryExpanded }
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isHistoryExpanded) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
+                                contentDescription = if (isHistoryExpanded) "收起对话历史" else "展开对话历史",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (isHistoryExpanded) "收起记录" else "对话记录 (${persistentList.size})",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
-                    // 实时流式生成打字机气泡
-                    if (!streamingText.isNullOrEmpty()) {
-                        item(key = "streaming_live") {
-                            AnimeGameStreamingDialogueItem(
-                                streamingText = streamingText,
+                    LazyColumn(
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(displayList, key = { it.id }) { msg ->
+                            AnimeGameDialogueItem(
+                                msg = msg,
                                 partnerName = partnerName,
                                 partnerColor = partnerColor,
                                 currentEmotion = currentEmotion
                             )
+                        }
+
+                        // 实时流式生成打字机气泡
+                        if (!streamingText.isNullOrEmpty()) {
+                            item(key = "streaming_live") {
+                                AnimeGameStreamingDialogueItem(
+                                    streamingText = streamingText,
+                                    partnerName = partnerName,
+                                    partnerColor = partnerColor,
+                                    currentEmotion = currentEmotion
+                                )
+                            }
                         }
                     }
                 }
