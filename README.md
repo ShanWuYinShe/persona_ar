@@ -31,9 +31,9 @@
   - 语气、态度与反应随好感度显著变化，真正模拟真实恋爱/养成陪伴感。
 
 ### 3. 拟人语音与实时口型同步 (Lip-sync)
-- **真人级神经网络语音**：后端默认使用微软 Edge 神经网络 TTS（免费无需 key，如 zh-CN-XiaoyiNeural / XiaoxiaoNeural / YunjianNeural），并按 9 种情绪与羁绊等级实时调整语速/音高/音量（喜悦轻快、害羞软糯、困倦放慢…），合成前自动清洗 emoji/舞台说明；磁盘 SHA256 缓存命中后毫秒级返回。
+- **真人级神经网络语音**：后端默认使用微软 Edge 神经网络 TTS（免费无需 key，四角色分别对应女声 `zh-CN-XiaoyiNeural` / `zh-CN-XiaoxiaoNeural` / `zh-TW-HsiaoYuNeural` / `zh-TW-HsiaoChenNeural`），并按 9 种情绪与羁绊等级实时调整语速/音高/音量（喜悦轻快、害羞软糯、困倦放慢…），合成前自动清洗 emoji/舞台说明与 XML 特殊字符；磁盘 SHA256 缓存命中后毫秒级返回。
 - **真实口型开合**：Android `Visualizer` 采集播放中的真实音频波形 RMS 驱动 3D 手办 VRM 口型 morph 与头部微动；失败时自动回退端侧 TTS。
-- **语音输入**：支持长按麦克风对讲与连续连麦（可打断），带实时拾音脉冲波形。
+- **全双工连麦与实时打断**：支持长按麦克风对讲与连续连麦，内置 320ms 预卷环形音频缓冲（`VoiceAudioBuffer`）与服务端轮次取消栅栏，开口瞬间毫秒级中断前轮播报与上游推理。
 
 ---
 
@@ -88,7 +88,7 @@ go run ./cmd/server
 ```
 服务将在 `http://0.0.0.0:8000` 启动，健康检查端点为 `http://localhost:8000/healthz`。
 
-> **提示**：服务内置了高拟真二次元情感大脑与离线规则库，即使不配置外部 API Key 也能开箱畅快体验！如需接入真实外部大语言模型，只需在 `docker-compose.yml` 或环境变量中填入 `LLM_API_KEY`（支持 DeepSeek / OpenAI 等）。
+> **提示**：服务内置了高拟真二次元情感大脑与离线规则库，即使不配置外部 API Key 也能开箱畅快体验！如需接入真实外部大语言模型，只需在 `.env` 或环境变量中传入 `LLM_API_KEY`（`docker-compose.yml` 通过 `${VAR:-default}` 透传，无需改文件），同时挂载 `./server/data:/app/data` 持久化好感度、回忆手账与语音缓存；ASR 相关变量同样支持 `ASR_PROVIDER` / `ASR_API_KEY` / `ASR_LANGUAGE` 等配置。
 >
 > **语音**：默认使用微软 Edge 神经网络 TTS（`TTS_PROVIDER=edge`，免费无需 key，需服务端可访问 `speech.platform.bing.com`；受限网络可设 `TTS_PROXY`）。也可用 `TTS_PROVIDER=openai` + `TTS_BASE_URL/TTS_API_KEY/TTS_MODEL/TTS_OPENAI_VOICE` 接入任意 OpenAI 兼容 `/audio/speech` 服务。合成失败时客户端自动回退端侧 TTS。
 
