@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,6 +112,13 @@ func handleContinuousWebSocket(c *gin.Context) {
 			})
 
 		case "text_message":
+			if strings.TrimSpace(inMsg.Text) == "" {
+				_ = safeWriteJSON(gin.H{
+					"type":  "error",
+					"error": "消息内容不能为空",
+				})
+				continue
+			}
 			processTextMessage(inMsg.Text)
 
 		case "audio_message":

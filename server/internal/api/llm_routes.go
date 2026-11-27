@@ -62,9 +62,17 @@ func handleTestLLMConnection(c *gin.Context) {
 		return
 	}
 
+	mode := "external"
+	msg := "大模型 API 连通性测试成功"
+	if req.Provider == "" || req.Provider == "mock" || req.Provider == "builtin" || req.Provider == "heuristic" || (req.APIKey == "" && req.Provider != "ollama") {
+		mode = "heuristic"
+		msg = "当前处于内置拟人情感引擎模式（无需外部 API Key）"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":     "ok",
-		"message":    "大模型 API 连通性测试成功",
+		"mode":       mode,
+		"message":    msg,
 		"latency_ms": latencyMs,
 	})
 }

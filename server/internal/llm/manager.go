@@ -37,11 +37,12 @@ func NewManager() *Manager {
 
 func (m *Manager) createClient(cfg ProviderConfig) Client {
 	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
-	if provider == "mock" || cfg.APIKey == "" && provider != "ollama" {
-		return NewMockClient()
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if provider == "" || provider == "mock" || provider == "builtin" || provider == "heuristic" || (apiKey == "" && provider != "ollama") {
+		return nil
 	}
 
-	return NewOpenAICompatibleClient(cfg.BaseURL, cfg.APIKey, cfg.Model)
+	return NewOpenAICompatibleClient(cfg.BaseURL, apiKey, cfg.Model)
 }
 
 func (m *Manager) Configure(cfg ProviderConfig) {
@@ -71,5 +72,14 @@ func (m *Manager) GetConfig() ProviderConfig {
 
 func (m *Manager) TestConnection(ctx context.Context, cfg ProviderConfig) error {
 	client := m.createClient(cfg)
+	if client == nil {
+		return nil
+	}
 	return client.TestConnection(ctx)
+}
+
+func (m *Manager) IsHeuristicMode() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.currentClient == nil
 }

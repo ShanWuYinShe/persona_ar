@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
@@ -27,6 +28,7 @@ type MemoryManager struct {
 }
 
 var DefaultMemoryManager *MemoryManager
+var memorySeq atomic.Int64
 
 func init() {
 	cwd, _ := os.Getwd()
@@ -62,8 +64,34 @@ func (m *MemoryManager) loadOrInit() {
 }
 
 func (m *MemoryManager) saveToDiskUnsafe() {
+	if strings.TrimSpace(m.storagePath) == "" {
+		return
+	}
+	dir := filepath.Dir(m.storagePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
 	data, err := json.MarshalIndent(m.memories, "", "  ")
-	if err == nil {
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, ".memories-*.tmp")
+	if err != nil {
+		_ = os.WriteFile(m.storagePath, data, 0644)
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, m.storagePath); err != nil {
+		_ = os.Remove(tmpName)
 		_ = os.WriteFile(m.storagePath, data, 0644)
 	}
 }
@@ -107,7 +135,7 @@ func (m *MemoryManager) AddMemory(userID, personaID, content, category string, i
 	defer m.mu.Unlock()
 
 	item := model.MemoryItem{
-		ID:         fmt.Sprintf("mem_%d", time.Now().UnixNano()/1e6),
+		ID:         fmt.Sprintf("mem_%d_%d", time.Now().UnixNano(), memorySeq.Add(1)),
 		UserID:     userID,
 		PersonaID:  personaID,
 		Category:   category,
@@ -178,7 +206,7 @@ func (m *MemoryManager) GetMemories(userID, personaID string, limit int) []model
 	defer m.mu.RUnlock()
 
 	userList := m.memories[userID]
-	var filtered []model.MemoryItem
+	filtered := make([]model.MemoryItem, 0, len(userList))
 	for _, item := range userList {
 		if personaID == "" || item.PersonaID == personaID {
 			filtered = append(filtered, item)

@@ -43,7 +43,7 @@ jobs:
       - name: Run Go tests
         working-directory: ./server
         run: |
-          go test -v ./...
+          go test -race -v ./...
 
   build-docker:
     name: Docker Build Validation

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/persona"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/tts"
 )
 
@@ -42,11 +43,12 @@ func fakeSynthForTest(_ context.Context, req tts.SynthRequest) ([]byte, error) {
 }
 
 func TestMain(m *testing.M) {
-	cacheRoot, err := os.MkdirTemp("", "persona-tts-test-*")
+	dataRoot, err := os.MkdirTemp("", "persona-server-test-*")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "创建 TTS 测试缓存目录失败: %v", err)
+		fmt.Fprintf(os.Stderr, "创建测试临时目录失败: %v", err)
 		os.Exit(1)
 	}
+	cacheRoot := filepath.Join(dataRoot, "tts_cache")
 	tts.DefaultSynthesizer = tts.New(tts.Options{
 		Enabled:    true,
 		Voice:      "zh-CN-XiaoyiNeural",
@@ -55,8 +57,10 @@ func TestMain(m *testing.M) {
 		CacheDir:   cacheRoot,
 		SynthFunc:  fakeSynthForTest,
 	})
+	persona.DefaultMemoryManager = persona.NewMemoryManager(filepath.Join(dataRoot, "memories.json"))
+	persona.DefaultEngine = persona.NewEngine(filepath.Join(dataRoot, "user_states.json"))
 	code := m.Run()
-	_ = os.RemoveAll(cacheRoot)
+	_ = os.RemoveAll(dataRoot)
 	os.Exit(code)
 }
 

@@ -86,13 +86,14 @@ type TouchResponse struct {
 }
 
 type PersonaStatus struct {
-	Name            string   `json:"name"`
-	RoleDesc        string   `json:"role_desc"`
-	Affinity        int      `json:"affinity"`
-	AffinityLevel   string   `json:"affinity_level"`
-	Mood            string   `json:"mood"`
-	DialogueCount   int      `json:"dialogue_count"`
-	RecentMemories  []string `json:"recent_memories"`
+	PersonaID      string   `json:"persona_id,omitempty"`
+	Name           string   `json:"name"`
+	RoleDesc       string   `json:"role_desc"`
+	Affinity       int      `json:"affinity"`
+	AffinityLevel  string   `json:"affinity_level"`
+	Mood           string   `json:"mood"`
+	DialogueCount  int      `json:"dialogue_count"`
+	RecentMemories []string `json:"recent_memories"`
 }
 
 type PersonaModelManifest struct {
