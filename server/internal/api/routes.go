@@ -5,17 +5,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ShanWuYinShe/persona_ar/server/internal/asr"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/llm"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/model"
 	"github.com/ShanWuYinShe/persona_ar/server/internal/persona"
+	"github.com/ShanWuYinShe/persona_ar/server/internal/tts"
 )
+
+// ServerVersion 可在构建阶段通过 -ldflags "-X .../api.ServerVersion=v2.1.0" 注入
+var ServerVersion = "2.1.0-dev"
 
 func RegisterRoutes(r *gin.Engine) {
 	// 健康检查探针
 	r.GET("/healthz", func(c *gin.Context) {
+		llmMode := "external"
+		if llm.DefaultManager.IsHeuristicMode() {
+			llmMode = "heuristic"
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "healthy",
-			"service": "persona-ar-brain-go",
-			"version": "1.0.0",
+			"status":       "healthy",
+			"service":      "persona-ar-brain-go",
+			"version":      ServerVersion,
+			"llm_mode":     llmMode,
+			"tts_provider": tts.DefaultSynthesizer.Provider(),
+			"asr_provider": asr.DefaultManager.GetConfig().Provider,
 		})
 	})
 
@@ -122,25 +135,38 @@ func handlePersonaTouch(c *gin.Context) {
 
 func handlePersonaStatus(c *gin.Context) {
 	userID := c.DefaultQuery("user_id", "user_default")
-	activePid := persona.DefaultEngine.GetActivePersonaID(userID)
+	activePid := c.Query("persona_id")
+	if activePid == "" {
+		activePid = persona.DefaultEngine.GetActivePersonaID(userID)
+	}
 	pDef, ok := persona.PersonaRegistry[activePid]
 	if !ok {
-		pDef = persona.PersonaRegistry["hoshino"]
+		activePid = "hoshino"
+		pDef = persona.PersonaRegistry[activePid]
 	}
 
 	state := persona.DefaultEngine.GetUserState(userID, activePid)
-
-	status := model.PersonaStatus{
-		Name:          pDef.Name,
-		RoleDesc:      pDef.RoleDesc,
-		Affinity:      state.Affinity,
-		AffinityLevel: state.GetAffinityLevel(),
-		Mood:          state.Mood,
-		DialogueCount: state.DialogueCount,
-		RecentMemories: []string{
+	memItems := persona.DefaultMemoryManager.GetMemories(userID, activePid, 3)
+	recentMemories := make([]string, 0, len(memItems))
+	for _, m := range memItems {
+		recentMemories = append(recentMemories, m.Content)
+	}
+	if len(recentMemories) == 0 {
+		recentMemories = []string{
 			"刚刚从次元裂缝被投影到这个现实空间中",
 			"在好奇地打量你的房间和身边的环境",
-		},
+		}
+	}
+
+	status := model.PersonaStatus{
+		PersonaID:      activePid,
+		Name:           pDef.Name,
+		RoleDesc:       pDef.RoleDesc,
+		Affinity:       state.Affinity,
+		AffinityLevel:  state.GetAffinityLevel(),
+		Mood:           state.Mood,
+		DialogueCount:  state.DialogueCount,
+		RecentMemories: recentMemories,
 	}
 
 	c.JSON(http.StatusOK, status)
